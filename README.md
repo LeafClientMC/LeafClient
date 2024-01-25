@@ -4,7 +4,7 @@ A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Fabric mods 
 ## 🤔 Project Status
 This project is currently still *under development*. There is no expected release date, however I am planning to release this project's first version with the basics which are:
 
-- ✅ Fabric Mod Loader
+- ✅ Fabric/Forge/LiteLoader Support
 - ✅ Sodium, Lithium, Noxesium, OptiFine integration
 - ✅ Xbox/Microsoft Login & Mojang Login
 - ✅ Offline Mode (with less features)
