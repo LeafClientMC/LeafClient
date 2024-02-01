@@ -15,7 +15,7 @@ This project is currently still *under development*. There is no expected releas
 - ✅ Offline Mode (with less features)
 - ✅ Servers Quickjoin (Hypixel, PVPLegacy, 2B2T and more)
 - ✅ Change Username/Skin
-- ♻️ Fabric Installer
+- ✅ Fabric Installer
 - ✅ Launch Settings
 - ♻️ Change Logs/Launcher Updates
 - ✅ Multiple Versions (1.8, 1.12, 1.16, 1.17, 1.18, 1.19, 1.20) **[__⚠️WARNING:__ ALL MODS WILL ONLY BE TESTED ON VERSIONS FROM 1.16-1.20.4+, MEANING SOME FEATURES/MODS INTEGRATED WITH THE CLIENT MAY NOT WORK ON VERSIONS LOWER THAN 1.16]**
