@@ -1,4 +1,7 @@
 # [<img src="https://media.discordapp.net/attachments/1167902642815643678/1200012616068771900/Leaf_Client.png?ex=65c4a1d6&is=65b22cd6&hm=6203765f1dc0fac30807cfbd2f5ffc9c5657966a359d3dd2b10128e4f74a5943&=&format=webp&quality=lossless&width=32&height=32">](https://media.discordapp.net/attachments/1167902642815643678/1200012616068771900/Leaf_Client.png?ex=65c4a1d6&is=65b22cd6&hm=6203765f1dc0fac30807cfbd2f5ffc9c5657966a359d3dd2b10128e4f74a5943&=&format=webp&quality=lossless&width=468&height=468) LeafClient
+
+![Discord](https://dcbadge.vercel.app/api/server/bhVFRe4yEz)
+
 A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Fabric mods that include cosmetics (Leaf Cosmetics), fps boost (Sodium, Lithium, Noxesium), additional mods (Freelook, KeyStrokes, Motion Blur, WayPoints, Coords, etc). This client is coded with **C# and Java** and it is only compatible on **Windows** (for now).
 
 ## 🤔 Project Status
@@ -34,6 +37,11 @@ This project is currently still *under development*. There is no expected releas
 - and more...
 
 🤓☝️ **P.S.** *Majority of the mods are going to be mods created by other developers found on **[modrinth.com](https://modrinth.com)**, **[curseforge.com](https://curseforge.com)**, and other sources/websites. Each creator of the mod will be credited accordingly. If the creator of the mod allows for modifications, it will be modified accordingly in an appropriate manner to create a dynamic and professional look for Leaf Client and make it easily accessible through the client.*
+
+### ![icons8-discord-24](https://github.com/LeafClientMC/LeafClient/assets/84229419/13f14cfd-f49e-4b2f-95d1-9e19ac36e04d) Discord Status Preview
+
+![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/f6b0b66f-13b1-4be2-ab6f-0454874cbb88)
+
 
 ### 💻 Preview of the Client (UIs)
 
