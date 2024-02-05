@@ -48,6 +48,7 @@ In the future, we are planning on creating our own Mods that are only compatible
 ### 💻 Preview of the Client (UIs)
 
 https://github.com/LeafClientMC/LeafClient/assets/84229419/f67c54cd-7f84-479b-9788-5e6eb0379ea3
+
 ![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/172e9057-8fc1-428a-891e-5a0c04eb422f)
 ![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/ad9bead0-e335-4064-908f-6336f040e71e)
 
