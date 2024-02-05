@@ -55,6 +55,8 @@ https://github.com/LeafClientMC/LeafClient/assets/84229419/f67c54cd-7f84-479b-97
 
 [WaveyCapes](https://modrinth.com/mod/wavey-capes), [AdvancementInfo](https://modrinth.com/mod/advancementinfo), [EnchantmentDescriptions](https://modrinth.com/mod/enchantment-descriptions), [NotEnoughAnimations](https://modrinth.com/mod/not-enough-animations), [LoadingScreenTips](https://modrinth.com/mod/loadingscreentips), [BetterStats](https://modrinth.com/mod/loadingscreentips), [PickUpNotifier](https://modrinth.com/mod/pick-up-notifier), [MoreCulling](https://modrinth.com/mod/moreculling), [LazyDFU](https://modrinth.com/mod/lazydfu), [BetterF3](https://modrinth.com/mod/betterf3), [Cosmetica](https://modrinth.com/mod/cosmetica), [AppleSkin](https://modrinth.com/mod/appleskin), [Status Effect Bars](https://modrinth.com/mod/status-effect-bars), [AdvancementPlaques](https://modrinth.com/mod/advancement-plaques), [Sound Physics Remastered](https://modrinth.com/mod/sound-physics-remastered), [Zoomify](https://modrinth.com/mod/zoomify)
 
+⚠️ **P.S.** THESE MODS ARE ONLY COMPATIBLE WITH *V1.20.4+ OF MINECRAFT* ON LEAF CLIENT.
+
 —> Contributors:
 
 👤 [voidZiAD](https://github.com/voidZiAD/), 👤 [CmlLib (****Indirect Contributor****)](https://github.com/CmlLib/) 
