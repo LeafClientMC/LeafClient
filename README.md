@@ -17,12 +17,12 @@ This project is currently still *under development*. There is no expected releas
 - ✅ Change Username/Skin
 - ✅ Fabric Installer
 - ✅ Launch Settings
-- ♻️ Change Logs/Launcher Updates
+- ✅ Change Logs/Launcher Updates
 - ✅ Multiple Versions (1.8, 1.12, 1.16, 1.17, 1.18, 1.19, 1.20) **[__⚠️WARNING:__ ALL MODS WILL ONLY BE TESTED ON VERSIONS FROM 1.16-1.20.4+, MEANING SOME FEATURES/MODS INTEGRATED WITH THE CLIENT MAY NOT WORK ON VERSIONS LOWER THAN 1.16]**
 - ♻️ Open Source Code (excluding server/database code for obvious reasons)
 - and some more...
 
-### 💡 Mods we're thinking of adding (after a few versions obviously)
+### 💡 Mods we're thinking of adding (Some may already be added)
 - Freelook
 - Motion Blur
 - KeyStrokes
@@ -38,6 +38,8 @@ This project is currently still *under development*. There is no expected releas
 
 🤓☝️ **P.S.** *Majority of the mods are going to be mods created by other developers found on **[modrinth.com](https://modrinth.com)**, **[curseforge.com](https://curseforge.com)**, and other sources/websites. Each creator of the mod will be credited accordingly. If the creator of the mod allows for modifications, it will be modified accordingly in an appropriate manner to create a dynamic and professional look for Leaf Client and make it easily accessible through the client.*
 
+In the future, we are planning on creating our own Mods that are only compatible when using Leaf Client. However, for now we are using free online mods to speed up the project release.
+
 ### ![icons8-discord-24](https://github.com/LeafClientMC/LeafClient/assets/84229419/13f14cfd-f49e-4b2f-95d1-9e19ac36e04d) Discord Status Preview
 
 ![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/f6b0b66f-13b1-4be2-ab6f-0454874cbb88)
@@ -45,13 +47,14 @@ This project is currently still *under development*. There is no expected releas
 
 ### 💻 Preview of the Client (UIs)
 
-![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/43b6ac08-5493-41e6-977b-4cdb09c6249e)
-![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/2af0f723-359a-44bc-a8db-e63b581038f6)
-![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/9a87f523-6b54-400a-845f-f57765cddf6b)
-![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/17d7ec48-672c-48fc-a71a-7c036cfcd373)
-![image](https://github.com/LeafClientMC/LeafClient/assets/84229419/ec658766-73d2-4575-94c4-9b3b3a906065)
+https://github.com/LeafClientMC/LeafClient/assets/84229419/f67c54cd-7f84-479b-9788-5e6eb0379ea3
 
+## 🗣️ Credits to contributors (directly or indirectly)
 
-### 🗣️ Credits to contributors
+—> List of mods used in the project (with the appropriate hyperlink):
 
-This section is coming soon. It will include credits of developers that have helped Leaf Client become the way it is (directly or indirectly) through mods, source code contributions, or other.
+[WaveyCapes](https://modrinth.com/mod/wavey-capes), [AdvancementInfo](https://modrinth.com/mod/advancementinfo), [EnchantmentDescriptions](https://modrinth.com/mod/enchantment-descriptions), [NotEnoughAnimations](https://modrinth.com/mod/not-enough-animations), [LoadingScreenTips](https://modrinth.com/mod/loadingscreentips), [BetterStats](https://modrinth.com/mod/loadingscreentips), [PickUpNotifier](https://modrinth.com/mod/pick-up-notifier), [MoreCulling](https://modrinth.com/mod/moreculling), [LazyDFU](https://modrinth.com/mod/lazydfu), [BetterF3](https://modrinth.com/mod/betterf3), [Cosmetica](https://modrinth.com/mod/cosmetica), [AppleSkin](https://modrinth.com/mod/appleskin), [Status Effect Bars](https://modrinth.com/mod/status-effect-bars), [AdvancementPlaques](https://modrinth.com/mod/advancement-plaques), [Sound Physics Remastered](https://modrinth.com/mod/sound-physics-remastered), [Zoomify](https://modrinth.com/mod/zoomify)
+
+—> Contributors:
+
+👤 [voidZiAD](https://github.com/voidZiAD/), 👤 [CmlLib (****Indirect Contributor****)](https://github.com/CmlLib/) 
