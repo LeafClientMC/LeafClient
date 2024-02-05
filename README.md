@@ -2,7 +2,7 @@
 
 ![Discord](https://dcbadge.vercel.app/api/server/bhVFRe4yEz)
 
-A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Fabric mods that include cosmetics (Leaf Cosmetics), fps boost (Sodium, Lithium, Noxesium), additional mods (Freelook, KeyStrokes, Motion Blur, WayPoints, Coords, etc). This client is coded with **C# and Java** and it is only compatible on **Windows** (for now).
+A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Fabric mods that include cosmetics (Cosmetica), fps boost (Sodium, Lithium, Noxesium, MoreCulling, LazyDFU), additional mods. This client is coded with **C# (Client & Launcher) and Java (Mods)** and it is only compatible on **Windows** (for now).
 
 ## 🤔 Project Status
 This project is currently still *under development*. There is no expected release date, however I am planning to release this project's first version with the basics which are:
