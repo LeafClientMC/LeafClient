@@ -1,4 +1,4 @@
-# [<img src="https://media.discordapp.net/attachments/1167902642815643678/1200012616068771900/Leaf_Client.png?ex=65c4a1d6&is=65b22cd6&hm=6203765f1dc0fac30807cfbd2f5ffc9c5657966a359d3dd2b10128e4f74a5943&=&format=webp&quality=lossless&width=32&height=32">](https://media.discordapp.net/attachments/1167902642815643678/1200012616068771900/Leaf_Client.png?ex=65c4a1d6&is=65b22cd6&hm=6203765f1dc0fac30807cfbd2f5ffc9c5657966a359d3dd2b10128e4f74a5943&=&format=webp&quality=lossless&width=468&height=468) LeafClient
+# <img src="https://github.com/LeafClientMC/LeafClient/assets/84229419/ecda377f-4666-4b94-a017-64cf80f11988" width="32"> LeafClient
 
 ![Discord](https://dcbadge.vercel.app/api/server/bhVFRe4yEz)
 
