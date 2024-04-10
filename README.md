@@ -1,4 +1,4 @@
-# <img src="https://github.com/LeafClientMC/LeafClient/assets/84229419/ecda377f-4666-4b94-a017-64cf80f11988" width="32"> LeafClient
+# <img src="https://github.com/LeafClientMC/LeafClient/assets/84229419/ecda377f-4666-4b94-a017-64cf80f11988" width="32"> LeafClient [DISCONTINUED]
 
 ![Discord](https://dcbadge.vercel.app/api/server/bhVFRe4yEz)
 
