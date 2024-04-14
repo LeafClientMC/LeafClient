@@ -1,11 +1,11 @@
 # <img src="https://github.com/LeafClientMC/LeafClient/assets/84229419/ecda377f-4666-4b94-a017-64cf80f11988" width="32"> LeafClient [DISCONTINUED]
 
-![Discord](https://dcbadge.vercel.app/api/server/bhVFRe4yEz)
+I've decided to discontinue this project. Unless there is obvious high demand of Leaf Client, it will not be worked on or released.
 
 A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Offline & Online Mode and Fabric mods that include cosmetics (Cosmetica), fps boost (Sodium, Lithium, Noxesium, MoreCulling, LazyDFU), additional mods. This client is coded with **C# (Client & Launcher) and Java (Mods)** and it is only compatible on **Windows** (for now).
 
 ## 🤔 Project Status
-This project is currently still *under development*. There is no expected release date, however I am planning to release this project's first version with the basics which are:
+~~This project is currently still *under development*. There is no expected release date, however I am planning to release this project's first version with the basics which are:~~
 
 **[ ♻️ = In progress | ✅ = Finished ]**
 
