@@ -22,7 +22,7 @@ A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Offline & On
 - ✅ Open Source Code
 - and some more...
 
-### 💡 Mods we're thinking of adding (Some may already be added)
+### 💡 Mods ~~we're thinking of adding~~ (Some may already be added)
 - Freelook
 - Motion Blur
 - KeyStrokes
