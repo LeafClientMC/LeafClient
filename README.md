@@ -3,7 +3,6 @@
 A ___Lightweight Minecraft: Java Edition client (no cheats)___ with Offline & Online Mode and Fabric mods that include cosmetics (Cosmetica), fps boost (Sodium, Lithium, Noxesium, MoreCulling, LazyDFU), additional mods. This client is coded with **C# (Client & Launcher) and Java (Mods)** and it is only compatible on **Windows** (for now).
 
 ## 🤔 Project Status
-This project is currently still *under development*. There is no expected release date, however I am planning to release this project's first version with the basics which are:
 
 **[ ♻️ = In progress | ✅ = Finished ]**
 
