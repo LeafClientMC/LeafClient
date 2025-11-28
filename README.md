@@ -35,6 +35,14 @@ Just me. I'm a solo on this project, and I also had to [modify CmlLib's source c
 \
 Unlike the previous versions of LeafClient (that are now deleted), the in-game features are fully coded by myself, with the help of intelligent problem-solving LLMs to speed up the process. Meaning, the only possible usage of other people's mods are either through yourself downloading them into the mods folder, or installing a mod through our mods page, which gives credit to the owner of the mod by default.
 
+## 💎 Indirect Contributors (APIs)
+
+[StarlightSkins](https://starlightskins.lunareclipse.studio) for the in-launcher skin rendering with emotes.\
+[Visage](https://vzge.me/) for the in-launcher substitute skin rendering.\
+[Modrinth API](https://api.modrinth.com) for the in-launcher mod installation.\
+[CmlLib](https://github.com/CmlLib) for Cross-platform MS Authentication, Minecraft Launching, etc.\
+[McStatusIO](https://api.mcstatus.io) for Minecraft Server Status checks.
+
 ## 🎯 Project Goal
 
 **IMPORTANT: WE'RE NOT FOR PROFIT.**
