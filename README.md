@@ -21,7 +21,7 @@ Not to mention, this will be **cross-platform**, just like other clients. Previo
 
 <img width="1116" height="665" alt="image" src="https://github.com/user-attachments/assets/0149dcb2-ed7a-4e53-a09b-d06d770788b1" />
 
-<img width="352" height="155" alt="image" src="https://github.com/user-attachments/assets/8647f7ea-e1fb-40d4-99c5-a4a8fc4e36d9" />
+<img width="379" height="193" alt="image" src="https://github.com/user-attachments/assets/3d790590-3268-4738-949d-ad1ecd680473" />
 
 This client will feature relatively smooth UI, way more performance and FPS within the launcher and possibly the game depending on the performance mods you select.
 
