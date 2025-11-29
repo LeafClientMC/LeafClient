@@ -9,7 +9,42 @@ We're revamping Leaf Client, entirely.
 This is going to release in approx 1-2 months (maybe less time), and it's going to include in-game features just like other popular clients, and performance mods to improve gameplay.
 Not to mention, this will be **cross-platform**, just like other clients. Previously, this only supported Windows OS.
 
-### Preview
+**VIEW OUR PROGRESS [HERE](https://github.com/orgs/LeafClientMC/projects/3)!**
+
+**Currently featuring 20+ client features:**
+- **🛡️ ArmorHUD**
+- **💬 ChatMacros**
+- **📍 CoordinatesHUD**
+- **🖱️ CPSHUD**
+- **🎯 Custom Crosshair**
+- **🎞️ FPSHUD**
+- **👁️ Freelook**
+- **💡 FullBright**
+- **🎨 HUDThemes** (in progress)
+- **🔢 ItemCounterHUD**
+- **⌨️ KeystorkesHUD**
+- **🍃 Leaf Client Logo** (displays next to player name in players list, currently client-sided only)
+- **🗺️ MinimapHUD** (in progress)
+- **📊 Performance Stats**
+- **📶 PingHUD**
+- **🔁 Replay**
+- **🌐 ServerInfo**
+- **🏃 ToggleSprint**
+- **🧎 ToggleCrouch**
+- **📌 Waypoints**
+- **🔍 Zoom**
+
+### Client Preview
+
+<img width="1461" height="722" alt="image" src="https://github.com/user-attachments/assets/a0b216a3-cd44-48ac-98df-d68ba387362e" />
+
+<img width="1415" height="655" alt="image" src="https://github.com/user-attachments/assets/7d10035f-78d3-4f7e-afd6-613a508e751f" />
+
+**FREELOOK EARLY PREVIEW**
+
+<img width="1413" height="652" alt="image" src="https://github.com/user-attachments/assets/b37a528a-6c7d-4acf-b670-1deaf9a58ffc" />
+
+### Launcher Preview
 
 <img width="1749" height="936" alt="image" src="https://github.com/user-attachments/assets/f2fe5c9a-1da8-495f-8109-5ef14507fbff" />
 
