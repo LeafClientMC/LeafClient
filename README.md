@@ -27,7 +27,7 @@ Not to mention, this will be **cross-platform**, just like other clients. Previo
 - **🗺️ MinimapHUD** (in progress)
 - **📊 Performance Stats**
 - **📶 PingHUD**
-- **🔁 Replay**
+- ~~**🔁 Replay**~~ (Removed to re-work it. I'm here to make a quality client, so if I release something, I need to try to make it as functional as possible, and for it to meet the standards of other clients—and higher. P.S. This may not end up being in the first few versions, even after BETA, depending on the complexity. This needs to be a Lunar, Badlion level client.)
 - **🌐 ServerInfo**
 - **🏃 ToggleSprint**
 - **🧎 ToggleCrouch**
