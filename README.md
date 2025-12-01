@@ -9,7 +9,7 @@ We're revamping Leaf Client, entirely.
 This is going to release in approx 1-2 months (maybe less time), and it's going to include in-game features just like other popular clients, and performance mods to improve gameplay.
 Not to mention, this will be **cross-platform**, just like other clients. Previously, this only supported Windows OS.
 
-**VIEW OUR PROGRESS [HERE](https://github.com/orgs/LeafClientMC/projects/3)!**
+**VIEW OUR PROGRESS AND WHAT'S LEFT BEFORE THE REVAMP RELEASE [HERE](https://github.com/orgs/LeafClientMC/projects/3)!**
 
 **Currently featuring 20+ client features:**
 - **🛡️ ArmorHUD**
@@ -27,7 +27,8 @@ Not to mention, this will be **cross-platform**, just like other clients. Previo
 - **🗺️ MinimapHUD** (in progress)
 - **📊 Performance Stats**
 - **📶 PingHUD**
-- ~~**🔁 Replay**~~ (Removed to re-work it. I'm here to make a quality client, so if I release something, I need to try to make it as functional as possible, and for it to meet the standards of other clients—and higher. P.S. This may not end up being in the first few versions, even after BETA, depending on the complexity. This needs to be a Lunar, Badlion level client.)
+- ~~**🔁 Replay**~~
+  - **⚠️ REMOVED: This feature was removed due to its complexity, and would need hours and days of work for it to reach its full potential (playing replays from the menu page, faking packets to simulate the replay world, editing the replays and exporting them), and it's absolutely not required for the first few verisons. I'd rather do it later on, or wait until this project can have more developers working on it. For the editing part, it will be the easiest. It is just the fake packets simulation part which would be the hardest.**
 - **🌐 ServerInfo**
 - **🏃 ToggleSprint**
 - **🧎 ToggleCrouch**
