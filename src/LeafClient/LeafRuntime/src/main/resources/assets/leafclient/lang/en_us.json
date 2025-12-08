@@ -1,0 +1,15 @@
+{
+  "key.leafclient.launcher": "Open Launcher Settings",
+  "category.leafclient.launcher": "Leaf Client",
+  "key.leafclient.crosshair": "Open Crosshair Settings",
+  "key.leafclient.waypoints": "Open Waypoints Manager",
+  "key.leafclient.zoom": "Zoom",
+  "key.leafclient.freelook": "Freelook",
+  "key.leafclient.minimap.zoomin": "Minimap Zoom In",
+  "key.leafclient.minimap.zoomout": "Minimap Zoom Out",
+  "key.leafclient.replay.record": "Start Replay Recording",
+  "key.leafclient.replay.stop": "Stop Replay Recording/Playback",
+  "category.leafclient.keys": "Leaf Client Keys",
+  "category.leafclient.waypoints": "Leaf Client Waypoints",
+  "category.leafclient.replay": "Leaf Client Replay"
+}

@@ -1,0 +1,3210 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+		xmlns:viewmodels="clr-namespace:LeafClient.ViewModels"
+		xmlns:media="using:Avalonia.Media"
+        mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="850"
+        x:Class="LeafClient.Views.MainWindow"
+        Title="Leaf Client"
+        Width="1400" Height="750"
+        MinWidth="1200" MinHeight="700"
+        Background="{DynamicResource PrimaryBackgroundBrush}"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        SystemDecorations="None"
+		x:DataType="viewmodels:MainWindowViewModel">
+
+	<Window.Styles>
+		<Style Selector="TextBlock.BlurredOnHover">
+			<Setter Property="Effect">
+				<BlurEffect Radius="4"/>
+			</Setter>
+			<Setter Property="Transitions">
+				<Transitions>
+					<EffectTransition Property="Effect" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.BlurredContainer:pointerover TextBlock.BlurredOnHover">
+			<Setter Property="Effect" Value="{x:Null}"/>
+		</Style>
+		<Style Selector="Button.IconButton">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<ContentPresenter Name="PART_ContentPresenter" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+		<Style Selector="Button.IconButton:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.IconButton:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.WindowButton">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Button.WindowButton:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource HoverBackgroundBrush}"/>
+		</Style>
+		<Style Selector="Button.CloseButton:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource ErrorHoverBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.HeaderText">
+			<Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+		</Style>
+		<Style Selector="Border.SidebarIcon">
+			<Setter Property="Margin" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<ThicknessTransition Property="Margin" Duration="0:0:0.18">
+						<ThicknessTransition.Easing>
+							<CubicEaseOut/>
+						</ThicknessTransition.Easing>
+					</ThicknessTransition>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.SidebarIcon:pointerover">
+			<Setter Property="Margin" Value="0,-4,0,4"/>
+		</Style>
+		<!-- Playing As avatar hover animation -->
+		<Style Selector="Image.PlayingAsAvatar">
+			<Setter Property="Margin" Value="0,0,0,0" />
+			<Setter Property="Transitions">
+				<Transitions>
+					<ThicknessTransition Property="Margin" Duration="0:0:0.18">
+						<ThicknessTransition.Easing>
+							<CubicEaseOut/>
+						</ThicknessTransition.Easing>
+					</ThicknessTransition>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button#PlayingAsButton:pointerover Image.PlayingAsAvatar">
+			<!-- Move avatar up 4px on hover, same feel as SidebarIcon -->
+			<Setter Property="Margin" Value="0,-4,0,4" />
+		</Style>
+
+	</Window.Styles>
+
+	<Grid ClipToBounds="False">
+		<!-- Left Sidebar -->
+		<Border Width="90" HorizontalAlignment="Left" Background="{DynamicResource SecondaryBackgroundBrush}" BorderBrush="{DynamicResource PrimaryBorderBrush}" BorderThickness="0,0,1,0">
+			<Grid>
+				<Grid.RowDefinitions>
+					<RowDefinition Height="Auto"/>
+					<RowDefinition Height="*"/>
+					<RowDefinition Height="Auto"/>
+				</Grid.RowDefinitions>
+
+				<!-- Logo -->
+				<Border Grid.Row="0" Width="60" Height="60" Background="{DynamicResource LogoBackgroundBrush}" CornerRadius="12" Margin="15,20,15,20" HorizontalAlignment="Center">
+					<Image Source="/Assets/logo_icon.png" Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				</Border>
+
+				<!-- Buttons + Indicators -->
+				<Grid Grid.Row="1">
+					<!-- Selection indicator (existing) -->
+					<Border x:Name="SelectionIndicator" Width="70" Height="50" Background="{DynamicResource AccentGradientBrush}" CornerRadius="10" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,0,10,0" Opacity="0.3">
+						<Border.Transitions>
+							<Transitions>
+								<ThicknessTransition Property="Margin" Duration="0:0:0.3">
+									<ThicknessTransition.Easing>
+										<CubicEaseOut/>
+									</ThicknessTransition.Easing>
+								</ThicknessTransition>
+							</Transitions>
+						</Border.Transitions>
+					</Border>
+
+					<!-- Sidebar buttons -->
+					<StackPanel Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10,0,10,0">
+						<Border x:Name="GameButton" Classes="SidebarIcon" Width="70" Height="50" Background="{DynamicResource SidebarButtonBackgroundBrush}" CornerRadius="10" Cursor="Hand"
+								PointerPressed="OnNavButtonClick" PointerEntered="OnSidebarButtonPointerEntered" PointerExited="OnSidebarButtonPointerExited" Tag="0">
+							<Image Source="/Assets/icon-game.png" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Border>
+
+						<Border x:Name="VersionsButton" Classes="SidebarIcon" Width="70" Height="50" Background="{DynamicResource SidebarButtonBackgroundBrush}" CornerRadius="10" Cursor="Hand"
+								PointerPressed="OnNavButtonClick" PointerEntered="OnSidebarButtonPointerEntered" PointerExited="OnSidebarButtonPointerExited" Tag="1">
+							<Image Source="/Assets/icon-versions.png" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Border>
+
+						<Border x:Name="ServersButton" Classes="SidebarIcon" Width="70" Height="50" Background="{DynamicResource SidebarButtonBackgroundBrush}" CornerRadius="10" Cursor="Hand"
+								PointerPressed="OnNavButtonClick" PointerEntered="OnSidebarButtonPointerEntered" PointerExited="OnSidebarButtonPointerExited" Tag="2">
+							<Grid>
+								<Image Source="/Assets/icon-servers.png" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+								<Ellipse Width="8" Height="8" Fill="#FFEB3B" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,6,0"/>
+							</Grid>
+						</Border>
+
+						<Border x:Name="ModsButton" Classes="SidebarIcon" Width="70" Height="50" Background="{DynamicResource SidebarButtonBackgroundBrush}" CornerRadius="10" Cursor="Hand"
+								PointerPressed="OnNavButtonClick" PointerEntered="OnSidebarButtonPointerEntered" PointerExited="OnSidebarButtonPointerExited" Tag="3">
+							<Grid>
+								<Image Source="/Assets/icon-mods.png" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+								<Ellipse Width="8" Height="8" Fill="#FF5CF7" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,6,0"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+				</Grid>
+
+				<!-- Bottom (settings) -->
+				<Grid Grid.Row="2">
+					<Border x:Name="SettingsIndicator" Width="70" Height="50" Background="{DynamicResource AccentGradientBrush}" CornerRadius="10" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="10,0,10,20" Opacity="0" IsVisible="False">
+						<Border.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
+							</Transitions>
+						</Border.Transitions>
+					</Border>
+
+					<!-- Settings button -->
+					<Border x:Name="SettingsButton" Classes="SidebarIcon" Width="70" Height="50" Margin="10,0,10,20" Background="{DynamicResource SidebarButtonBackgroundBrush}" CornerRadius="10" Cursor="Hand"
+							PointerPressed="OnNavButtonClick" PointerEntered="OnSidebarButtonPointerEntered" PointerExited="OnSidebarButtonPointerExited" Tag="4" VerticalAlignment="Bottom">
+						<Image Source="/Assets/icon-settings.png" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+					</Border>
+				</Grid>
+			</Grid>
+		</Border>
+
+
+		<!-- Main Content Area -->
+		<Grid Margin="90,0,0,0">
+			<Grid.RowDefinitions>
+				<RowDefinition Height="60"/>
+				<RowDefinition Height="50"/>
+				<RowDefinition Height="*"/>
+				<RowDefinition Height="60"/>
+			</Grid.RowDefinitions>
+
+			<!-- Top Header Bar -->
+			<Border x:Name="TopHeaderBorder" Grid.Row="0" Background="{DynamicResource TertiaryBackgroundBrush}" BorderBrush="{DynamicResource PrimaryBorderBrush}" BorderThickness="0,0,0,1">
+				<Grid ColumnDefinitions="Auto,*,Auto">
+					<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0">
+						<Button Classes="IconButton" Content="Leaf Client" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+						<Ellipse x:Name="OnlineStatusDot" Width="12" Height="12" Fill="#00FF00"/>
+						<!-- Added x:Name -->
+						<TextBlock x:Name="OnlineCountTextBlock" Text="Checking.." Foreground="{DynamicResource PrimaryForegroundBrush}" VerticalAlignment="Center"/>
+						<!-- Added x:Name -->
+						<Button Classes="IconButton" Width="24" Height="24" CornerRadius="4" Click="OpenWebsite" Margin="8,0,0,0">
+							<Image Source="/Assets/32website.png" Width="16" Height="16"/>
+						</Button>
+						<Button Classes="IconButton" Width="24" Height="24" CornerRadius="4" Click="OpenDiscord">
+							<Image Source="/Assets/32discord.png" Width="16" Height="16"/>
+						</Button>
+						<Button Classes="IconButton" Width="24" Height="24" CornerRadius="4" Click="OpenInstagram">
+							<Image Source="/Assets/icons8-instagram-32.png" Width="16" Height="16"/>
+						</Button>
+					</StackPanel>
+					<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="10,0,10,0">
+						<Button Classes="WindowButton" Width="40" Height="40" CornerRadius="8">
+							<Button.Flyout>
+								<MenuFlyout Placement="BottomEdgeAlignedLeft">
+									<MenuItem Header="About Leaf Client" Click="OpenAboutLeafClient">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-about.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<MenuItem Header="Check for Updates" Click="CheckForUpdatesManual">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-update.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+
+
+									<MenuItem Header="Licenses" Click="OpenLicenses">
+										<!-- Added Click event -->
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-licenses.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<Separator/>
+									<MenuItem Header="Open Logs Folder">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-folder.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+										<MenuItem Header="Launcher Logs" Click="OpenLauncherLogsFolder">
+											<!-- Added Click event -->
+											<MenuItem.Icon>
+												<Image Source="/Assets/logo_icon.png" Width="16" Height="16"/>
+											</MenuItem.Icon>
+										</MenuItem>
+									</MenuItem>
+									<MenuItem Header="Suggest / Report" Click="OpenFeedbackOverlay" Tag="Feature">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-suggest.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<Separator/>
+									<MenuItem Header="Support" Click="OpenDiscord">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-support.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<MenuItem Header="Common Questions" Click="OpenCommonQuestions">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-questions.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<MenuItem Header="Privacy Policy" Click="OpenPrivacyPolicy">
+										<!-- Added Click event -->
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-privacy.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<MenuItem Header="Terms of Service" Click="OpenTermsOfService">
+										<!-- Added Click event -->
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-terms.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+									<Separator/>
+									<MenuItem Header="Settings" Click="OpenSettingsFromMenu">
+										<MenuItem.Icon>
+											<Image Source="/Assets/icon-settings.png" Width="16" Height="16"/>
+										</MenuItem.Icon>
+									</MenuItem>
+								</MenuFlyout>
+							</Button.Flyout>
+							<TextBlock Text="☰" Foreground="{DynamicResource WindowButtonForegroundBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Button>
+						<Button Classes="WindowButton" Width="40" Height="40" CornerRadius="8" Click="MinimizeWindow">
+							<TextBlock Text="─" Foreground="{DynamicResource WindowButtonForegroundBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,5"/>
+						</Button>
+						<Button Classes="WindowButton" Width="40" Height="40" CornerRadius="8" Click="MaximizeWindow">
+							<TextBlock Text="□" Foreground="{DynamicResource WindowButtonForegroundBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Button>
+						<Button Classes="WindowButton CloseButton" Width="40" Height="40" CornerRadius="8" Click="CloseWindow">
+							<TextBlock Text="✕" Foreground="{DynamicResource WindowButtonForegroundBrush}" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Button>
+					</StackPanel>
+				</Grid>
+			</Border>
+
+			<!-- Quick Play Bar -->
+			<Border Grid.Row="1" Background="{DynamicResource PrimaryBackgroundBrush}" Padding="20,0">
+				<Grid ColumnDefinitions="*,Auto">
+					<Border Grid.Column="0"
+							Background="{DynamicResource CardBackgroundColor}"
+							CornerRadius="10"
+							Padding="15,5"
+							HorizontalAlignment="Left"
+							VerticalAlignment="Center">
+						<StackPanel Orientation="Horizontal" Spacing="15">
+							<Border Background="{DynamicResource HoverBackgroundBrush}"
+									CornerRadius="8"
+									Padding="15,8">
+								<StackPanel Orientation="Horizontal" Spacing="8">
+									<TextBlock Text="⚡" FontSize="16" VerticalAlignment="Center"/>
+									<TextBlock Text="QUICK PLAY"
+											   Foreground="{DynamicResource PrimaryForegroundBrush}"
+											   FontWeight="Bold"
+											   VerticalAlignment="Center"/>
+								</StackPanel>
+							</Border>
+
+							<!-- Dynamic server buttons will be added here -->
+							<StackPanel x:Name="QuickPlayServersContainer"
+										Orientation="Horizontal"
+										Spacing="5"/>
+						</StackPanel>
+					</Border>
+
+					<!-- Playing As button (with hover avatar lift) -->
+					<Button x:Name="PlayingAsButton"
+							Grid.Column="1"
+							Background="{DynamicResource PrimaryAccentBrush}"
+							BorderThickness="0"
+							CornerRadius="8"
+							Padding="20,8"
+							VerticalAlignment="Center"
+							Cursor="Hand"
+							Click="OpenAccountPanel"
+							ClipToBounds="False">
+						<Grid ColumnDefinitions="Auto,*">
+							<Image x:Name="PlayingAsImage"
+								   Classes="PlayingAsAvatar"
+								   Grid.Column="0"
+								   Source=""
+								   Width="40" Height="60"
+								   HorizontalAlignment="Center"
+								   VerticalAlignment="Center" />
+							<StackPanel Grid.Column="1"
+										Orientation="Vertical"
+										Spacing="0"
+										Margin="10,0,0,0">
+								<TextBlock Text="Playing as"
+										   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+										   FontSize="9"
+										   Opacity="0.8" />
+								<TextBlock x:Name="PlayingAsUsername"
+										   Text="ZIADKY"
+										   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+										   FontWeight="Bold"
+										   FontSize="13" />
+							</StackPanel>
+						</Grid>
+					</Button>
+				</Grid>
+			</Border>
+
+
+			<!-- Main Content Grid -->
+			<Grid Grid.Row="2">
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition Width="*"/>
+					<ColumnDefinition Width="380"/>
+				</Grid.ColumnDefinitions>
+
+				<!-- Center Content - Pages Container -->
+				<Grid Grid.Column="0" Margin="20">
+					<!-- Game Page -->
+					<Grid x:Name="GamePage" IsVisible="True">
+						<Grid.RowDefinitions>
+							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="*"/>
+							<RowDefinition Height="220"/>
+						</Grid.RowDefinitions>
+
+						<!-- Promotional Banner -->
+						<Border x:Name="PromoBanner" Grid.Row="0" Background="{DynamicResource PrimaryAccentBrush}" CornerRadius="12" Padding="20,15" Margin="0,0,0,20" Opacity="0">
+							<Border.RenderTransform>
+								<TranslateTransform Y="80"/>
+							</Border.RenderTransform>
+							<Border.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Opacity" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+									<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+								</Transitions>
+							</Border.Transitions>
+							<Grid>
+								<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+									<TextBlock Text="🎉" FontSize="18" VerticalAlignment="Center"/>
+									<TextBlock Text="Leaf Client Official Beta Release is here!" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+								</StackPanel>
+								<Button Classes="IconButton" HorizontalAlignment="Right" VerticalAlignment="Center" Click="CloseBanner">
+									<TextBlock Text="✕" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="16" FontWeight="Bold"/>
+								</Button>
+							</Grid>
+						</Border>
+
+						<!-- Launch Game Section -->
+						<Border x:Name="LaunchSection" Grid.Row="1" Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" BorderBrush="Transparent" BorderThickness="0" ClipToBounds="True"
+								PointerEntered="OnLaunchSectionPointerEntered" PointerExited="OnLaunchSectionPointerExited" Opacity="0">
+							<Border.RenderTransform>
+								<TranslateTransform Y="80"/>
+							</Border.RenderTransform>
+							<Border.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Opacity" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+									<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+								</Transitions>
+							</Border.Transitions>
+							<Grid>
+								<Image x:Name="LaunchBgImage" Source="/Assets/bg.png" Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
+									<Image.RenderTransform>
+										<ScaleTransform ScaleX="1" ScaleY="1"/>
+									</Image.RenderTransform>
+								</Image>
+								<Border Background="{DynamicResource OverlayBrush}" Opacity="0.25"/>
+								<Canvas x:Name="ParticleLayer" IsHitTestVisible="False" ClipToBounds="True"/>
+								<Border BorderBrush="{DynamicResource TransparentBorderBrush}" BorderThickness="6" CornerRadius="18" Opacity="0.25"/>
+								<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
+									<Image Source="/Assets/logo_text.png" Width="280" Height="60" HorizontalAlignment="Center" Stretch="Uniform"/>
+
+									<!-- Button Container -->
+									<Border x:Name="LaunchButtonOuterBorder"
+        CornerRadius="12"
+        BorderBrush="{DynamicResource TransparentBorderBrush}"
+        BorderThickness="1"
+        ClipToBounds="True"
+        HorizontalAlignment="Center">
+										<Button x:Name="LaunchGameButton"
+												BorderThickness="0"
+												CornerRadius="11"
+												Padding="60,15"
+												Cursor="Hand"
+												HorizontalAlignment="Stretch"
+												Margin="0">
+											<StackPanel Spacing="6">
+												<TextBlock Text="LAUNCH GAME"
+														   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+														   FontWeight="ExtraBold"
+														   FontSize="20"
+														   HorizontalAlignment="Center" />
+												<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+													<Image Source="/Assets/logo_icon.png"
+														   Width="14" Height="14"
+														   VerticalAlignment="Center" />
+													<TextBlock x:Name="LaunchVersionText"
+															   Text="Leaf Client 1.21.4 with Fabric"
+															   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+															   FontSize="11" />
+												</StackPanel>
+											</StackPanel>
+										</Button>
+									</Border>
+
+
+									<!-- Progress Panel (OUTSIDE the Border) -->
+									<StackPanel x:Name="LaunchProgressPanel"
+												Spacing="10"
+												HorizontalAlignment="Center"
+												IsVisible="False">
+										<ProgressBar x:Name="LaunchProgressBar"
+													 Width="400"
+													 Height="8"
+													 IsIndeterminate="True"
+													 Foreground="{DynamicResource PrimaryAccentBrush}"/>
+										<TextBlock x:Name="LaunchProgressText"
+												   Text="Installing Fabric..."
+												   Foreground="{DynamicResource PrimaryForegroundBrush}"
+												   FontSize="12"
+												   HorizontalAlignment="Center"/>
+									</StackPanel>
+									<!-- NEW: Launch Error Banner -->
+									<Border x:Name="LaunchErrorBanner"
+											Background="{DynamicResource ErrorBrush}"
+											CornerRadius="10"
+											Padding="10"
+											Margin="0,10,0,0"
+											HorizontalAlignment="Center"
+											VerticalAlignment="Top"
+											IsVisible="False"
+											Opacity="0">
+										<Border.Transitions>
+											<Transitions>
+												<DoubleTransition Property="Opacity" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+											</Transitions>
+										</Border.Transitions>
+										<Grid ColumnDefinitions="*,Auto">
+											<TextBlock x:Name="LaunchErrorBannerText"
+													   Grid.Column="0"
+													   Text="An error occurred during launch."
+													   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+													   FontWeight="Bold"
+													   VerticalAlignment="Center"
+													   TextWrapping="Wrap"/>
+											<Button x:Name="LaunchErrorBannerCloseButton"
+													Grid.Column="1"
+													Content="✕"
+													Background="Transparent"
+													Foreground="{DynamicResource AccentButtonForegroundBrush}"
+													FontSize="14"
+													Width="20" Height="20"
+													Padding="0"
+													Margin="10,0,0,0"
+													VerticalAlignment="Center"
+													HorizontalContentAlignment="Center"
+													VerticalContentAlignment="Center"
+													Cursor="Hand"/>
+										</Grid>
+									</Border>
+								</StackPanel>
+							</Grid>
+						</Border>
+
+
+						<!-- Latest News Section -->
+						<Grid x:Name="NewsSectionGrid" Grid.Row="2" Margin="0,7,0,0" Opacity="0">
+							<Grid.RenderTransform>
+								<TranslateTransform Y="80"/>
+							</Grid.RenderTransform>
+							<Grid.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Opacity" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+									<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.8" Easing="CubicEaseOut"/>
+								</Transitions>
+							</Grid.Transitions>
+							<Grid.RowDefinitions>
+								<RowDefinition Height="Auto"/>
+								<RowDefinition Height="*"/>
+							</Grid.RowDefinitions>
+							<Grid Grid.Row="0" Margin="0,0,0,15">
+								<TextBlock Text="LATEST NEWS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="18"/>
+							</Grid>
+							<Grid Grid.Row="1">
+								<Grid.ColumnDefinitions>
+									<ColumnDefinition Width="*"/>
+									<ColumnDefinition Width="15"/>
+									<ColumnDefinition Width="*"/>
+								</Grid.ColumnDefinitions>
+
+								<!-- Left banner -->
+								<Border Grid.Column="0" Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" BorderBrush="Transparent" BorderThickness="0" ClipToBounds="False" Cursor="Hand" Height="200" PointerEntered="OnNewsItem1PointerEntered" PointerExited="OnNewsItem1PointerExited">
+									<Grid>
+										<!-- Clip the image to the same radius as the inner border -->
+										<Border CornerRadius="12" ClipToBounds="True">
+											<Image x:Name="NewsItem1Image" Source="/Assets/betatesters_banner.jpg" Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
+												<Image.RenderTransform>
+													<ScaleTransform ScaleX="1" ScaleY="1"/>
+												</Image.RenderTransform>
+											</Image>
+										</Border>
+
+										<!-- Inner border overlay -->
+										<Border BorderBrush="{DynamicResource TransparentBorderBrush}" BorderThickness="4" CornerRadius="12"/>
+
+										<Canvas HorizontalAlignment="Left" VerticalAlignment="Top" Width="60" Height="60" ClipToBounds="True">
+											<Border Background="{DynamicResource NotificationBrush}" Width="85" Height="24" Canvas.Left="-22" Canvas.Top="10" CornerRadius="2">
+												<Border.RenderTransform>
+													<RotateTransform Angle="-45"/>
+												</Border.RenderTransform>
+												<TextBlock Text="NEW" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Border>
+										</Canvas>
+									</Grid>
+								</Border>
+
+								<!-- Right banner -->
+								<Border Grid.Column="2" Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" BorderBrush="Transparent" BorderThickness="0" ClipToBounds="False" Cursor="Hand" Height="200" PointerEntered="OnNewsItem2PointerEntered" PointerExited="OnNewsItem2PointerExited">
+									<Grid>
+										<!-- Clip the image to the same radius as the inner border -->
+										<Border CornerRadius="12" ClipToBounds="True">
+											<Image x:Name="NewsItem2Image" Source="/Assets/LeafClientOfficialBetaRelease.jpg" Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
+												<Image.RenderTransform>
+													<ScaleTransform ScaleX="1" ScaleY="1"/>
+												</Image.RenderTransform>
+											</Image>
+										</Border>
+
+										<!-- Inner border overlay -->
+										<Border BorderBrush="{DynamicResource TransparentBorderBrush}" BorderThickness="4" CornerRadius="12"/>
+
+										<Button Classes="IconButton" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0" Background="{DynamicResource OverlayBrush}" CornerRadius="15" Width="30" Height="30">
+											<TextBlock Text="→" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="16" FontWeight="Bold"/>
+										</Button>
+
+										<Canvas HorizontalAlignment="Left" VerticalAlignment="Top" Width="60" Height="60" ClipToBounds="True">
+											<Border Background="{DynamicResource NotificationBrush}" Width="85" Height="24" Canvas.Left="-22" Canvas.Top="10" CornerRadius="2">
+												<Border.RenderTransform>
+													<RotateTransform Angle="-45"/>
+												</Border.RenderTransform>
+												<TextBlock Text="NEW" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Border>
+										</Canvas>
+									</Grid>
+								</Border>
+							</Grid>
+						</Grid>
+					</Grid>
+
+					<Grid x:Name="VersionsPage" IsVisible="False">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="400"/>
+						</Grid.ColumnDefinitions>
+
+						<!-- Versions List (Major Versions) -->
+						<Border Grid.Column="0" Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30" Margin="0,0,15,0">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel x:Name="MajorVersionsStackPanel" Spacing="20">
+									<TextBlock Text="VERSIONS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="24"/>
+									<TextBlock Text="Manage your Minecraft versions" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="14"/>
+
+									<!-- Major Version Group: Minecraft 1.21 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.21">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.21" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Tricky Trials Update" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.20 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.20">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.20" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Trails &amp; Tales Update" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.19 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.19">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.19" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="The Wild Update" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.18 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.18">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.18" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Caves &amp; Cliffs Part II" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.17 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.17">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.17" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Caves &amp; Cliffs Part I" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.16 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.16">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.16" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Nether Update" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.12 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.12">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.12" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="World of Color Update" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.8 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.8">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.8" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="The Bountiful Update / Classic PvP" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+									<!-- Major Version Group: Minecraft 1.7 -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Cursor="Hand" Tapped="OnMajorVersionClick" Tag="1.7">
+										<Grid ColumnDefinitions="*,Auto">
+											<StackPanel Grid.Column="0" Spacing="5">
+												<TextBlock Text="Minecraft 1.7" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="The Update that Changed the World" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<Button Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand">
+												<TextBlock Text="VIEW VERSIONS"/>
+											</Button>
+										</Grid>
+									</Border>
+
+
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+
+						<!-- Version Details Sidebar -->
+						<Border x:Name="VersionDetailsSidebar" Grid.Column="1" Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30" IsVisible="False">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel Spacing="20">
+									<!-- Version Header -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+										<StackPanel Spacing="10">
+											<Border x:Name="VersionBannerContainer" Height="150" CornerRadius="8" ClipToBounds="True">
+												<Image x:Name="VersionBanner" Source="/Assets/mcversionsbanner.jpg" Stretch="UniformToFill"/>
+											</Border>
+											<TextBlock x:Name="VersionTitle" Text="Minecraft 1.21" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="20"/>
+										</StackPanel>
+									</Border>
+
+									<!-- Version Selector -->
+									<StackPanel Spacing="10">
+										<TextBlock Text="VERSION" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+										<ComboBox x:Name="VersionDropdown" SelectedIndex="0" MinWidth="200" SelectionChanged="OnSubVersionSelected"/>
+									</StackPanel>
+
+									<!-- Version Info -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="DETAILS" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="15">
+											<StackPanel Spacing="10">
+												<Grid ColumnDefinitions="Auto,*">
+													<TextBlock Grid.Column="0" Text="Type:" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" Width="100"/>
+													<TextBlock x:Name="VersionType" Grid.Column="1" Text="Release" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="13" FontWeight="Bold"/>
+												</Grid>
+												<Grid ColumnDefinitions="Auto,*">
+													<TextBlock Grid.Column="0" Text="Loader:" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" Width="100"/>
+													<TextBlock x:Name="VersionLoader" Grid.Column="1" Text="Fabric" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="13" FontWeight="Bold"/>
+												</Grid>
+												<Grid ColumnDefinitions="Auto,*">
+													<TextBlock Grid.Column="0" Text="Release Date:" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" Width="100"/>
+													<TextBlock x:Name="VersionDate" Grid.Column="1" Text="June 13, 2024" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="13"/>
+												</Grid>
+												<!-- OptiFine row removed -->
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Description -->
+									<StackPanel Spacing="10">
+										<TextBlock Text="DESCRIPTION" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="15">
+											<TextBlock x:Name="VersionDescription"
+													   Text="The Tricky Trials Update - Initial release."
+													   Foreground="{DynamicResource PrimaryForegroundBrush}"
+													   FontSize="13"
+													   TextWrapping="Wrap"/>
+										</Border>
+									</StackPanel>
+
+									<!-- VersionsPage > Version Details Sidebar > ADDONS -->
+									<StackPanel Spacing="10">
+										<TextBlock Text="ADDONS" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+										<WrapPanel>
+											<!-- Fabric Leaf Client (rounded, inner border draws background) -->
+											<Button x:Name="AddonFabricButton"
+													Classes="IconButton"
+													Background="Transparent"
+													Padding="0"
+													Margin="0,0,10,10"
+													Width="60" Height="60"
+													Click="OnAddonFabricClick"
+													ToolTip.Tip="Fabric Leaf Client">
+												<Border x:Name="AddonFabricBg"
+														Width="60" Height="60"
+														CornerRadius="30"
+														Background="{DynamicResource PrimaryAccentBrush}"
+														ClipToBounds="True">
+													<Image Source="/Assets/logo_icon.png"
+														   Width="28" Height="28"
+														   HorizontalAlignment="Center"
+														   VerticalAlignment="Center"
+														   Stretch="Uniform"/>
+												</Border>
+											</Button>
+
+											<!-- Vanilla (rounded, uses minecraft.png, smaller image) -->
+											<Button x:Name="AddonVanillaButton"
+													Classes="IconButton"
+													Background="Transparent"
+													Padding="0"
+													Margin="0,0,10,10"
+													Width="60" Height="60"
+													Click="OnAddonVanillaClick"
+													ToolTip.Tip="Vanilla">
+												<Border x:Name="AddonVanillaBg"
+														Width="60" Height="60"
+														CornerRadius="30"
+														Background="{DynamicResource HoverBackgroundBrush}"
+														ClipToBounds="True">
+													<Image Source="/Assets/minecraft.png"
+														   Width="28" Height="28"
+														   HorizontalAlignment="Center"
+														   VerticalAlignment="Center"
+														   Stretch="Uniform"/>
+												</Border>
+											</Button>
+										</WrapPanel>
+									</StackPanel>
+
+
+									<!-- Settings Button (uses settings icon) -->
+									<Button Background="{DynamicResource HoverBackgroundBrush}"
+											Foreground="{DynamicResource PrimaryForegroundBrush}"
+											BorderThickness="0"
+											CornerRadius="8"
+											Padding="15,10"
+											FontWeight="Bold"
+											Cursor="Hand"
+											HorizontalAlignment="Stretch"
+											Click="OpenSettingsFromVersions">
+										<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+											<Image Source="/Assets/icon-settings.png" Width="16" Height="16"/>
+											<TextBlock Text="SETTINGS"/>
+										</StackPanel>
+									</Button>
+
+									<!-- Launch Button -->
+									<!-- Launch Button in Versions Sidebar -->
+									<Button Background="{DynamicResource SuccessBrush}"
+											Foreground="{DynamicResource AccentButtonForegroundBrush}"
+											BorderThickness="0"
+											CornerRadius="12"
+											Padding="20,15"
+											FontWeight="Bold"
+											Cursor="Hand"
+											HorizontalAlignment="Stretch"
+											Click="LaunchFromVersionsSidebar">
+										<TextBlock Text="LAUNCH GAME" FontSize="16" HorizontalAlignment="Center"/>
+									</Button>
+
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+					</Grid>
+
+					<!-- Servers Page -->
+					<Grid x:Name="ServersPage" IsVisible="False">
+						<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel Spacing="20">
+									<!-- Header -->
+									<Grid ColumnDefinitions="*,Auto,Auto">
+										<TextBlock Grid.Column="0" Text="SERVERS"
+												   Foreground="{DynamicResource PrimaryForegroundBrush}"
+												   FontWeight="ExtraBold" FontSize="24"/>
+
+										<!-- ADD SERVER Button -->
+										<Button Grid.Column="1"
+												Background="{DynamicResource SuccessBrush}"
+												Foreground="{DynamicResource AccentButtonForegroundBrush}"
+												BorderThickness="0"
+												CornerRadius="8"
+												Padding="20,10"
+												FontWeight="Bold"
+												Cursor="Hand"
+												Margin="0,0,10,0"
+												Click="AddServerButton_Click">
+											<StackPanel Orientation="Horizontal" Spacing="8">
+												<TextBlock Text="+" FontSize="16"/>
+												<TextBlock Text="ADD SERVER"/>
+											</StackPanel>
+										</Button>
+
+										<!-- REFRESH Button (NEW) -->
+										<Button Grid.Column="2"
+												Background="{DynamicResource PrimaryAccentBrush}"
+												Foreground="{DynamicResource AccentButtonForegroundBrush}"
+												BorderThickness="0"
+												CornerRadius="8"
+												Padding="20,10"
+												FontWeight="Bold"
+												Cursor="Hand"
+												Click="RefreshServersButton_Click">
+											<StackPanel Orientation="Horizontal" Spacing="8">
+												<TextBlock Text="🔄" FontSize="16"/>
+												<TextBlock Text="REFRESH"/>
+											</StackPanel>
+										</Button>
+									</Grid>
+
+
+									<TextBlock Text="Your favorite servers"
+											   Foreground="{DynamicResource SecondaryForegroundBrush}"
+											   FontSize="14"/>
+
+									<!-- Servers List - CHANGED to StackPanel -->
+									<StackPanel x:Name="ServersWrapPanel" Orientation="Vertical" HorizontalAlignment="Stretch">
+										<!-- Server cards will be added here dynamically by CreateServerCard -->
+									</StackPanel>
+
+									<!-- Empty State -->
+									<Border x:Name="NoServersMessage"
+											Background="{DynamicResource CardBackgroundColor}"
+											CornerRadius="12"
+											Padding="40"
+											IsVisible="True">
+										<StackPanel Spacing="15" HorizontalAlignment="Center">
+											<TextBlock Text="🌐" FontSize="48"
+													   HorizontalAlignment="Center" Opacity="0.5"/>
+											<TextBlock Text="No servers yet"
+													   Foreground="{DynamicResource PrimaryForegroundBrush}"
+													   FontWeight="Bold" FontSize="18"
+													   HorizontalAlignment="Center"/>
+											<TextBlock Text="Add your first server to get started"
+													   Foreground="{DynamicResource SecondaryForegroundBrush}"
+													   FontSize="14"
+													   HorizontalAlignment="Center"
+													   TextWrapping="Wrap"
+													   TextAlignment="Center"/>
+										</StackPanel>
+									</Border>
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+					</Grid>
+
+					<Grid x:Name="ModsPage" IsVisible="False">
+						<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel Spacing="20">
+									<Grid ColumnDefinitions="*,Auto">
+										<TextBlock Grid.Column="0" Text="MODS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="24"/>
+										<Button Grid.Column="1"
+							Background="{DynamicResource SuccessBrush}"
+							Foreground="{DynamicResource AccentButtonForegroundBrush}"
+							BorderThickness="0"
+							CornerRadius="8"
+							Padding="20,10"
+							FontWeight="Bold"
+							Cursor="Hand"
+							Click="OpenModBrowser">
+											<!-- Changed to OpenModBrowser -->
+											<StackPanel Orientation="Horizontal" Spacing="8">
+												<TextBlock Text="+"/>
+												<TextBlock Text="BROWSE MODS"/>
+											</StackPanel>
+										</Button>
+									</Grid>
+									<TextBlock Text="Manage your installed mods" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="14"/>
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20" Margin="0,20,0,0">
+										<Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+											<!-- Icon -->
+											<Border Grid.Column="0" Grid.Row="0" Background="{DynamicResource PrimaryAccentBrush}" Width="48" Height="48" CornerRadius="8" Margin="0,0,15,0">
+												<TextBlock Text="✨" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Border>
+
+											<!-- Title + subtitle -->
+											<StackPanel Grid.Column="1" Grid.Row="0" Spacing="5" VerticalAlignment="Center">
+												<TextBlock Text="OptiFine for Fabric Modpack" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="50+ Comprehensive graphics and performance enhancements mods." Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+
+											<!-- Toggle -->
+											<ToggleSwitch x:Name="OptiFineToggle" Grid.Column="2" Grid.Row="0" IsChecked="False" Margin="15,0"/>
+
+											<!-- Info message -->
+											<TextBlock x:Name="ModsInfoText"
+									   Grid.Column="1" Grid.Row="1"
+									   Grid.ColumnSpan="2"
+									   Text="This may be unstable."
+									   Margin="0,6,0,0"
+									   Foreground="{DynamicResource PrimaryForegroundBrush}"
+									   FontSize="14"/>
+										</Grid>
+									</Border>
+
+									<!-- Lithium Mod Entry - Keep this separate -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+										<Grid ColumnDefinitions="Auto,*,Auto">
+											<Border Grid.Column="0" Background="{DynamicResource PrimaryAccentBrush}" Width="48" Height="48" CornerRadius="8" Margin="0,0,15,0">
+												<TextBlock Text="⚡" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Border>
+											<StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+												<TextBlock Text="Lithium" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="Server-side optimization mod" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<ToggleSwitch x:Name="LithiumToggle" Grid.Column="2" IsChecked="True" Margin="15,0"/>
+										</Grid>
+									</Border>
+
+									<!-- Sodium Mod Entry -->
+									<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+										<Grid ColumnDefinitions="Auto,*,Auto">
+											<Border Grid.Column="0" Background="{DynamicResource PrimaryAccentBrush}" Width="48" Height="48" CornerRadius="8" Margin="0,0,15,0">
+												<TextBlock Text="🚀" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Border>
+											<StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+												<TextBlock Text="Sodium" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+												<TextBlock Text="High-performance rendering engine" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+											</StackPanel>
+											<ToggleSwitch x:Name="SodiumToggle" Grid.Column="2" IsChecked="False" Margin="15,0"/>
+										</Grid>
+									</Border>
+
+									<!-- ========== ADD USER MODS SECTION HERE ========== -->
+									<StackPanel Margin="0,20,0,0" Spacing="10">
+										<TextBlock Text="Installed Mods" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+										<Border x:Name="NoUserModsMessage" Background="{DynamicResource CardBackgroundColor}" CornerRadius="8" Padding="20" HorizontalAlignment="Stretch" IsVisible="False">
+											<TextBlock Text="No mods installed. Browse and install mods from the mod browser above."
+									   Foreground="{DynamicResource SecondaryForegroundBrush}" TextAlignment="Center"/>
+										</Border>
+										<StackPanel x:Name="UserModsPanel" Spacing="8"/>
+									</StackPanel>
+									<!-- ========== END USER MODS SECTION ========== -->
+
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+					</Grid>
+
+					<Grid x:Name="SettingsPage" IsVisible="False" ClipToBounds="False">
+						<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel Spacing="25">
+									<TextBlock Text="SETTINGS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="24"/>
+
+									<!-- General Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="GENERAL" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Launch on Startup" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Automatically start Leaf Client when you log in" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="LaunchOnStartupToggle" Grid.Column="1" IsChecked="False"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Minimize to Tray" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Keep Leaf Client running in the background" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="MinimizeToTrayToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Discord Rich Presence" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Show what you're playing on Discord" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="DiscordRichPresenceToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- NEW: Discord Rich Presence Username Visibility -->
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Show Username in Discord" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Display your Minecraft username in Discord Rich Presence" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="ShowUsernameInDiscordRichPresenceToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- NEW: Launcher Visibility on Game Launch -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="LAUNCHER VISIBILITY ON GAME LAUNCH" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="Select which option the Launcher should take after the game has launched" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<StackPanel Orientation="Vertical" Spacing="8" Margin="0,5,0,0">
+														<RadioButton x:Name="LauncherVisibilityKeepOpenRadio" GroupName="LauncherVisibility" IsChecked="True"
+			 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Keep Open">
+															<RadioButton.Tag>
+																<Border Background="{DynamicResource PrimaryAccentBrush}"
+																		CornerRadius="4"
+																		Padding="6,2"
+																		Margin="5,0,0,0"
+																		VerticalAlignment="Center">
+																	<TextBlock Text="Recommended" FontWeight="Bold" FontSize="10"
+																			   Foreground="{DynamicResource AccentButtonForegroundBrush}"/>
+																</Border>
+															</RadioButton.Tag>
+														</RadioButton>
+
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="Launcher will remain open in background"/>
+														<RadioButton x:Name="LauncherVisibilityHideRadio" GroupName="LauncherVisibility"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Hide">
+														</RadioButton>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="Launcher will hide when the game instance spawns"/>
+													</StackPanel>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Launch Options -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="LAUNCH OPTIONS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Min. RAM Allocation" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Minimum memory allocated to Minecraft" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<TextBox x:Name="MinRamAllocationTextBox" Grid.Column="1" Text="1000" MinWidth="100" VerticalAlignment="Center"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Max. RAM Allocation" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Maximum memory allocated to Minecraft" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ComboBox x:Name="MaxRamAllocationComboBox" Grid.Column="1" SelectedIndex="2" MinWidth="120">
+														<ComboBoxItem Content="2 GB"/>
+														<ComboBoxItem Content="4 GB"/>
+														<ComboBoxItem Content="8 GB"/>
+														<ComboBoxItem Content="16 GB"/>
+													</ComboBox>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="JVM Arguments" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Custom Java Virtual Machine arguments" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<Button x:Name="JvmArgumentsEditButton" Grid.Column="1" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand">
+														<TextBlock Text="EDIT"/>
+													</Button>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<StackPanel Spacing="10">
+													<TextBlock Text="Custom Server Quick Join" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+													<Grid ColumnDefinitions="2*,*,Auto">
+														<TextBox x:Name="QuickJoinServerAddressTextBox" Grid.Column="0" Watermark="playserver.com" Margin="0,0,10,0"/>
+														<TextBox x:Name="QuickJoinServerPortTextBox" Grid.Column="1" Watermark="port" Foreground="{DynamicResource DisabledForegroundBrush}" Margin="0,0,10,0"/>
+														<Button Grid.Column="2" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand">
+															<TextBlock Text="SAVE"/>
+														</Button>
+													</Grid>
+												</StackPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Quick Launch" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<StackPanel Orientation="Horizontal" Spacing="5">
+															<TextBlock Text="EXPERIMENTAL" Foreground="#FF9800" FontSize="10" FontWeight="Bold"/>
+															<TextBlock Text="• Optional" Foreground="{DynamicResource DisabledForegroundBrush}" FontSize="10"/>
+														</StackPanel>
+													</StackPanel>
+													<ToggleSwitch x:Name="QuickLaunchEnabledToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<StackPanel Spacing="15">
+										<TextBlock Text="GAME RESOLUTION"
+												   Foreground="{DynamicResource PrimaryForegroundBrush}"
+												   FontWeight="Bold"
+												   FontSize="20"/>
+										<TextBlock Text="Set the resolution of the game instance"
+												   Foreground="{DynamicResource SecondaryForegroundBrush}"
+												   FontSize="14"/>
+										<Border Background="{DynamicResource CardBackgroundColor}"
+												CornerRadius="12"
+												Padding="20">
+											<StackPanel Spacing="20">
+
+												<!-- Compact W × H control (updated UI) -->
+												<Border Background="{DynamicResource HoverBackgroundBrush}"
+														CornerRadius="10"
+														Padding="12">
+													<StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Left">
+														<TextBlock Text="W"
+																   Foreground="{DynamicResource DisabledForegroundBrush}"
+																   FontSize="11"
+																   VerticalAlignment="Center"/>
+														<TextBox x:Name="GameResolutionWidthTextBox"
+																 Text="1280"
+																 Width="80"
+																 HorizontalContentAlignment="Center"
+																 BorderThickness="0"
+																 Margin="0"
+																 VerticalAlignment="Center"/>
+														<TextBlock Text="×"
+																   Foreground="{DynamicResource PrimaryForegroundBrush}"
+																   FontWeight="Bold"
+																   FontSize="14"
+																   VerticalAlignment="Center"/>
+														<TextBlock Text="H"
+																   Foreground="{DynamicResource DisabledForegroundBrush}"
+																   FontSize="11"
+																   VerticalAlignment="Center"/>
+														<TextBox x:Name="GameResolutionHeightTextBox"
+																 Text="720"
+																 Width="80"
+																 HorizontalContentAlignment="Center"
+																 BorderThickness="0"
+																 Margin="0"
+																 VerticalAlignment="Center"/>
+													</StackPanel>
+												</Border>
+
+												<!-- Actions -->
+												<StackPanel Orientation="Horizontal" Spacing="10">
+													<Button x:Name="SelectResolutionPresetButton"
+															Content="Select a Preset"
+															Background="{DynamicResource PrimaryAccentBrush}"
+															Foreground="{DynamicResource AccentButtonForegroundBrush}"
+															BorderThickness="0"
+															CornerRadius="8"
+															Padding="15,8"
+															FontWeight="Bold"
+															Cursor="Hand"/>
+													<Button x:Name="VisualiseResolutionButton"
+															Content="Visualise on Screen"
+															Background="{DynamicResource HoverBackgroundBrush}"
+															Foreground="{DynamicResource PrimaryForegroundBrush}"
+															BorderThickness="0"
+															CornerRadius="8"
+															Padding="15,8"
+															Cursor="Hand"/>
+												</StackPanel>
+
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+												<!-- Use Custom Resolution -->
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Use Custom Resolution"
+																   Foreground="{DynamicResource PrimaryForegroundBrush}"
+																   FontWeight="Bold"/>
+														<TextBlock Text="Enable to use the custom width and height above"
+																   Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="UseCustomGameResolutionToggle"
+																  Grid.Column="1"
+																  IsChecked="False"/>
+												</Grid>
+
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+												<!-- Lock Aspect Ratio -->
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Lock Aspect Ratio"
+																   Foreground="{DynamicResource PrimaryForegroundBrush}"
+																   FontWeight="Bold"/>
+														<TextBlock Text="Maintain the width/height ratio when resizing the game window"
+																   Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="LockGameAspectRatioToggle"
+																  Grid.Column="1"
+																  IsChecked="True"/>
+												</Grid>
+
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Game Options -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="GAME OPTIONS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<TextBlock Text="EXPERIMENTAL (SOME SETTINGS MAY NOT BE ACCURATE)" Foreground="#FF9800" FontSize="10" FontWeight="Bold"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<TextBlock Text="ACCESSIBILITY AND CONTROLS" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+												<Grid ColumnDefinitions="*,*">
+													<StackPanel Grid.Column="0" Spacing="10" Margin="0,0,10,0">
+														<StackPanel Spacing="5">
+															<TextBlock Text="Mouse Sensitivity" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<Slider x:Name="MouseSensitivitySlider" Value="0.5" Minimum="0" Maximum="1" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="MouseSensitivityValueText" Text="0.5" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Auto Jump" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="AutoJumpToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Toggle Sprint" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="ToggleSprintToggle" Grid.Column="1" IsChecked="True"/>
+														</Grid>
+													</StackPanel>
+													<StackPanel Grid.Column="1" Spacing="10" Margin="10,0,0,0">
+														<StackPanel Spacing="5">
+															<TextBlock Text="Scroll Sensitivity" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<Slider x:Name="ScrollSensitivitySlider" Value="1" Minimum="0" Maximum="2" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="ScrollSensitivityValueText" Text="1" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Touchscreen" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="TouchscreenToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Toggle Crouch" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="ToggleCrouchToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+													</StackPanel>
+												</Grid>
+												<Grid ColumnDefinitions="*,Auto">
+													<TextBlock Grid.Column="0" Text="Subtitles" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+													<ToggleSwitch x:Name="SubtitlesToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Rendering Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="RENDERING" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<TextBlock Text="VISUALS" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" FontWeight="Bold"/>
+												<Grid ColumnDefinitions="*,*">
+													<StackPanel Grid.Column="0" Spacing="15" Margin="0,0,10,0">
+														<StackPanel Spacing="5">
+															<TextBlock Text="Render Distance" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<Slider x:Name="RenderDistanceSlider" Value="32" Minimum="2" Maximum="64" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="RenderDistanceValueText" Text="32 chunks" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Spacing="5">
+															<TextBlock Text="Simulation Distance" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<Slider x:Name="SimulationDistanceSlider" Value="32" Minimum="5" Maximum="64" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="SimulationDistanceValueText" Text="32 chunks" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Spacing="5">
+															<TextBlock Text="Entity Distance" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<Slider x:Name="EntityDistanceSlider" Value="1" Minimum="0.5" Maximum="5" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="EntityDistanceValueText" Text="100%" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+													</StackPanel>
+													<StackPanel Grid.Column="1" Spacing="15" Margin="10,0,0,0">
+														<StackPanel Spacing="5">
+															<TextBlock Text="Max FPS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<TextBlock Text="Set to 0 for unlimited FPS" Foreground="{DynamicResource DisabledForegroundBrush}" FontSize="10" Margin="0, -5, 0, 0"/>
+															<Slider x:Name="MaxFpsSlider" Value="0" Minimum="0" Maximum="300" Width="200" HorizontalAlignment="Left"/>
+															<TextBlock x:Name="MaxFpsValueText" Text="Unlimited" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="VSync" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="VSyncToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Fullscreen" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="FullscreenToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+													</StackPanel>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,*">
+													<StackPanel Grid.Column="0" Spacing="10" Margin="0,0,10,0">
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="Entity Shadows" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="EntityShadowsToggle" Grid.Column="1" IsChecked="True"/>
+														</Grid>
+														<Grid ColumnDefinitions="*,Auto">
+															<TextBlock Grid.Column="0" Text="High Contrast" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+															<ToggleSwitch x:Name="HighContrastToggle" Grid.Column="1" IsChecked="False"/>
+														</Grid>
+													</StackPanel>
+													<StackPanel Grid.Column="1" Spacing="10" Margin="10,0,0,0">
+														<StackPanel Spacing="5">
+															<TextBlock Text="Render Clouds" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+															<ComboBox x:Name="RenderCloudsComboBox" SelectedIndex="1" MinWidth="150">
+																<ComboBoxItem Content="Off"/>
+																<ComboBoxItem Content="Fast"/>
+																<ComboBoxItem Content="Fancy"/>
+															</ComboBox>
+														</StackPanel>
+													</StackPanel>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Player Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="PLAYER SETTINGS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="15">
+												<WrapPanel Orientation="Horizontal" ItemWidth="180">
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Hat" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerHatToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Cape" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerCapeToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Jacket" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerJacketToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Left Sleeve" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerLeftSleeveToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Right Sleeve" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerRightSleeveToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Left Pant" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerLeftPantToggle" IsChecked="True"/>
+													</StackPanel>
+													<StackPanel Spacing="10" Margin="0,0,15,15">
+														<TextBlock Text="Right Pant" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+														<ToggleSwitch x:Name="PlayerRightPantToggle" IsChecked="True"/>
+													</StackPanel>
+												</WrapPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<StackPanel Spacing="10">
+													<TextBlock Text="Main Hand" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="13"/>
+													<ComboBox x:Name="PlayerMainHandComboBox" SelectedIndex="1" MinWidth="150">
+														<ComboBoxItem Content="Left"/>
+														<ComboBoxItem Content="Right"/>
+													</ComboBox>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- Appearance Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="APPEARANCE" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Theme" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Choose your preferred theme" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ComboBox x:Name="ThemeComboBox" Grid.Column="1" SelectedIndex="0" MinWidth="120">
+														<ComboBoxItem Content="Dark"/>
+														<ComboBoxItem Content="Light"/>
+														<ComboBoxItem Content="Auto"/>
+													</ComboBox>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Animations" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Enable interface animations" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="AnimationsEnabledToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- NEW: ISLAMIC PRAYER REMINDER Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="ISLAMIC PRAYER REMINDER" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Enable Prayer Time Reminder" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Receive notifications for daily Islamic prayers" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="EnablePrayerTimeReminderToggle" Grid.Column="1" IsChecked="False"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+												<StackPanel Spacing="10">
+													<TextBlock Text="Country" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<ComboBox x:Name="PrayerTimeCountryComboBox"
+															  ItemsSource="{Binding Countries}"
+															  SelectedItem="{Binding PrayerTimeCountry}"
+															  MinWidth="200"/>
+												</StackPanel>
+												<StackPanel Spacing="10">
+													<TextBlock Text="City" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBox x:Name="PrayerTimeCityTextBox" Watermark="e.g., New York" Text="{Binding PrayerTimeCity}" />
+												</StackPanel>
+
+												<StackPanel Spacing="10">
+													<TextBlock Text="Calculation Method" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<ComboBox x:Name="PrayerCalculationMethodComboBox" SelectedIndex="2" MinWidth="150">
+														<ComboBoxItem Content="Jafari"/>
+														<ComboBoxItem Content="Karachi"/>
+														<ComboBoxItem Content="ISNA"/>
+														<ComboBoxItem Content="MWL"/>
+														<ComboBoxItem Content="Makkah"/>
+														<ComboBoxItem Content="Egypt"/>
+														<ComboBoxItem Content="Tehran"/>
+														<ComboBoxItem Content="Dubai"/>
+														<ComboBoxItem Content="Kuwait"/>
+														<ComboBoxItem Content="Qatar"/>
+														<ComboBoxItem Content="Singapore"/>
+														<ComboBoxItem Content="Turkey"/>
+														<ComboBoxItem Content="Russia"/>
+													</ComboBox>
+												</StackPanel>
+
+												<StackPanel Spacing="10">
+													<TextBlock Text="Remind Me Before" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<Slider x:Name="PrayerReminderMinutesBeforeSlider" Value="10" Minimum="10" Maximum="60" SmallChange="5" LargeChange="10"/>
+													<TextBlock x:Name="PrayerReminderMinutesBeforeValueText" Text="10 minutes" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- NEW: Update and Notification Settings -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="NOTIFICATIONS &amp; UPDATES" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<!-- Game Update Delivery -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="GAME UPDATE DELIVERY" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="Select when you'd like to receive launcher updates" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<StackPanel Orientation="Vertical" Spacing="8" Margin="0,5,0,0">
+														<RadioButton x:Name="UpdateDeliveryNormalRadio" GroupName="UpdateDelivery" IsChecked="True"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Normal">
+															<RadioButton.Tag>
+																<Border Background="{DynamicResource PrimaryAccentBrush}"
+		CornerRadius="4"
+		Padding="6,2"
+		Margin="5,0,0,0"
+		VerticalAlignment="Center">
+																	<TextBlock Text="Recommended" FontWeight="Bold" FontSize="10"
+																			   Foreground="{DynamicResource AccentButtonForegroundBrush}"/>
+																</Border>
+
+															</RadioButton.Tag>
+														</RadioButton>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="You will receive updates with the masses!"/>
+														<RadioButton x:Name="UpdateDeliveryEarlyRadio" GroupName="UpdateDelivery"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Early (Opt-In)">
+														</RadioButton>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="You will receive updates earlier than usual, may come with the occasional bug!"/>
+														<RadioButton x:Name="UpdateDeliveryLateRadio" GroupName="UpdateDelivery"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Late (Opt-Out)">
+														</RadioButton>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="You will receive updates later than usual... slow and steady wins the race right?"/>
+													</StackPanel>
+												</StackPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- Closing Notifications -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="CLOSING NOTIFICATIONS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="Whether the Launcher will notify you that it is still in the background" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<StackPanel Orientation="Vertical" Spacing="8" Margin="0,5,0,0">
+														<RadioButton x:Name="ClosingNotificationsAlwaysRadio" GroupName="ClosingNotifications"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Always"/>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="Always notify when the launcher is still running after closing all windows"/>
+														<RadioButton x:Name="ClosingNotificationsJustOnceRadio" GroupName="ClosingNotifications" IsChecked="True"
+			 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Just once">
+															<RadioButton.Tag>
+																<Border Background="{DynamicResource PrimaryAccentBrush}"
+																		CornerRadius="4"
+																		Padding="6,2"
+																		Margin="5,0,0,0"
+																		VerticalAlignment="Center">
+																	<TextBlock Text="Recommended" FontWeight="Bold" FontSize="10"
+																			   Foreground="{DynamicResource AccentButtonForegroundBrush}"/>
+																</Border>
+															</RadioButton.Tag>
+														</RadioButton>
+
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="Notify once per session when the launcher is still running after closing all windows"/>
+														<RadioButton x:Name="ClosingNotificationsNeverRadio" GroupName="ClosingNotifications"
+																	 Foreground="{DynamicResource PrimaryForegroundBrush}" Content="Never"/>
+														<TextBlock Margin="25, -5, 0, 0" FontSize="11" Foreground="{DynamicResource SecondaryForegroundBrush}"
+																   Text="Don't notify when the launcher continues running after closing all windows"/>
+													</StackPanel>
+												</StackPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- Update Notifications -->
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="Update Notifications" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Whether to send a notification when a new version of the Launcher is available for install" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="EnableUpdateNotificationsToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- New Content Notification -->
+												<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Spacing="5">
+														<TextBlock Text="New Content Notification" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
+														<TextBlock Text="Whether to show an indicator for new content/updates on blogs, cosmetics, version, etc." Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													</StackPanel>
+													<ToggleSwitch x:Name="EnableNewContentIndicatorsToggle" Grid.Column="1" IsChecked="True"/>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- NEW: Directory Overview and Maintenance -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="STORAGE &amp; MAINTENANCE" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="20">
+												<!-- Directory Overview -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="Directory Overview" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="View how much disk space each major directory is consuming" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<!-- Corrected: Wrap Grid in Border for CornerRadius -->
+													<Border Background="{DynamicResource HoverBackgroundBrush}" CornerRadius="4" Margin="0,10,0,0">
+														<Grid ColumnDefinitions="*,*,*,*,Auto" Height="20">
+															<Border x:Name="LogsUsageBar" Grid.Column="0" Background="#FF42A5F5" HorizontalAlignment="Left" Width="0"/>
+															<Border x:Name="ProfilesUsageBar" Grid.Column="1" Background="#FF9C27B0" HorizontalAlignment="Left" Width="0"/>
+															<Border x:Name="AssetsUsageBar" Grid.Column="2" Background="#FF4CAF50" HorizontalAlignment="Left" Width="0"/>
+															<Border x:Name="CacheUsageBar" Grid.Column="3" Background="#FFF44336" HorizontalAlignment="Left" Width="0"/>
+															<Border x:Name="OtherUsageBar" Grid.Column="4" Background="#FFFFCA28" HorizontalAlignment="Left" Width="0"/>
+														</Grid>
+													</Border>
+													<!-- Corrected: Changed StackPanel to WrapPanel for FlexWrap functionality -->
+													<WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,10,0">
+															<Rectangle Width="10" Height="10" Fill="#FF42A5F5" Margin="0,1,0,0"/>
+															<TextBlock x:Name="LogsUsageText" Text="Logs - 0 KB" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,10,0">
+															<Rectangle Width="10" Height="10" Fill="#FF9C27B0" Margin="0,1,0,0"/>
+															<TextBlock x:Name="ProfilesUsageText" Text="Profiles - 0 KB" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,10,0">
+															<Rectangle Width="10" Height="10" Fill="#FF4CAF50" Margin="0,1,0,0"/>
+															<TextBlock x:Name="AssetsUsageText" Text="Assets - 0 KB" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,10,0">
+															<Rectangle Width="10" Height="10" Fill="#FFF44336" Margin="0,1,0,0"/>
+															<TextBlock x:Name="CacheUsageText" Text="Cache - 0 KB" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,10,0">
+															<Rectangle Width="10" Height="10" Fill="#FFFFCA28" Margin="0,1,0,0"/>
+															<TextBlock x:Name="OtherUsageText" Text="Other - 0 KB" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+														<StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="10,0,0,0">
+															<TextBlock Text="Total - " Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+															<TextBlock x:Name="TotalUsageText" Text="0 KB" FontWeight="Bold" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="11"/>
+														</StackPanel>
+													</WrapPanel>
+												</StackPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- Logs Actions -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="Logs" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="Browse or clean up your log files" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<StackPanel Orientation="Horizontal" Spacing="10" Margin="0,5,0,0">
+														<Button Content="Open Logs" Click="OpenLauncherLogsFolder"
+																Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource PrimaryForegroundBrush}"
+																BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand"/>
+														<Button x:Name="ClearLogsButton" Content="Clear Logs"
+																Background="{DynamicResource ErrorBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}"
+																BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand"/>
+													</StackPanel>
+												</StackPanel>
+												<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+												<!-- Clear Cache -->
+												<StackPanel Spacing="10">
+													<TextBlock Text="Clear Cache" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="16"/>
+													<TextBlock Text="Clean up launcher cache files (will temporarily increase launch time)" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+													<Button x:Name="ClearCacheButton" Content="Clear Cache"
+															Background="{DynamicResource ErrorBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}"
+															BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand" Margin="0,5,0,0"/>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+									<!-- NEW: Feedback Section -->
+									<StackPanel x:Name="SettingsFeedbackSection" Spacing="15">
+										<TextBlock Text="FEEDBACK" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<TextBlock Text="Help us improve Leaf Client by sending your thoughts" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="14"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="15">
+												<Button x:Name="SuggestFeatureButton"
+                                                        Content="Suggest a Feature"
+                                                        Background="{DynamicResource PrimaryAccentBrush}"
+                                                        Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                                                        BorderThickness="0"
+                                                        CornerRadius="8"
+                                                        Padding="15,10"
+                                                        FontWeight="Bold"
+                                                        Cursor="Hand"
+                                                        HorizontalAlignment="Stretch"
+                                                        Click="OpenFeedbackOverlay"
+                                                        Tag="Feature"/>
+												<Button x:Name="ReportBugButton"
+                                                        Content="Report a Bug"
+                                                        Background="{DynamicResource ErrorBrush}"
+                                                        Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                                                        BorderThickness="0"
+                                                        CornerRadius="8"
+                                                        Padding="15,10"
+                                                        FontWeight="Bold"
+                                                        Cursor="Hand"
+                                                        HorizontalAlignment="Stretch"
+                                                        Click="OpenFeedbackOverlay"
+                                                        Tag="Bug"/>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+
+
+
+									<!-- About Section (remains the same) -->
+									<StackPanel Spacing="15">
+										<TextBlock Text="ABOUT" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
+										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
+											<StackPanel Spacing="15" HorizontalAlignment="Center">
+												<Image Source="/Assets/logo_icon.png" Width="64" Height="64"/>
+												<TextBlock Text="Leaf Client" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center"/>
+												<TextBlock x:Name="AppVersionTextBlock" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" HorizontalAlignment="Center"/>
+												<Grid HorizontalAlignment="Center" Margin="0,10,0,0">
+													<Grid.ColumnDefinitions>
+														<ColumnDefinition Width="Auto"/>
+														<ColumnDefinition Width="10"/>
+														<!-- Spacing between buttons -->
+														<ColumnDefinition Width="Auto"/>
+														<ColumnDefinition Width="10"/>
+														<!-- Spacing between buttons -->
+														<ColumnDefinition Width="Auto"/>
+													</Grid.ColumnDefinitions>
+
+													<Button Grid.Column="0" Background="{DynamicResource PrimaryAccentBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand" Click="OpenWebsite">
+														<TextBlock Text="WEBSITE"/>
+													</Button>
+													<Button Grid.Column="2" Background="{DynamicResource DiscordButtonBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand" Click="OpenDiscord">
+														<TextBlock Text="DISCORD"/>
+													</Button>
+													<Button Grid.Column="4" Background="#E1306C" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="15,8" FontWeight="Bold" Cursor="Hand" Click="OpenInstagram">
+														<TextBlock Text="INSTAGRAM"/>
+													</Button>
+												</Grid>
+											</StackPanel>
+										</Border>
+									</StackPanel>
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+						<!-- NEW: Dynamic Save Settings Banner (slides up from outside window) -->
+						<Border x:Name="SettingsSaveBanner"
+								HorizontalAlignment="Stretch"
+								VerticalAlignment="Bottom"
+								Margin="20"
+								CornerRadius="12"
+								Padding="12"
+								Background="{DynamicResource PrimaryAccentBrush}"
+								IsVisible="False"
+								Opacity="0"
+								ZIndex="1000"
+								ClipToBounds="False">
+							<Border.RenderTransform>
+								<TranslateTransform Y="80"/>
+							</Border.RenderTransform>
+							<Border.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Opacity" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+									<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+								</Transitions>
+							</Border.Transitions>
+							<Grid ColumnDefinitions="*,Auto">
+								<StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+									<TextBlock Text="💾" FontSize="16" VerticalAlignment="Center"/>
+									<TextBlock Text="Save your changes"
+											   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+											   FontWeight="Bold"
+											   VerticalAlignment="Center"/>
+								</StackPanel>
+								<Button x:Name="SettingsSaveBannerSaveButton"
+										Grid.Column="1"
+										Background="{DynamicResource SuccessBrush}"
+										Foreground="{DynamicResource AccentButtonForegroundBrush}"
+										BorderThickness="0"
+										CornerRadius="8"
+										Padding="20,10"
+										FontWeight="Bold"
+										Cursor="Hand">
+									<TextBlock Text="SAVE"/>
+								</Button>
+							</Grid>
+						</Border>
+					</Grid>
+					<!-- Skins Page -->
+					<Grid x:Name="SkinsPage" IsVisible="False">
+						<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="18" Padding="30">
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<StackPanel Spacing="25">
+									<Grid ColumnDefinitions="*,Auto">
+										<TextBlock Grid.Column="0" Text="SKINS" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="24"/>
+										<Button Grid.Column="1" Background="{DynamicResource SuccessBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="20,10" FontWeight="Bold" Cursor="Hand" Click="CreateNewSkin">
+											<StackPanel Orientation="Horizontal" Spacing="8">
+												<TextBlock Text="+" FontSize="16"/>
+												<TextBlock Text="CREATE SKIN"/>
+											</StackPanel>
+										</Button>
+									</Grid>
+									<TextBlock Text="Manage your Minecraft skins" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="14"/>
+									<!-- Add this inside your SkinsPage Grid, before other elements -->
+									<Border x:Name="SkinStatusBanner"
+		Background="#228B22"
+		CornerRadius="6"
+		Padding="12,8"
+		Margin="0,10,0,10"
+		IsVisible="False"
+		VerticalAlignment="Top"
+		ZIndex="100">
+										<Grid>
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="Auto"/>
+											</Grid.ColumnDefinitions>
+
+											<TextBlock x:Name="SkinStatusBannerText"
+													   Grid.Column="0"
+													   Text="Skin status message"
+													   Foreground="White"
+													   FontSize="12"
+													   FontWeight="Medium"
+													   VerticalAlignment="Center"
+													   TextWrapping="Wrap"/>
+
+											<Button x:Name="SkinStatusBannerButton"
+													Grid.Column="1"
+													Content="✕"
+													Background="Transparent"
+													Foreground="White"
+													FontSize="14"
+													Width="20"
+													Height="20"
+													Padding="0"
+													Margin="10,0,0,0"
+													VerticalAlignment="Center"
+													HorizontalContentAlignment="Center"
+													VerticalContentAlignment="Center"
+													Cursor="Hand"/>
+										</Grid>
+									</Border>
+									<!-- Skins Grid -->
+									<WrapPanel x:Name="SkinsWrapPanel" Orientation="Horizontal"/>
+
+									<!-- Empty State -->
+									<Border x:Name="NoSkinsMessage" Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="40" IsVisible="True">
+										<StackPanel Spacing="15" HorizontalAlignment="Center">
+											<TextBlock Text="🎨" FontSize="48" HorizontalAlignment="Center" Opacity="0.5"/>
+											<TextBlock Text="No skins yet" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center"/>
+											<TextBlock Text="Create your first custom skin to get started" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="14" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+										</StackPanel>
+									</Border>
+								</StackPanel>
+							</ScrollViewer>
+						</Border>
+					</Grid>
+				</Grid>
+
+				<!-- Right Sidebar -->
+				<Grid Grid.Column="1" Margin="0,20,20,20">
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+						<RowDefinition Height="Auto"/>
+					</Grid.RowDefinitions>
+					<Border Grid.Row="0" Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" BorderBrush="{DynamicResource PrimaryBorderBrush}" BorderThickness="1" Padding="20">
+						<StackPanel Spacing="15">
+							<Grid>
+								<TextBlock Text="FRIENDS (Coming soon)" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="16"/>
+								<Button Classes="IconButton" HorizontalAlignment="Right" Content="View Friends List" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11"/>
+							</Grid>
+							<StackPanel x:Name="FriendsLoadingPanel" Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="True">
+								<ProgressBar IsIndeterminate="True" Width="100" Height="10" Margin="0,0,0,10"/>
+								<TextBlock Text="Loading friends..." Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="14" HorizontalAlignment="Center"/>
+							</StackPanel>
+							<TextBlock x:Name="NoFriendsMessage" Text="You don't have any friends at the moment" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" HorizontalAlignment="Center" IsVisible="False"/>
+						</StackPanel>
+					</Border>
+					<Border x:Name="AdSection" Grid.Row="2" Background="{DynamicResource SecondaryBackgroundBrush}" CornerRadius="12" Cursor="Hand" IsVisible="False">
+						<Grid>
+							<Grid.RowDefinitions>
+								<RowDefinition Height="250"/>
+								<RowDefinition Height="Auto"/>
+							</Grid.RowDefinitions>
+							<Border Grid.Row="0" Background="{DynamicResource CardBackgroundColor}" CornerRadius="12,12,0,0">
+								<TextBlock Text="📸" FontSize="80" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.3" Foreground="{DynamicResource DisabledForegroundBrush}"/>
+							</Border>
+							<Border Grid.Row="1" Padding="20">
+								<StackPanel Spacing="12">
+									<TextBlock Text="Coming soon" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Border>
+						</Grid>
+					</Border>
+				</Grid>
+			</Grid>
+
+			<!-- Footer Bar -->
+			<Border Grid.Row="3" Background="{DynamicResource TertiaryBackgroundBrush}" BorderBrush="{DynamicResource PrimaryBorderBrush}" BorderThickness="0,1,0,0">
+				<Grid ColumnDefinitions="Auto,*,Auto">
+					<TextBlock Grid.Column="0" Text="{Binding AppVersionText}" Foreground="{DynamicResource DisabledForegroundBrush}" VerticalAlignment="Center" Margin="20,0"/>
+					<StackPanel x:Name="SubscriptionSection" Grid.Column="2" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center" Margin="0,0,20,0" IsVisible="False">
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<TextBlock Text="💜" FontSize="16" VerticalAlignment="Center"/>
+							<TextBlock Text="Coming soon" Foreground="{DynamicResource PrimaryForegroundBrush}" VerticalAlignment="Center" FontSize="13"/>
+						</StackPanel>
+						<Button Background="{DynamicResource SuccessBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="8" Padding="25,10" FontWeight="Bold" Cursor="Hand">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Text="✓" FontSize="16"/>
+								<TextBlock Text="Subscribe"/>
+							</StackPanel>
+						</Button>
+					</StackPanel>
+					<!-- NEW: Planned Updates Button (Bottom Right) -->
+					<StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,20,0">
+						<Button x:Name="PlannedUpdatesButton"
+								Width="48" Height="48"
+								CornerRadius="24"
+								Background="{DynamicResource HoverBackgroundBrush}"
+								Cursor="Hand"
+								PointerEntered="OpenPlannedUpdates"
+								PointerExited="ClosePlannedUpdates"
+								ToolTip.Tip="{x:Null}">
+							<Image Source="/Assets/icon-planned-updates.png"
+								   Width="24" Height="24"
+								   HorizontalAlignment="Center"
+								   VerticalAlignment="Center"
+								   Stretch="Uniform"/>
+						</Button>
+					</StackPanel>
+				</Grid>
+			</Border>
+		</Grid>
+
+		<!-- Account Panel Overlay -->
+		<Grid x:Name="AccountPanelOverlay" Grid.RowSpan="4" IsVisible="False" PointerPressed="CloseAccountPanel">
+			<Border Background="{DynamicResource OverlayBrush}"/>
+			<Border x:Name="AccountPanel" Width="320" Background="{DynamicResource CardBackgroundColor}" HorizontalAlignment="Right" VerticalAlignment="Stretch">
+				<Border.RenderTransform>
+					<TranslateTransform X="320">
+						<TranslateTransform.Transitions>
+							<Transitions>
+								<DoubleTransition Property="X" Duration="0:0:0.3" Easing="CubicEaseOut"/>
+							</Transitions>
+						</TranslateTransform.Transitions>
+					</TranslateTransform>
+				</Border.RenderTransform>
+
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+					</Grid.RowDefinitions>
+
+					<Border Grid.Row="0" Background="{DynamicResource TertiaryBackgroundBrush}" Padding="20" BorderBrush="{DynamicResource SecondaryBorderBrush}" BorderThickness="0,0,0,1">
+						<Grid>
+							<Button Classes="IconButton" HorizontalAlignment="Left" VerticalAlignment="Center" Click="CloseAccountPanel">
+								<TextBlock Text="←" Foreground="{DynamicResource PrimaryForegroundBrush}" FontSize="24" FontWeight="Bold"/>
+							</Button>
+							<TextBlock Text="YOUR ACCOUNT" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+						</Grid>
+					</Border>
+
+					<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+						<StackPanel Spacing="25" Margin="30,40,30,30" HorizontalAlignment="Center">
+							<Border Width="200" Height="280" Background="{DynamicResource HoverBackgroundBrush}" CornerRadius="12">
+								<Grid>
+									<!-- Blurred background image fills the entire Border -->
+									<Image Source="/Assets/bg2.png"
+                                           Stretch="UniformToFill"
+                                           VerticalAlignment="Stretch"
+                                           HorizontalAlignment="Stretch"
+                                           Opacity="0.6">
+										<Image.Effect>
+											<BlurEffect Radius="8"/>
+										</Image.Effect>
+									</Image>
+									<!-- Content (AccountCharacterImage) is now wrapped in a Border that applies padding -->
+									<Border Padding="20">
+										<Image x:Name="AccountCharacterImage"
+                                               Source=""
+                                               Stretch="Uniform"
+                                               VerticalAlignment="Center" />
+									</Border>
+								</Grid>
+							</Border>
+
+
+							<TextBlock Text="THIS MAY NOT BE ACCURATE" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="10" HorizontalAlignment="Center" Margin="0,-15,0,0"/>
+
+							<StackPanel HorizontalAlignment="Center" Spacing="25">
+								<!-- NEW StackPanel for centering -->
+								<!-- SKINS button -->
+								<Button Background="{DynamicResource SuccessBrush}"
+										Foreground="{DynamicResource AccentButtonForegroundBrush}"
+										BorderThickness="0"
+										CornerRadius="25"
+										Padding="40,12"
+										FontWeight="Bold"
+										FontSize="16"
+										Cursor="Hand"
+										Click="OpenSkinsPage">
+									<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+										<TextBlock Text="🎨" FontSize="18"/>
+										<TextBlock Text="SKINS"/>
+									</StackPanel>
+								</Button>
+
+								<!-- Removed "RESET SKIN" button as requested -->
+
+								<StackPanel Spacing="8">
+									<TextBlock Text="USERNAME" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center"/>
+									<TextBlock x:Name="AccountUsernameDisplay"
+												Text="ZIADKY"
+												Foreground="{DynamicResource PrimaryForegroundBrush}"
+												FontWeight="Bold"
+												FontSize="20"
+												HorizontalAlignment="Center"/>
+									<Button x:Name="ChangeNameButton" Classes="IconButton" HorizontalAlignment="Center" Click="OnChangeNameClick">
+										<TextBlock Text="CHANGE NAME" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="11" TextDecorations="Underline"/>
+									</Button>
+								</StackPanel>
+							</StackPanel>
+
+							<StackPanel Spacing="8" Margin="0,10,0,0">
+								<TextBlock Text="YOUR UUID" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center"/>
+								<!-- Wrap the TextBlock in a Panel for hover detection -->
+								<Panel Classes="BlurredContainer" HorizontalAlignment="Center">
+									<TextBlock x:Name="AccountUuidDisplay"
+											   Classes="BlurredOnHover"
+											   Text="a8e90da708194f9bf8ec3fe04386d6d0c"
+											   Foreground="{DynamicResource PrimaryForegroundBrush}"
+											   FontSize="11"
+											   HorizontalAlignment="Center"
+											   TextWrapping="Wrap"
+											   TextAlignment="Center"/>
+								</Panel>
+							</StackPanel>
+
+							<Button Background="{DynamicResource ErrorBrush}" Foreground="{DynamicResource AccentButtonForegroundBrush}" BorderThickness="0" CornerRadius="25" Padding="40,12" FontWeight="Bold" FontSize="16" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,20,0,0"
+									Click="LogoutButton_Click">
+								<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+									<TextBlock Text="🚪" FontSize="18"/>
+									<TextBlock Text="LOGOUT"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</ScrollViewer>
+				</Grid>
+			</Border>
+		</Grid>
+
+		<!-- Global tooltip layer (on top of everything) -->
+		<Canvas x:Name="GlobalTooltipLayer"
+				IsHitTestVisible="False"
+				Panel.ZIndex="9999">
+			<!-- Sidebar Tooltip -->
+			<Border x:Name="SidebarHoverTooltip"
+					MinWidth="80" Height="26"
+					Background="{DynamicResource HoverBackgroundBrush}"
+					CornerRadius="13"
+					Opacity="0"
+					IsVisible="False">
+				<Border.Transitions>
+					<Transitions>
+						<DoubleTransition Property="Opacity" Duration="0:0:0.18" Easing="CubicEaseOut"/>
+						<DoubleTransition Property="(Canvas.Top)" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+						<DoubleTransition Property="(Canvas.Left)" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+					</Transitions>
+				</Border.Transitions>
+				<TextBlock x:Name="SidebarHoverTooltipText"
+						   Text="LAUNCH"
+						   Foreground="{DynamicResource PrimaryForegroundBrush}"
+						   FontSize="11"
+						   FontWeight="Bold"
+						   Margin="10,0"
+						   HorizontalAlignment="Center"
+						   VerticalAlignment="Center"/>
+			</Border>
+
+			<!-- Quick Play Server Tooltip -->
+			<Border x:Name="QuickPlayTooltip"
+					MinWidth="80" Height="26"
+					Background="{DynamicResource HoverBackgroundBrush}"
+					CornerRadius="13"
+					Opacity="0"
+					IsVisible="False">
+				<Border.Transitions>
+					<Transitions>
+						<DoubleTransition Property="Opacity" Duration="0:0:0.18" Easing="CubicEaseOut"/>
+						<DoubleTransition Property="(Canvas.Top)" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+						<DoubleTransition Property="(Canvas.Left)" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+					</Transitions>
+				</Border.Transitions>
+				<TextBlock x:Name="QuickPlayTooltipText"
+						   Text="2B2T"
+						   Foreground="{DynamicResource PrimaryForegroundBrush}"
+						   FontSize="11"
+						   FontWeight="Bold"
+						   Margin="10,0"
+						   HorizontalAlignment="Center"
+						   VerticalAlignment="Center"/>
+			</Border>
+		</Canvas>
+		<!-- Resolution Preset Pop-up Overlay -->
+		<Grid x:Name="ResolutionPresetOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseResolutionPreset" />
+			<Border x:Name="ResolutionPresetPanel"
+					Width="560"
+					MaxHeight="600"
+					Background="{DynamicResource CardBackgroundColor}"
+					CornerRadius="18"
+					Padding="24"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Top"
+					Margin="0,60,0,0"
+					BoxShadow="0 10 40 5 #40000000">
+				<Border.RenderTransform>
+					<TranslateTransform Y="-700"/>
+				</Border.RenderTransform>
+				<StackPanel Spacing="18">
+					<!-- Header -->
+					<Grid ColumnDefinitions="*,Auto">
+						<TextBlock Text="Select a Preset"
+								   Foreground="{DynamicResource PrimaryForegroundBrush}"
+								   FontWeight="ExtraBold"
+								   FontSize="22"/>
+						<Button x:Name="ResolutionPresetCloseButton"
+								Grid.Column="1"
+								Width="32" Height="32"
+								CornerRadius="8"
+								Background="{DynamicResource HoverBackgroundBrush}"
+								Click="CloseResolutionPreset">
+							<TextBlock Text="✕"
+									   Foreground="{DynamicResource PrimaryForegroundBrush}"
+									   FontSize="14"
+									   HorizontalAlignment="Center"
+									   VerticalAlignment="Center"/>
+						</Button>
+					</Grid>
+
+					<!-- 16:9 -->
+					<StackPanel Spacing="10">
+						<TextBlock Text="16:9 aspect ratio"
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="12"/>
+						<WrapPanel ItemWidth="240" ItemHeight="40" Orientation="Horizontal">
+							<Button Tag="1920x1080" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}"
+									Foreground="{DynamicResource PrimaryForegroundBrush}"
+									BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="✨ 1920×1080" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1600x900" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1600×900" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1366x768" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1366×768" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1280x720" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1280×720" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1024x576" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1024×576" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="960x540" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="960×540" FontWeight="Bold"/>
+							</Button>
+						</WrapPanel>
+					</StackPanel>
+
+					<!-- 4:3 -->
+					<StackPanel Spacing="10">
+						<TextBlock Text="4:3 aspect ratio"
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="12"/>
+						<WrapPanel ItemWidth="240" ItemHeight="40" Orientation="Horizontal">
+							<Button Tag="1600x1200" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="✨ 1600×1200" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1280x960" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1280×960" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1152x864" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1152×864" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="1024x768" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="1024×768" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="800x600" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="800×600" FontWeight="Bold"/>
+							</Button>
+							<Button Tag="640x480" Click="OnPresetClicked"
+									Background="{DynamicResource HoverBackgroundBrush}" BorderThickness="0" CornerRadius="10">
+								<TextBlock Text="640×480" FontWeight="Bold"/>
+							</Button>
+						</WrapPanel>
+					</StackPanel>
+				</StackPanel>
+			</Border>
+		</Grid>
+
+		<!-- Resolution Visualizer Overlay (updated to show actual box at screen DPI) -->
+		<Grid x:Name="ResolutionVisualOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseResolutionVisualOverlay"/>
+			<Border x:Name="ResolutionVisualPanel"
+					Background="{DynamicResource CardBackgroundColor}"
+					CornerRadius="18"
+					Padding="24"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Top"
+					Margin="0,60,0,0"
+					BoxShadow="0 10 40 5 #40000000">
+				<Border.RenderTransform>
+					<TranslateTransform Y="-700"/>
+				</Border.RenderTransform>
+
+				<Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+					<!-- Header -->
+					<Grid ColumnDefinitions="*,Auto">
+						<TextBlock Text="Resolution Preview"
+								   Foreground="{DynamicResource PrimaryForegroundBrush}"
+								   FontWeight="ExtraBold"
+								   FontSize="18"/>
+						<Button Grid.Column="1"
+								Background="{DynamicResource PrimaryAccentBrush}"
+								Foreground="{DynamicResource AccentButtonForegroundBrush}"
+								BorderThickness="0"
+								CornerRadius="8"
+								Padding="18,8"
+								FontWeight="Bold"
+								Cursor="Hand"
+								Click="CloseResolutionVisualOverlay">
+							<TextBlock Text="Close"/>
+						</Button>
+					</Grid>
+
+					<!-- Preview area: centers the box -->
+					<Grid Grid.Row="1">
+						<Border x:Name="ResolutionBox"
+								HorizontalAlignment="Center"
+								VerticalAlignment="Center"
+								Background="#202020"
+								BorderBrush="{DynamicResource PrimaryAccentBrush}"
+								BorderThickness="2"
+								CornerRadius="12"
+								Opacity="0.85">
+							<!-- Size label inside the box -->
+							<TextBlock x:Name="ResolutionVisualText"
+									   Text="854×480"
+									   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+									   FontWeight="ExtraBold"
+									   FontSize="18"
+									   HorizontalAlignment="Center"
+									   VerticalAlignment="Center"/>
+						</Border>
+					</Grid>
+
+					<!-- Scale note -->
+					<TextBlock Grid.Row="2"
+							   x:Name="ResolutionScaleNote"
+							   Text="1.00× scale (true size)"
+							   Foreground="{DynamicResource SecondaryForegroundBrush}"
+							   FontSize="12"
+							   HorizontalAlignment="Center"/>
+				</Grid>
+			</Border>
+		</Grid>
+		<!-- About Leaf Client Pop-up Overlay -->
+		<Grid x:Name="AboutLeafClientOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseAboutLeafClient" />
+
+			<Border x:Name="AboutLeafClientPanel"
+					Width="700"
+					MaxHeight="600"
+					Background="{DynamicResource CardBackgroundColor}"
+					CornerRadius="18"
+					Padding="0"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Top"
+					Margin="0,60,0,0"
+					BoxShadow="0 10 40 5 #40000000"
+					x:DataType="viewmodels:MainWindowViewModel">
+				<!-- ADD THIS LINE -->
+
+				<Border.RenderTransform>
+					<TranslateTransform Y="-700" />
+				</Border.RenderTransform>
+
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="0">
+						<!-- Banner Image -->
+						<Border Height="120" CornerRadius="18,18,0,0" ClipToBounds="True">
+							<Image Source="/Assets/LeafClientBanner.jpg"
+								   Stretch="UniformToFill"
+								   HorizontalAlignment="Center"
+								   VerticalAlignment="Center"/>
+							<!-- Removed Margin="20" -->
+						</Border>
+
+
+						<!-- Content -->
+						<StackPanel Spacing="20" Margin="40,30,40,40">
+							<!-- Header -->
+							<TextBlock Text="About Leaf Client"
+									   Foreground="{DynamicResource PrimaryForegroundBrush}"
+									   FontWeight="ExtraBold"
+									   FontSize="28"
+									   HorizontalAlignment="Center"/>
+
+							<!-- Description -->
+							<TextBlock TextWrapping="Wrap"
+									   Foreground="{DynamicResource PrimaryForegroundBrush}"
+									   FontSize="14"
+									   LineHeight="22"
+									   TextAlignment="Center">
+								Leaf Client is a powerful, modern Minecraft launcher and client designed to enhance your gameplay experience.
+								Built with performance and customization in mind, Leaf Client offers seamless version management,
+								mod support, and exclusive in-game features.
+							</TextBlock>
+
+							<Separator Background="{DynamicResource SecondaryBorderBrush}" Margin="0,10"/>
+
+							<!-- Capabilities Section -->
+							<StackPanel Spacing="15">
+								<TextBlock Text="✨ Key Features"
+										   Foreground="{DynamicResource PrimaryForegroundBrush}"
+										   FontWeight="Bold"
+										   FontSize="18"/>
+
+								<StackPanel Spacing="12">
+									<TextBlock TextWrapping="Wrap" Foreground="{DynamicResource PrimaryForegroundBrush}">
+										<Run FontWeight="Bold">🚀 Advanced Launcher:</Run> Fast version switching, Fabric support, and OptiFine integration
+									</TextBlock>
+									<TextBlock TextWrapping="Wrap" Foreground="{DynamicResource PrimaryForegroundBrush}">
+										<Run FontWeight="Bold">🎮 In-Game Client Mods:</Run> Performance enhancements, HUD customization, and quality-of-life improvements
+									</TextBlock>
+									<TextBlock TextWrapping="Wrap" Foreground="{DynamicResource PrimaryForegroundBrush}">
+										<Run FontWeight="Bold">⚡ Quick Play:</Run> Join your favorite servers instantly with one click
+									</TextBlock>
+									<TextBlock TextWrapping="Wrap" Foreground="{DynamicResource PrimaryForegroundBrush}">
+										<Run FontWeight="Bold">🎨 Custom Skins:</Run> Manage and apply skins directly from the launcher
+									</TextBlock>
+									<TextBlock TextWrapping="Wrap" Foreground="{DynamicResource PrimaryForegroundBrush}">
+										<Run FontWeight="Bold">🔧 Extensive Settings:</Run> Fine-tune every aspect of your Minecraft experience
+									</TextBlock>
+								</StackPanel>
+							</StackPanel>
+
+							<Separator Background="{DynamicResource SecondaryBorderBrush}" Margin="0,10"/>
+
+							<!-- In-Game Mods List -->
+							<StackPanel Spacing="15">
+								<TextBlock Text="📦 Included Client Mods"
+										   Foreground="{DynamicResource PrimaryForegroundBrush}"
+										   FontWeight="Bold"
+										   FontSize="18"/>
+
+								<WrapPanel>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="ArmorHUD" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="ChatMacros" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Coordinates" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="CPS Counter" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Crosshair" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="FPS Display" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Freelook" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="FullBright" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="HUD Themes" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Item Counter" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Keystrokes" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Minimap" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Performance" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Ping Display" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Replay Mod" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Server Info" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Toggle Sprint" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Waypoints" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+									<Border Background="{DynamicResource HoverBackgroundBrush}"
+											CornerRadius="6"
+											Padding="8,4"
+											Margin="0,0,8,8">
+										<TextBlock Text="Zoom" FontSize="12" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+									</Border>
+								</WrapPanel>
+							</StackPanel>
+
+							<Separator Background="{DynamicResource SecondaryBorderBrush}" Margin="0,10"/>
+
+							<!-- Developer Section -->
+							<StackPanel Spacing="10">
+								<TextBlock Text="💻 Developer"
+										   Foreground="{DynamicResource PrimaryForegroundBrush}"
+										   FontWeight="Bold"
+										   FontSize="18"/>
+
+								<Button Background="Transparent"
+										BorderThickness="0"
+										Padding="0"
+										Cursor="Hand"
+										HorizontalAlignment="Left"
+										Click="OpenDeveloperGitHub">
+									<StackPanel Orientation="Horizontal" Spacing="10">
+										<TextBlock Text="voidZiAD"
+												   Foreground="{DynamicResource PrimaryAccentBrush}"
+												   FontSize="16"
+												   TextDecorations="Underline"/>
+										<TextBlock Text="↗"
+												   Foreground="{DynamicResource PrimaryAccentBrush}"
+												   FontSize="14"/>
+									</StackPanel>
+								</Button>
+							</StackPanel>
+
+							<!-- Last Updated -->
+							<TextBlock Text="{Binding LastUpdatedText}"
+									   Foreground="{DynamicResource SecondaryForegroundBrush}"
+									   FontSize="11"
+									   HorizontalAlignment="Center"
+									   Margin="0,20,0,0"/>
+						</StackPanel>
+					</StackPanel>
+				</ScrollViewer>
+			</Border>
+		</Grid>
+		<!-- Common Questions Pop-up Overlay -->
+		<Grid x:Name="CommonQuestionsOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseCommonQuestions" />
+
+			<Border x:Name="CommonQuestionsPanel"
+                    Width="700"
+                    MaxHeight="600"
+                    Background="{DynamicResource CardBackgroundColor}"
+                    CornerRadius="18"
+                    Padding="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,60,0,0"
+                    BoxShadow="0 10 40 5 #40000000"
+                    x:DataType="viewmodels:MainWindowViewModel">
+				<!-- ADD THIS LINE -->
+
+				<Border.RenderTransform>
+					<TranslateTransform Y="-700" />
+				</Border.RenderTransform>
+
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="0">
+						<!-- Banner Image (reusing logo_text.png) -->
+						<Border Height="120" CornerRadius="18,18,0,0" ClipToBounds="True">
+							<Image Source="/Assets/logo_text.png"
+                                   Stretch="Uniform"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+						</Border>
+
+						<!-- Content -->
+						<StackPanel Spacing="25" Margin="40,30,40,40">
+							<!-- Header -->
+							<TextBlock Text="Common Questions"
+                                       Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                       FontWeight="ExtraBold"
+                                       FontSize="28"
+                                       HorizontalAlignment="Center"/>
+
+							<!-- FAQ List -->
+							<StackPanel Spacing="20">
+								<!-- FAQ Item 1 -->
+								<StackPanel Spacing="5">
+									<TextBlock Text="Q: Is Leaf Client free?"
+                                               Foreground="{DynamicResource PrimaryAccentBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="16"/>
+									<TextBlock Text="A: Yes, Leaf Client is completely free to download and use, offering premium features without any cost."
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontSize="14"/>
+								</StackPanel>
+
+								<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+								<!-- FAQ Item 2 -->
+								<StackPanel Spacing="5">
+									<TextBlock Text="Q: Which Minecraft versions does Leaf Client support?"
+                                               Foreground="{DynamicResource PrimaryAccentBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="16"/>
+									<TextBlock Text="A: Leaf Client aims to support a wide range of popular Minecraft versions, including the latest releases and older favorites for competitive play."
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontSize="14"/>
+								</StackPanel>
+
+								<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+								<!-- FAQ Item 3 -->
+								<StackPanel Spacing="5">
+									<TextBlock Text="Q: Can I use my existing Minecraft account?"
+                                               Foreground="{DynamicResource PrimaryAccentBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="16"/>
+									<TextBlock Text="A: Absolutely! Leaf Client fully supports logging in with your official Minecraft account (Microsoft) to access all features."
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontSize="14"/>
+								</StackPanel>
+
+								<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+								<!-- FAQ Item 4 -->
+								<StackPanel Spacing="5">
+									<TextBlock Text="Q: Are custom mods supported?"
+                                               Foreground="{DynamicResource PrimaryAccentBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="16"/>
+									<TextBlock Text="A: Yes, Leaf Client integrates with popular mod loaders like Fabric and allows you to manage and enable your favorite client-side mods."
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontSize="14"/>
+								</StackPanel>
+
+								<Separator Background="{DynamicResource SecondaryBorderBrush}"/>
+
+								<!-- FAQ Item 5 -->
+								<StackPanel Spacing="5">
+									<TextBlock Text="Q: How do I get support or report a bug?"
+                                               Foreground="{DynamicResource PrimaryAccentBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="16"/>
+									<TextBlock Text="A: You can join our official Discord server via the 'Support' button in the main menu to get help or report any issues you encounter."
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontSize="14"/>
+								</StackPanel>
+							</StackPanel>
+
+							<!-- Last Updated -->
+							<TextBlock Text="{Binding LastUpdatedText}"
+                                       Foreground="{DynamicResource SecondaryForegroundBrush}"
+                                       FontSize="11"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,20,0,0"/>
+						</StackPanel>
+					</StackPanel>
+				</ScrollViewer>
+			</Border>
+		</Grid>
+		<!-- Mod Browser Pop-up Overlay -->
+		<Grid x:Name="ModBrowserOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseModBrowser" />
+
+			<Border x:Name="ModBrowserPanel"
+					Width="900"
+					MaxHeight="700"
+					Background="{DynamicResource CardBackgroundColor}"
+					CornerRadius="12"
+					Padding="0"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Top"
+					Margin="0,40,0,0"
+					BoxShadow="0 10 40 5 #40000000">
+
+				<Border.RenderTransform>
+					<TranslateTransform Y="-800" />
+				</Border.RenderTransform>
+
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+						<RowDefinition Height="Auto"/>
+					</Grid.RowDefinitions>
+
+					<!-- Header -->
+					<Border Grid.Row="0"
+							Background="{DynamicResource TertiaryBackgroundBrush}"
+							CornerRadius="12,12,0,0"
+							Padding="25">
+						<Grid ColumnDefinitions="*,Auto,Auto">
+							<TextBlock Grid.Column="0"
+									   Text="BROWSE MODS"
+									   Foreground="{DynamicResource PrimaryForegroundBrush}"
+									   FontWeight="ExtraBold"
+									   FontSize="24"
+									   VerticalAlignment="Center" />
+							<!-- Search Box -->
+							<TextBox x:Name="ModSearchBox"
+									 Grid.Column="1"
+									 Width="250"
+									 Watermark="Search mods..."
+									 Margin="0,0,15,0"
+									 VerticalAlignment="Center"
+									 TextChanged="OnModSearchTextChanged" />
+							<!-- Close Button -->
+							<Button Grid.Column="2"
+									Classes="IconButton"
+									Click="CloseModBrowser"
+									Width="32" Height="32"
+									CornerRadius="16"
+									Background="{DynamicResource HoverBackgroundBrush}">
+								<TextBlock Text="✕"
+										   Foreground="{DynamicResource PrimaryForegroundBrush}"
+										   FontSize="14"
+										   HorizontalAlignment="Center"
+										   VerticalAlignment="Center" />
+							</Button>
+						</Grid>
+					</Border>
+
+					<!-- Body: left results + right sidebar -->
+					<Grid Grid.Row="1" ColumnDefinitions="*,360">
+						<!-- Results -->
+						<ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="25">
+							<StackPanel>
+								<WrapPanel x:Name="ModsResultsPanel" Orientation="Horizontal" Margin="0,0,0,15"/>
+								<!-- Loading State -->
+								<StackPanel x:Name="ModsLoadingPanel"
+											HorizontalAlignment="Center"
+											VerticalAlignment="Center"
+											Spacing="15"
+											IsVisible="False">
+									<ProgressBar IsIndeterminate="True" Width="200" Height="8"/>
+									<TextBlock Text="Loading mods..."
+											   Foreground="{DynamicResource SecondaryForegroundBrush}"
+											   HorizontalAlignment="Center"/>
+								</StackPanel>
+								<!-- Empty State -->
+								<StackPanel x:Name="ModsEmptyPanel"
+											HorizontalAlignment="Center"
+											VerticalAlignment="Center"
+											Spacing="15"
+											IsVisible="False">
+									<TextBlock Text="🔍" FontSize="48" Opacity="0.5" HorizontalAlignment="Center"/>
+									<TextBlock Text="No mods found"
+											   Foreground="{DynamicResource PrimaryForegroundBrush}"
+											   FontWeight="Bold"
+											   FontSize="16"
+											   HorizontalAlignment="Center"/>
+									<TextBlock Text="Try adjusting your search terms"
+											   Foreground="{DynamicResource SecondaryForegroundBrush}"
+											   HorizontalAlignment="Center"/>
+								</StackPanel>
+							</StackPanel>
+						</ScrollViewer>
+
+						<!-- Details sidebar -->
+						<Border x:Name="ModDetailsSidebar"
+								Grid.Column="1"
+								Background="{DynamicResource TertiaryBackgroundBrush}"
+								BorderBrush="{DynamicResource HoverBackgroundBrush}"
+								BorderThickness="1"
+								CornerRadius="0,0,12,0"
+								Padding="16"
+								IsVisible="False">
+							<Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+								<Border Background="{DynamicResource HoverBackgroundBrush}" CornerRadius="8" Padding="8">
+									<Image x:Name="ModDetailsIcon" Width="64" Height="64" Stretch="Uniform"/>
+								</Border>
+
+								<TextBlock x:Name="ModDetailsTitle"
+										   Grid.Row="1"
+										   Text=""
+										   FontWeight="Bold"
+										   FontSize="18"
+										   Foreground="{DynamicResource PrimaryForegroundBrush}"/>
+
+								<TextBlock x:Name="ModDetailsStats"
+										   Grid.Row="2"
+										   Text=""
+										   FontSize="11"
+										   Foreground="{DynamicResource SecondaryForegroundBrush}"/>
+
+								<ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+									<TextBlock x:Name="ModDetailsDescription"
+											   Text=""
+											   TextWrapping="Wrap"
+											   Foreground="{DynamicResource SecondaryForegroundBrush}"/>
+								</ScrollViewer>
+
+								<Button x:Name="ModDetailsDownloadButton"
+										Grid.Row="4"
+										Content="Download"
+										HorizontalAlignment="Stretch"
+										Padding="12,10"
+										Background="{DynamicResource PrimaryAccentBrush}"
+										Foreground="{DynamicResource AccentButtonForegroundBrush}"
+										CornerRadius="8"
+										Click="OnModDetailsDownloadClicked"/>
+							</Grid>
+						</Border>
+					</Grid>
+
+					<!-- Footer -->
+					<Border Grid.Row="2"
+							Background="{DynamicResource TertiaryBackgroundBrush}"
+							CornerRadius="0,0,12,12"
+							Padding="20">
+						<TextBlock Text="Powered by Modrinth API"
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="11"
+								   HorizontalAlignment="Center"/>
+					</Border>
+				</Grid>
+			</Border>
+		</Grid>
+		<!-- NEW: Launch Failure Banner -->
+		<Border x:Name="LaunchFailureBanner"
+                Width="500"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,60,0,0"
+                CornerRadius="12"
+                Padding="15"
+                Background="{DynamicResource ErrorBrush}"
+                IsVisible="False"
+                Opacity="0"
+                ZIndex="1001"
+                ClipToBounds="False">
+			<Border.RenderTransform>
+				<TranslateTransform Y="-100"/>
+			</Border.RenderTransform>
+			<Border.Transitions>
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.5" Easing="CubicEaseOut"/>
+					<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.5" Easing="CubicEaseOut"/>
+				</Transitions>
+			</Border.Transitions>
+			<Grid ColumnDefinitions="Auto,*,Auto">
+				<TextBlock Grid.Column="0" Text="❌" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
+				<TextBlock x:Name="LaunchFailureBannerText"
+                           Grid.Column="1"
+                           Text="Failed to launch Minecraft. Please check logs."
+                           Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+				<Button x:Name="LaunchFailureBannerCloseButton"
+                        Grid.Column="2"
+                        Content="✕"
+                        Background="Transparent"
+                        Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                        FontSize="14"
+                        Width="20" Height="20"
+                        Padding="0"
+                        Margin="10,0,0,0"
+                        VerticalAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        Cursor="Hand"/>
+			</Grid>
+		</Border>
+		<!-- NEW: Game Starting Banner -->
+		<Border x:Name="GameStartingBanner"
+				Width="500"
+			HorizontalAlignment="Center"
+			VerticalAlignment="Top"
+			Margin="0,60,0,0"
+			CornerRadius="12"
+			Padding="15"
+			Background="#32CD32"
+			IsVisible="False"
+			Opacity="0"
+			ZIndex="1000"
+			ClipToBounds="False">
+			<Border.RenderTransform>
+				<TranslateTransform Y="-100"/>
+			</Border.RenderTransform>
+			<Border.Transitions>
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.5" Easing="CubicEaseOut"/>
+					<DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.5" Easing="CubicEaseOut"/>
+				</Transitions>
+			</Border.Transitions>
+			<Grid ColumnDefinitions="Auto,*,Auto">
+				<TextBlock Grid.Column="0" Text="🚀" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
+				<TextBlock x:Name="GameStartingBannerText"
+						   Grid.Column="1"
+						   Text="Minecraft may take a few seconds to appear on your screen"
+						   Foreground="{DynamicResource AccentButtonForegroundBrush}"
+						   FontWeight="Bold"
+						   VerticalAlignment="Center"
+						   TextWrapping="Wrap"/>
+				<Button x:Name="GameStartingBannerCloseButton"
+						Grid.Column="2"
+						Content="✕"
+						Background="Transparent"
+						Foreground="{DynamicResource AccentButtonForegroundBrush}"
+						FontSize="14"
+						Width="20" Height="20"
+						Padding="0"
+						Margin="10,0,0,0"
+						VerticalAlignment="Center"
+						HorizontalContentAlignment="Center"
+						VerticalContentAlignment="Center"
+						Cursor="Hand"/>
+			</Grid>
+		</Border>
+
+		<!-- Feedback Overlay -->
+		<Grid x:Name="FeedbackOverlay" IsVisible="False" ZIndex="2000">
+			<Border Background="#80000000" PointerPressed="CloseFeedbackOverlay" />
+
+			<Border x:Name="FeedbackPanel"
+                    Width="650"
+                    MaxHeight="750"
+                    Background="{DynamicResource CardBackgroundColor}"
+                    CornerRadius="18"
+                    Padding="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,60,0,0"
+                    BoxShadow="0 10 40 5 #40000000">
+
+				<Border.RenderTransform>
+					<TranslateTransform Y="-700" />
+				</Border.RenderTransform>
+
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="0">
+						<!-- Banner Image (reusing existing LeafClientBanner.jpg) -->
+						<Border Height="120" CornerRadius="18,18,0,0" ClipToBounds="True">
+							<Image Source="/Assets/LeafClientBanner.jpg"
+                                   Stretch="UniformToFill"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+						</Border>
+
+						<!-- Content Area -->
+						<StackPanel Spacing="25" Margin="40,30,40,40">
+							<TextBlock Text="SEND FEEDBACK"
+                                       Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                       FontWeight="ExtraBold"
+                                       FontSize="28"
+                                       HorizontalAlignment="Center" />
+
+							<!-- Feedback Type Selector -->
+							<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="10" Padding="5">
+								<ComboBox x:Name="FeedbackTypeComboBox"
+                                          SelectedIndex="0"
+                                          HorizontalAlignment="Stretch"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          SelectionChanged="FeedbackTypeComboBox_SelectionChanged">
+									<ComboBoxItem Content="Suggest a Feature" Tag="Feature" />
+									<ComboBoxItem Content="Report a Bug" Tag="Bug" />
+								</ComboBox>
+							</Border>
+
+							<!-- Feature Suggestion Panel -->
+							<StackPanel x:Name="FeatureSuggestionPanel" IsVisible="True" Spacing="15">
+								<TextBlock Text="YOUR SUGGESTION"
+                                           Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                           FontWeight="Bold"
+                                           FontSize="16" />
+								<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="8">
+									<TextBox x:Name="SuggestionTextBox"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             Height="180"
+                                             Watermark="Describe your amazing feature suggestion here... (Max 1000 characters)"
+                                             Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="10"
+                                             VerticalContentAlignment="Top"
+                                             MaxLength="1000" />
+								</Border>
+							</StackPanel>
+
+							<!-- Bug Report Panel -->
+							<StackPanel x:Name="BugReportPanel" IsVisible="False" Spacing="20">
+								<TextBlock Text="BUG REPORT DETAILS"
+                                           Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                           FontWeight="ExtraBold"
+                                           FontSize="18" />
+
+								<!-- Expected Behavior Card -->
+								<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" Padding="15">
+									<StackPanel Spacing="8">
+										<TextBlock Text="EXPECTED BEHAVIOR"
+                                                   Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="14" />
+										<TextBox x:Name="ExpectedBehaviorTextBox"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 Height="100"
+                                                 Watermark="Describe the expected behavior from the client/launcher here.&#x23; Please be as clear as possible."
+                                                 Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="10"
+                                                 VerticalContentAlignment="Top" />
+									</StackPanel>
+								</Border>
+
+								<!-- Actual Behavior Card -->
+								<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" Padding="15">
+									<StackPanel Spacing="8">
+										<TextBlock Text="ACTUAL BEHAVIOR (REALITY)"
+                                                   Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="14" />
+										<TextBox x:Name="ActualBehaviorTextBox"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 Height="100"
+                                                 Watermark="Describe what actually happens within the client/launcher.&#x23; Please be as clear as possible."
+                                                 Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="10"
+                                                 VerticalContentAlignment="Top" />
+									</StackPanel>
+								</Border>
+
+								<!-- Steps to Reproduce Card -->
+								<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" Padding="15">
+									<StackPanel Spacing="8">
+										<TextBlock Text="STEPS TO REPRODUCE"
+                                                   Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="14" />
+										<TextBox x:Name="StepsToReproduceTextBox"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 Height="150"
+                                                 Watermark="Describe the steps you took that caused this bug/issue within the client/launcher.&#x23; Please be as clear as possible."
+                                                 Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="10"
+                                                 VerticalContentAlignment="Top" />
+									</StackPanel>
+								</Border>
+
+								<!-- Log File Attachment -->
+								<StackPanel Spacing="10" Margin="0,10,0,0">
+									<TextBlock Text="RELEVANT LOG FILE (RECOMMENDED)"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="14" />
+									<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" Padding="10">
+										<StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+											<Button x:Name="AttachLogButton"
+                                                    Content="Attach Latest Log File"
+                                                    Click="AttachLogButton_Click"
+                                                    Background="{DynamicResource PrimaryAccentBrush}"
+                                                    Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                                                    CornerRadius="8"
+                                                    Padding="12,6"
+                                                    FontWeight="SemiBold" />
+											<TextBlock x:Name="AttachedLogFileName"
+                                                       Text="No file attached"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource SecondaryForegroundBrush}" />
+										</StackPanel>
+									</Border>
+								</StackPanel>
+
+								<!-- Additional Information -->
+								<StackPanel Spacing="10" Margin="0,10,0,0">
+									<TextBlock Text="ADDITIONAL INFORMATION (RECOMMENDED)"
+                                               Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                               FontWeight="Bold"
+                                               FontSize="14" />
+									<Border Background="{DynamicResource TertiaryBackgroundBrush}" CornerRadius="12" Padding="15">
+										<StackPanel Spacing="8">
+											<TextBlock Text="OPERATING SYSTEM &amp; VERSION"
+                                                       Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                       FontWeight="SemiBold" />
+											<TextBox x:Name="OsVersionTextBox"
+                                                     IsReadOnly="True"
+                                                     Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                     Background="{DynamicResource HoverBackgroundBrush}"
+                                                     BorderThickness="0"
+                                                     Padding="8"
+                                                     CornerRadius="6" />
+
+											<TextBlock Text="LEAF CLIENT VERSION"
+                                                       Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,5,0,0" />
+											<TextBox x:Name="LeafClientVersionTextBox"
+                                                     IsReadOnly="True"
+                                                     Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                                     Background="{DynamicResource HoverBackgroundBrush}"
+                                                     BorderThickness="0"
+                                                     Padding="8"
+                                                     CornerRadius="6" />
+										</StackPanel>
+									</Border>
+								</StackPanel>
+							</StackPanel>
+
+							<!-- Status Message and Action Buttons -->
+							<StackPanel Spacing="15" Margin="0,20,0,0">
+								<TextBlock x:Name="StatusMessageTextBlock"
+                                           Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                           TextWrapping="Wrap"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"
+                                           FontWeight="SemiBold" />
+
+								<StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+									<Button Content="Cancel"
+                                            Click="CancelFeedbackButton_Click"
+                                            Background="{DynamicResource HoverBackgroundBrush}"
+                                            Foreground="{DynamicResource PrimaryForegroundBrush}"
+                                            CornerRadius="8"
+                                            Padding="20,10"
+                                            FontWeight="Bold" />
+									<Button Content="Send Feedback"
+                                            Click="SendFeedbackButton_Click"
+                                            Background="{DynamicResource SuccessBrush}"
+                                            Foreground="{DynamicResource AccentButtonForegroundBrush}"
+                                            CornerRadius="8"
+                                            Padding="20,10"
+                                            FontWeight="Bold" />
+								</StackPanel>
+							</StackPanel>
+						</StackPanel>
+					</StackPanel>
+				</ScrollViewer>
+			</Border>
+		</Grid>
+		<!-- Planned Updates Mini-Window Overlay -->
+		<Grid x:Name="PlannedUpdatesOverlay" IsVisible="False" ZIndex="2002" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,60,70">
+			<!-- Remove the problematic background border -->
+			<!-- <Border Background="Transparent"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            IsHitTestVisible="True"
+            PointerPressed="ClosePlannedUpdates"/> -->
+
+			<Border x:Name="PlannedUpdatesPanel"
+					Width="260" Height="320"
+					Background="{DynamicResource CardBackgroundColor}"
+					CornerRadius="12"
+					Padding="20"
+					BoxShadow="0 4 20 0 #66000000"
+					Opacity="0"
+					PointerExited="ClosePlannedUpdates">
+				<!-- Add PointerExited here too -->
+
+				<Border.RenderTransform>
+					<TranslateTransform Y="20"/>
+				</Border.RenderTransform>
+
+				<Border.Effect>
+					<BlurEffect Radius="10"/>
+				</Border.Effect>
+
+				<Grid RowDefinitions="Auto,*">
+					<!-- Header -->
+					<StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
+						<TextBlock Text="PLANNED FUTURE UPDATES" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="ExtraBold" FontSize="14"/>
+						<Rectangle Height="2" Width="30" HorizontalAlignment="Left" Fill="{DynamicResource PrimaryAccentBrush}" RadiusX="1" RadiusY="1"/>
+					</StackPanel>
+
+					<!-- Content -->
+					<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+						<StackPanel Spacing="12">
+							<TextBlock Text="• Custom Replay Mod &amp; Browser" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• In-game Store" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• Cosmetics Editor" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• PvP Mod Features" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• Forge Support" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• Chroma HUD Support" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+							<TextBlock Text="• Friend System Integration" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="13" TextWrapping="Wrap"/>
+						</StackPanel>
+					</ScrollViewer>
+				</Grid>
+			</Border>
+		</Grid>
+	</Grid>
+	<!-- This is the final closing Grid tag for the MainWindow -->
+</Window>

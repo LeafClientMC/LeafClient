@@ -1,0 +1,210 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LeafClient.Views.LoginWindow"
+        Title="Leaf Client - Login"
+        Width="500" Height="600"
+        MinWidth="500" MinHeight="600"
+        MaxWidth="500" MaxHeight="600"
+        Background="{DynamicResource PrimaryBackgroundBrush}"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        SystemDecorations="None"
+        CanResize="False">
+
+	<Window.Styles>
+		<!-- Styles for window buttons, consistent with MainWindow -->
+		<Style Selector="Button.WindowButton">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Button.WindowButton:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource HoverBackgroundBrush}"/>
+		</Style>
+		<Style Selector="Button.CloseButton:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource ErrorHoverBrush}"/>
+		</Style>
+
+		<!-- Style for the error banner - now targets Border -->
+		<Style Selector="Border.ErrorBanner">
+			<Setter Property="Background" Value="#FFD1C4"/>
+			<!-- Light red/orange background -->
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="Margin" Value="0,10,0,0"/>
+			<Setter Property="IsVisible" Value="False"/>
+		</Style>
+		<!-- Style for the TextBlock inside the ErrorBanner Border -->
+		<Style Selector="Border.ErrorBanner TextBlock">
+			<Setter Property="Foreground" Value="#D32F2F"/>
+			<!-- Darker red text -->
+			<Setter Property="Padding" Value="10,5"/>
+			<Setter Property="TextAlignment" Value="Center"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<!-- ADDED: Ensures text wraps to the next line -->
+		</Style>
+	</Window.Styles>
+
+	<Grid>
+		<!-- Background -->
+		<Border Background="{DynamicResource PrimaryBackgroundBrush}"/>
+
+		<!-- Custom Title Bar -->
+		<Border x:Name="TitleBar"
+				Height="40"
+				VerticalAlignment="Top"
+				Background="{DynamicResource TertiaryBackgroundBrush}"
+				BorderBrush="{DynamicResource PrimaryBorderBrush}"
+				BorderThickness="0,0,0,1">
+			<Grid ColumnDefinitions="*,Auto,Auto">
+				<!-- Added 3 columns for title and two buttons -->
+				<TextBlock Text="Leaf Client - Login"
+						   Foreground="{DynamicResource PrimaryForegroundBrush}"
+						   FontWeight="Bold"
+						   VerticalAlignment="Center"
+						   Margin="15,0"/>
+
+				<!-- Minimize Button -->
+				<Button Grid.Column="1" Classes="WindowButton" Width="40" Height="40" CornerRadius="8" Click="MinimizeWindow_Click" HorizontalAlignment="Right">
+					<TextBlock Text="─" Foreground="{DynamicResource WindowButtonForegroundBrush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,5"/>
+				</Button>
+
+				<!-- Close Button -->
+				<Button Grid.Column="2" Classes="WindowButton CloseButton" Width="40" Height="40" CornerRadius="8" Click="CloseWindow" HorizontalAlignment="Right">
+					<TextBlock Text="✕"
+							   Foreground="{DynamicResource WindowButtonForegroundBrush}"
+							   FontSize="16"
+							   FontWeight="Bold"/>
+				</Button>
+			</Grid>
+		</Border>
+
+		<!-- Main Content -->
+		<Grid Margin="0,40,0,0">
+			<!-- Login Form Panel -->
+			<Grid x:Name="LoginFormPanel" IsVisible="True">
+				<StackPanel Spacing="30"
+							HorizontalAlignment="Center"
+							VerticalAlignment="Center"
+							Width="350">
+
+					<!-- Logo -->
+					<Border Width="120" Height="120"
+							Background="{DynamicResource LogoBackgroundBrush}"
+							CornerRadius="20"
+							HorizontalAlignment="Center">
+						<Image Source="/Assets/logo_icon.png"
+							   Width="80" Height="80"/>
+					</Border>
+
+					<!-- Welcome Text -->
+					<StackPanel Spacing="8">
+						<TextBlock Text="WELCOME TO LEAF CLIENT"
+								   Foreground="{DynamicResource PrimaryForegroundBrush}"
+								   FontWeight="ExtraBold"
+								   FontSize="20"
+								   HorizontalAlignment="Center"/>
+						<TextBlock Text="Login to get started"
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="14"
+								   HorizontalAlignment="Center"/>
+					</StackPanel>
+
+					<!-- Microsoft Login Button -->
+					<Button Background="{DynamicResource PrimaryAccentBrush}"
+							Foreground="{DynamicResource AccentButtonForegroundBrush}"
+							BorderThickness="0"
+							CornerRadius="12"
+							Padding="20,15"
+							FontWeight="Bold"
+							FontSize="16"
+							Cursor="Hand"
+							HorizontalAlignment="Stretch"
+							Click="MicrosoftLogin_Click">
+						<StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+							<!-- Microsoft Icon -->
+							<Image Source="/Assets/icons8-microsoft-32.png" Width="20" Height="20" VerticalAlignment="Center"/>
+							<TextBlock Text="LOGIN WITH MICROSOFT"/>
+						</StackPanel>
+					</Button>
+
+					<!-- Separator -->
+					<Border Height="1" Background="{DynamicResource SecondaryBorderBrush}" Margin="0,10"/>
+
+					<!-- Offline Login Section -->
+					<StackPanel Spacing="15">
+						<TextBlock Text="OR PLAY OFFLINE"
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="12"
+								   FontWeight="Bold"
+								   HorizontalAlignment="Center"/>
+
+						<!-- Error Banner for offline login - now a Border wrapping a TextBlock -->
+						<Border x:Name="LoginErrorBanner"
+                                Classes="ErrorBanner"
+                                IsVisible="False">
+							<TextBlock x:Name="LoginErrorBannerText"
+                                       Text="Invalid username. Only alphanumeric characters and underscore allowed."/>
+						</Border>
+
+						<TextBox x:Name="OfflineUsernameTextBox"
+								 Watermark="Enter username"
+								 Height="45"
+								 CornerRadius="8"
+                                 VerticalContentAlignment="Center"
+						FontSize="14"/>
+
+						<Button x:Name="OfflineLoginButton"
+								Background="{DynamicResource HoverBackgroundBrush}"
+								Foreground="{DynamicResource PrimaryForegroundBrush}"
+								BorderThickness="0"
+								CornerRadius="12"
+								Padding="20,15"
+								FontWeight="Bold"
+								FontSize="16"
+								Cursor="Hand"
+								HorizontalAlignment="Stretch"
+								Click="OfflineLogin_Click">
+							<StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+								<!-- Leaf Client Logo Icon -->
+								<Image Source="/Assets/logo_icon.png" Width="20" Height="20" VerticalAlignment="Center"/>
+								<TextBlock Text="PLAY OFFLINE"/>
+							</StackPanel>
+						</Button>
+					</StackPanel>
+				</StackPanel>
+			</Grid>
+
+			<!-- Login Process Panel -->
+			<Grid x:Name="LoginProcessPanel" IsVisible="False">
+				<StackPanel Spacing="25"
+							HorizontalAlignment="Center"
+							VerticalAlignment="Center">
+
+					<ProgressBar IsIndeterminate="True"
+								 Width="200"
+								 Height="8"/>
+
+					<StackPanel Spacing="10">
+						<TextBlock x:Name="LoginStatusBig"
+								   Text="LOGGING IN..."
+								   Foreground="{DynamicResource PrimaryForegroundBrush}"
+								   FontWeight="ExtraBold"
+								   FontSize="24"
+								   HorizontalAlignment="Center"/>
+						<TextBlock x:Name="LoginStatusSmall"
+								   Text="Please wait while we authenticate your account."
+								   Foreground="{DynamicResource SecondaryForegroundBrush}"
+								   FontSize="14"
+								   HorizontalAlignment="Center"
+								   TextWrapping="Wrap"
+								   TextAlignment="Center"
+								   MaxWidth="300"/>
+					</StackPanel>
+				</StackPanel>
+			</Grid>
+		</Grid>
+	</Grid>
+</Window>

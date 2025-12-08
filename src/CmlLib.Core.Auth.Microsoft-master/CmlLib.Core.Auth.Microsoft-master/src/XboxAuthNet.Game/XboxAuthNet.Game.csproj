@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Library</OutputType>
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>12</LangVersion>
+
+		<!-- Force assembly identity to 1.4.0.0 -->
+		<AssemblyVersion>1.4.0.0</AssemblyVersion>
+		<FileVersion>1.4.0.0</FileVersion>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>XboxAuthNet.Game</Description>
+		<Copyright>Copyright (c) 2023 AlphaBs</Copyright>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/CmlLib/CmlLib.Core.Auth.Microsoft</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/CmlLib/CmlLib.Core.Auth.Microsoft</RepositoryUrl>
+		<Authors>ksi123456ab</Authors>
+		<PackageTags>microsoft xbox game auth</PackageTags>
+		<Version>1.4.0</Version>
+		<PackageIcon>icon.png</PackageIcon>
+		<RepositoryType>git</RepositoryType>
+		<PackageId>XboxAuthNet.Game</PackageId>
+	</PropertyGroup>
+
+	<!-- package references (keep these as they are dependencies of this project itself) -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+		<PackageReference Include="XboxAuthNet" Version="3.0.4" />
+		<!-- This is the base XboxAuthNet, not XboxAuthNet.Game -->
+	</ItemGroup>
+
+	<!-- private assets -->
+	<ItemGroup>
+		<PackageReference Include="ConfigureAwait.Fody" Version="3.3.2" PrivateAssets="All" />
+		<PackageReference Include="Fody" Version="6.8.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="TunnelVisionLabs.ReferenceAssemblyAnnotator" Version="1.0.0-alpha.160" PrivateAssets="all" />
+		<PackageDownload Include="Microsoft.NETCore.App.Ref" Version="[5.0.0]" />
+	</ItemGroup>
+
+	<!-- others-->
+	<ItemGroup>
+		<None Include="..\..\icon.png" Pack="true" Visible="false" PackagePath="" />
+	</ItemGroup>
+
+</Project>

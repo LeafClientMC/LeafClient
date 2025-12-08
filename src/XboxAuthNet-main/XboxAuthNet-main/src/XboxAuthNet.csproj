@@ -1,0 +1,54 @@
+﻿
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- CRITICAL CHANGE: Target only net8.0 -->
+		<TargetFramework>net8.0</TargetFramework>
+		<LangVersion>12.0</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<Nullable>enable</Nullable>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Version>3.0.5</Version>
+
+		<Description>Xbox Live authentication for .NET</Description>
+		<Copyright>MIT</Copyright>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/AlphaBs/XboxAuthNet</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/AlphaBs/XboxAuthNet</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<Authors>ksi123456ab</Authors>
+		<PackageTags>xbox live login auth authentication</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+			<_Parameter1>XboxAuthNet.Test</_Parameter1>
+		</AssemblyAttribute>
+		<PackageReference Include="ConfigureAwait.Fody" Version="3.3.2" PrivateAssets="All" />
+		<PackageReference Include="Fody" Version="6.8.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="System.Net.Http.Json" Version="8.0.0" />
+		<PackageReference Include="System.Text.Json" Version="8.0.5" />
+	</ItemGroup>
+
+	<PropertyGroup>
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- Include all .cs files by default, then exclude specific platform folders -->
+		<Compile Include="**/*.cs" Exclude="obj/**/*.cs;bin/**/*.cs;Platforms/**/*.cs" />
+		<None Include="**/*.cs" Exclude="obj/**/*.cs;bin/**/*.cs" />
+		<!-- Removed specific Compile Remove for Platforms, handled by single Exclude above -->
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Remove="XboxLive\Responses\XboxAuthResponseModels.cs" />
+	</ItemGroup>
+
+	<!-- Removed all TargetFramework-specific PropertyGroups and ItemGroups -->
+
+</Project>

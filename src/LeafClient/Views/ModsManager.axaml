@@ -1,0 +1,554 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewmodels="clr-namespace:LeafClient.ViewModels"
+        xmlns:models="clr-namespace:LeafClient.Models"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+        x:Class="LeafClient.Views.ModsManager"
+        Title="ModsManager"
+        Width="1000" Height="700"
+        MinWidth="800" MinHeight="600"
+        
+        TransparencyLevelHint="AcrylicBlur"
+        Background="Transparent"
+        
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        SystemDecorations="None"
+        ShowInTaskbar="False"
+        Topmost="True"
+        x:DataType="viewmodels:ModsManagerViewModel">
+
+	<Window.Styles>
+		<!-- Nav Tabs (Top) -->
+		<Style Selector="Button.NavTab">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="#94A3B8"/>
+			<Setter Property="FontSize" Value="14"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Padding" Value="20,10"/>
+			<Setter Property="CornerRadius" Value="20"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Foreground" Duration="0:0:0.2"/>
+					<BrushTransition Property="Background" Duration="0:0:0.2"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.NavTab:pointerover">
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="Background" Value="#20FFFFFF"/>
+		</Style>
+		<Style Selector="Button.NavTab.Selected">
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="Background" Value="#20FFFFFF"/>
+		</Style>
+
+		<!-- Sidebar Items (Waypoints) -->
+		<Style Selector="Button.SidebarItem">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="#9CA3AF"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Padding" Value="15,10"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="FontSize" Value="13"/>
+			<Setter Property="FontWeight" Value="Medium"/>
+			<Setter Property="Margin" Value="0,2"/>
+		</Style>
+		<Style Selector="Button.SidebarItem:pointerover">
+			<Setter Property="Background" Value="#1F2937"/>
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+
+		<!-- Input Fields (Dark) -->
+		<Style Selector="TextBox.InputDark">
+			<Setter Property="Background" Value="#111827"/>
+			<Setter Property="BorderBrush" Value="#374151"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Padding" Value="10,8"/>
+			<Setter Property="SelectionBrush" Value="#22C55E"/>
+		</Style>
+		<Style Selector="TextBox.InputDark:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="#22C55E"/>
+			<Setter Property="Background" Value="#111827"/>
+		</Style>
+		<Style Selector="TextBox.InputDark:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="#4B5563"/>
+			<Setter Property="Background" Value="#111827"/>
+		</Style>
+
+		<!-- Green Action Button -->
+		<Style Selector="Button.ActionGreen">
+			<Setter Property="Background" Value="#15803D"/>
+			<!-- Darker Green Base -->
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Padding" Value="15,8"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.2"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.ActionGreen:pointerover">
+			<Setter Property="Background" Value="#16A34A"/>
+			<!-- Lighter Green Hover -->
+		</Style>
+
+		<!-- Checkbox Style -->
+		<Style Selector="CheckBox">
+			<Setter Property="Foreground" Value="#D1D5DB"/>
+			<Setter Property="FontSize" Value="12"/>
+		</Style>
+
+		<Style Selector="Border.ModCard">
+			<Setter Property="Background" Value="#CC1E293B"/>
+			<Setter Property="CornerRadius" Value="15"/>
+			<Setter Property="BorderBrush" Value="#334155"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Width" Value="280"/>
+			<Setter Property="Height" Value="320"/>
+			<Setter Property="Margin" Value="50,0"/>
+			<Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="BorderBrush" Duration="0:0:0.2"/>
+				</Transitions>
+			</Setter>
+		</Style>
+	</Window.Styles>
+
+	<Grid RowDefinitions="Auto,Auto,*,Auto">
+		<Grid.Background>
+			<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+				<GradientStop Offset="0" Color="#0F172A"/>
+				<GradientStop Offset="1" Color="#020617"/>
+			</LinearGradientBrush>
+		</Grid.Background>
+
+		<!-- FIX: Added Binding for Visibility -->
+		<Canvas x:Name="ParticleLayer" Grid.RowSpan="4" IsHitTestVisible="False" ClipToBounds="True" IsVisible="{Binding GeneralSettings.MenuParticles}"/>
+
+		<!-- 1. Header -->
+		<Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="20,20,20,10">
+			<StackPanel Orientation="Horizontal" Spacing="10">
+				<Image Source="/Assets/logo_icon.png" Height="24" Width="24" VerticalAlignment="Center"/>
+				<TextBlock Text="LEAF" FontWeight="Bold" FontSize="20" VerticalAlignment="Center" Foreground="White" LetterSpacing="2"/>
+			</StackPanel>
+
+			<StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5">
+				<Button x:Name="BtnMods" Classes="NavTab Selected" Content="MODS" Click="SwitchToMods"/>
+				<Button x:Name="BtnSettings" Classes="NavTab" Content="SETTINGS" Click="SwitchToSettings"/>
+				<Button x:Name="BtnWaypoints" Classes="NavTab" Content="WAYPOINTS" Click="SwitchToWaypoints"/>
+			</StackPanel>
+
+			<Button Grid.Column="2" Content="✕" Click="CloseButton_Click" Background="Transparent" Foreground="#64748B" FontSize="18" Cursor="Hand"/>
+		</Grid>
+
+		<!-- 2. Sub-Header (Performance Tab) -->
+		<Grid x:Name="PerformanceHeader" Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="40,0,40,20">
+			<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20">
+				<Button Classes="ProfileTab Selected" Content="DEFAULT"
+                        Background="Transparent" Foreground="#A3E635" BorderBrush="#A3E635" BorderThickness="0,0,0,2" FontWeight="Bold" Padding="15,5"/>
+			</StackPanel>
+		</Grid>
+
+		<!-- 3. Content Area -->
+		<Grid x:Name="ContentGrid" Grid.Row="2" VerticalAlignment="Stretch" ClipToBounds="False">
+			<Grid.OpacityMask>
+				<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+					<GradientStop Offset="0.0" Color="Transparent"/>
+					<GradientStop Offset="0.1" Color="Transparent"/>
+					<GradientStop Offset="0.25" Color="Black"/>
+					<GradientStop Offset="0.75" Color="Black"/>
+					<GradientStop Offset="0.9" Color="Transparent"/>
+					<GradientStop Offset="1.0" Color="Transparent"/>
+				</LinearGradientBrush>
+			</Grid.OpacityMask>
+
+			<!-- VIEW 1: MODS CAROUSEL -->
+			<ScrollViewer Name="ModScrollViewer" IsVisible="True"
+                          VerticalAlignment="Center"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          AllowAutoHide="False"
+                          ClipToBounds="False"
+                          PointerWheelChanged="ScrollViewer_PointerWheelChanged">
+
+				<ItemsControl Name="ModItemsControl" ItemsSource="{Binding FilteredMods}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<StackPanel Orientation="Horizontal" Spacing="0" Margin="310,60"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="viewmodels:ModItem">
+							<Border Classes="ModCard">
+								<Grid RowDefinitions="*,Auto,Auto" Margin="20">
+									<StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="20">
+										<TextBlock Text="{Binding Icon}" FontSize="64" HorizontalAlignment="Center"/>
+										<TextBlock Text="{Binding Name}" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+									</StackPanel>
+
+									<StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+										<Button Content="OPTIONS" Command="{Binding $parent[Window].DataContext.OpenOptionsCommand}" CommandParameter="{Binding}" Background="#334155" Foreground="#CBD5E1" CornerRadius="8" FontSize="11" FontWeight="Bold" Padding="25,8" Cursor="Hand"/>
+									</StackPanel>
+
+									<Button Grid.Row="2"
+                                            Command="{Binding ToggleCommand}"
+                                            Background="{Binding IsEnabled, Converter={x:Static viewmodels:BoolToColorConverter.Instance}}"
+                                            HorizontalAlignment="Stretch"
+                                            CornerRadius="10"
+                                            Height="40"
+                                            Cursor="Hand">
+										<TextBlock Text="{Binding IsEnabled, Converter={x:Static viewmodels:BoolToTextConverter.Instance}}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontWeight="Bold"
+                                                   Foreground="White"
+                                                   LetterSpacing="1"/>
+									</Button>
+								</Grid>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</ScrollViewer>
+
+			<!-- VIEW 2: WAYPOINTS MANAGER -->
+			<Grid Name="WaypointsView" IsVisible="False" ColumnDefinitions="240, *" Margin="20,0,20,20">
+				<Border Grid.Column="0" Background="#0B0F19" CornerRadius="8,0,0,8" Padding="15">
+					<Grid RowDefinitions="Auto, *, Auto">
+						<StackPanel Grid.Row="0" Spacing="15" Margin="0,0,0,20">
+							<StackPanel Orientation="Horizontal" Spacing="10">
+								<Image Source="/Assets/logo_icon.png" Width="16" Height="16"/>
+								<TextBlock Text="Navigator" FontWeight="Bold" Foreground="White" FontSize="16"/>
+							</StackPanel>
+
+							<TextBlock Text="Waypoints" Foreground="#6B7280" FontSize="12" FontWeight="Bold" Margin="0,10,0,5"/>
+
+							<StackPanel Spacing="2">
+								<Button Classes="SidebarItem" Content="Overworld" Command="{Binding SetDimensionFilterCommand}" CommandParameter="minecraft:overworld">
+									<Button.ContentTemplate>
+										<DataTemplate>
+											<StackPanel Orientation="Horizontal" Spacing="10">
+												<Border Width="16" Height="16" CornerRadius="4" Background="#22C55E"/>
+												<TextBlock Text="Overworld" VerticalAlignment="Center"/>
+											</StackPanel>
+										</DataTemplate>
+									</Button.ContentTemplate>
+								</Button>
+								<Button Classes="SidebarItem" Content="Nether" Command="{Binding SetDimensionFilterCommand}" CommandParameter="minecraft:the_nether">
+									<Button.ContentTemplate>
+										<DataTemplate>
+											<StackPanel Orientation="Horizontal" Spacing="10">
+												<Border Width="16" Height="16" CornerRadius="4" Background="#EF4444"/>
+												<TextBlock Text="Nether" VerticalAlignment="Center"/>
+											</StackPanel>
+										</DataTemplate>
+									</Button.ContentTemplate>
+								</Button>
+								<Button Classes="SidebarItem" Content="End" Command="{Binding SetDimensionFilterCommand}" CommandParameter="minecraft:the_end">
+									<Button.ContentTemplate>
+										<DataTemplate>
+											<StackPanel Orientation="Horizontal" Spacing="10">
+												<Border Width="16" Height="16" CornerRadius="4" Background="#A855F7"/>
+												<TextBlock Text="End" VerticalAlignment="Center"/>
+											</StackPanel>
+										</DataTemplate>
+									</Button.ContentTemplate>
+								</Button>
+							</StackPanel>
+						</StackPanel>
+
+						<Button Grid.Row="2" Classes="ActionGreen" Command="{Binding OpenAddModalCommand}" HorizontalAlignment="Stretch" Cursor="Hand">
+							<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+								<TextBlock Text="+" FontWeight="Bold"/>
+								<TextBlock Text="Add Waypoint"/>
+							</StackPanel>
+						</Button>
+					</Grid>
+				</Border>
+
+				<Border Grid.Column="1" Background="#111827" CornerRadius="0,8,8,0" Padding="20">
+					<Grid RowDefinitions="Auto, *">
+						<Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,20">
+							<TextBox Grid.Column="0" Text="{Binding WaypointSearchText}" Classes="InputDark" Watermark="Search waypoints..." CornerRadius="6"/>
+							<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="10,0,0,0">
+								<Button Content="Filter" Background="#1F2937" Foreground="White" Padding="15,8" CornerRadius="6" FontSize="12"/>
+							</StackPanel>
+						</Grid>
+
+						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+							<ItemsControl ItemsSource="{Binding FilteredWaypoints}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<StackPanel Spacing="8"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Border Background="#1F2937" CornerRadius="6" Padding="12" BorderBrush="#374151" BorderThickness="1">
+											<Grid ColumnDefinitions="Auto, *, Auto, Auto">
+												<Ellipse Grid.Column="0" Width="10" Height="10" Margin="0,0,15,0"
+                                                         Fill="{Binding Color, Converter={x:Static viewmodels:IntStringColorConverter.Instance}}"/>
+												<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+													<TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="White" FontSize="14"/>
+													<TextBlock Text="{Binding Dimension}" Foreground="#9CA3AF" FontSize="11"/>
+												</StackPanel>
+												<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,20,0">
+													<TextBlock Text="X:" Foreground="#6B7280" FontSize="12"/>
+													<TextBlock Text="{Binding X}" Foreground="#D1D5DB" FontSize="12"/>
+													<TextBlock Text="Y:" Foreground="#6B7280" FontSize="12" Margin="5,0,0,0"/>
+													<TextBlock Text="{Binding Y}" Foreground="#D1D5DB" FontSize="12"/>
+													<TextBlock Text="Z:" Foreground="#6B7280" FontSize="12" Margin="5,0,0,0"/>
+													<TextBlock Text="{Binding Z}" Foreground="#D1D5DB" FontSize="12"/>
+												</StackPanel>
+												<Button Grid.Column="3" Content="✕"
+                                                        Command="{Binding $parent[Window].DataContext.DeleteWaypointCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="Transparent" Foreground="#EF4444"
+                                                        FontWeight="Bold" FontSize="14" Cursor="Hand" Padding="5"/>
+											</Grid>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</ScrollViewer>
+
+						<StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="{Binding !FilteredWaypoints.Count}">
+							<TextBlock Text="No waypoints found" Foreground="#6B7280" FontSize="16" HorizontalAlignment="Center"/>
+							<TextBlock Text="Select a dimension or add a new one." Foreground="#4B5563" FontSize="12" Margin="0,5,0,0" HorizontalAlignment="Center"/>
+						</StackPanel>
+					</Grid>
+				</Border>
+			</Grid>
+
+			<!-- VIEW 3: GENERAL SETTINGS -->
+			<Grid Name="SettingsView" IsVisible="False" Margin="50,20">
+				<Grid ColumnDefinitions="*, *" RowDefinitions="Auto, *">
+
+					<!-- Left Column: HUD Editor Settings -->
+					<StackPanel Grid.Column="0" Spacing="20" Margin="0,0,40,0">
+						<Border BorderBrush="#334155" BorderThickness="0,0,0,1" Padding="0,0,0,10">
+							<StackPanel Spacing="5">
+								<TextBlock Text="HUD Editor" FontSize="18" FontWeight="Bold" Foreground="White"/>
+								<TextBlock Text="Customize your layout experience" FontSize="12" Foreground="#9CA3AF"/>
+							</StackPanel>
+						</Border>
+
+						<StackPanel Spacing="15">
+							<Grid ColumnDefinitions="*, Auto">
+								<TextBlock Text="Enable Snapping" VerticalAlignment="Center" Foreground="#D1D5DB"/>
+								<CheckBox Grid.Column="1" IsChecked="{Binding GeneralSettings.HudSnapping}"
+                                          Command="{Binding SaveGeneralSettingsCommand}"/>
+							</Grid>
+
+							<Grid ColumnDefinitions="*, Auto">
+								<TextBlock Text="Show Alignment Grid" VerticalAlignment="Center" Foreground="#D1D5DB"/>
+								<CheckBox Grid.Column="1" IsChecked="{Binding GeneralSettings.ShowHudGrid}"
+                                          Command="{Binding SaveGeneralSettingsCommand}"/>
+							</Grid>
+
+							<StackPanel Spacing="10">
+								<Grid ColumnDefinitions="*, Auto">
+									<TextBlock Text="Snap Radius" VerticalAlignment="Center" Foreground="#D1D5DB"/>
+									<!-- FIX: Added Grid.Column="1" to move it to the right -->
+									<TextBlock Grid.Column="1" Text="{Binding GeneralSettings.HudSnapRange}" VerticalAlignment="Center" Foreground="#A3E635" FontWeight="Bold"/>
+								</Grid>
+								<Slider Value="{Binding GeneralSettings.HudSnapRange}" Minimum="1" Maximum="20"
+										IsSnapToTickEnabled="True" TickFrequency="1"
+										PointerCaptureLost="Slider_PointerCaptureLost"/>
+							</StackPanel>
+
+						</StackPanel>
+					</StackPanel>
+
+					<!-- Right Column: UI Settings -->
+					<StackPanel Grid.Column="1" Spacing="20" Margin="40,0,0,0">
+						<Border BorderBrush="#334155" BorderThickness="0,0,0,1" Padding="0,0,0,10">
+							<StackPanel Spacing="5">
+								<TextBlock Text="Interface" FontSize="18" FontWeight="Bold" Foreground="White"/>
+								<TextBlock Text="Customize the menu appearance" FontSize="12" Foreground="#9CA3AF"/>
+							</StackPanel>
+						</Border>
+
+						<StackPanel Spacing="15">
+							<Grid ColumnDefinitions="*, Auto">
+								<TextBlock Text="Menu Particles" VerticalAlignment="Center" Foreground="#D1D5DB"/>
+								<CheckBox Grid.Column="1" IsChecked="{Binding GeneralSettings.MenuParticles}"
+                                          Command="{Binding SaveGeneralSettingsCommand}"/>
+							</Grid>
+						</StackPanel>
+					</StackPanel>
+				</Grid>
+			</Grid>
+		</Grid>
+
+		<!-- ADD MODAL OVERLAY -->
+		<Grid Grid.RowSpan="4" Background="#CC000000" IsVisible="{Binding IsAddWaypointModalVisible}">
+			<Border Width="550" Background="#111827" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" BoxShadow="0 10 30 0 #000000" BorderBrush="#374151" BorderThickness="1">
+				<Grid RowDefinitions="Auto, *, Auto">
+					<Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="20">
+						<TextBlock Text="Create Waypoint" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+						<Button Grid.Column="1" Content="✕" Command="{Binding CloseAddModalCommand}" Background="Transparent" Foreground="#9CA3AF" FontSize="16" Cursor="Hand"/>
+					</Grid>
+
+					<StackPanel Grid.Row="1" Margin="20,0,20,20" Spacing="20">
+						<Grid ColumnDefinitions="*">
+							<StackPanel Grid.Column="0" Spacing="8">
+								<TextBlock Text="Name" Foreground="White" FontWeight="SemiBold" FontSize="13"/>
+								<TextBox Text="{Binding NewWpName}" Watermark="Enter waypoint name..." Classes="InputDark"/>
+							</StackPanel>
+						</Grid>
+
+						<StackPanel Spacing="8">
+							<Grid ColumnDefinitions="Auto, *, Auto">
+								<TextBlock Text="Coordinates" Foreground="White" FontWeight="SemiBold" FontSize="13"/>
+								<Button Grid.Column="2" Content="Set to current"
+                                        Command="{Binding SetToCurrentCoordsCommand}"
+                                        Background="Transparent" Foreground="#D1D5DB" FontSize="11" Padding="0"/>
+							</Grid>
+
+							<Grid ColumnDefinitions="*, 10, *, 10, *, 15, 1.5*">
+								<TextBox Grid.Column="0" Text="{Binding NewWpX}" Watermark="X" Classes="InputDark" TextAlignment="Center"/>
+								<TextBox Grid.Column="2" Text="{Binding NewWpY}" Watermark="Y" Classes="InputDark" TextAlignment="Center"/>
+								<TextBox Grid.Column="4" Text="{Binding NewWpZ}" Watermark="Z" Classes="InputDark" TextAlignment="Center"/>
+								<StackPanel Grid.Column="6" Spacing="8">
+									<ComboBox SelectedItem="{Binding NewWpDimension}" ItemsSource="{Binding AvailableDimensions}" HorizontalAlignment="Stretch" Background="#111827" BorderBrush="#374151" Foreground="White" CornerRadius="6" Height="35"/>
+								</StackPanel>
+							</Grid>
+						</StackPanel>
+
+						<Grid ColumnDefinitions="*, *">
+							<StackPanel Grid.Column="0" Spacing="10">
+								<TextBlock Text="Display Options" Foreground="White" FontWeight="SemiBold" FontSize="13"/>
+								<Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto">
+									<CheckBox Grid.Row="0" Grid.Column="0" Content="Show Text" IsChecked="{Binding NewWpShowText}"/>
+									<CheckBox Grid.Row="0" Grid.Column="1" Content="Highlight Block" IsChecked="{Binding NewWpHighlightBlock}"/>
+									<CheckBox Grid.Row="1" Grid.Column="0" Content="Show Beam" IsChecked="{Binding NewWpShowBeam}" Margin="0,10,0,0"/>
+									<CheckBox Grid.Row="1" Grid.Column="1" Content="Show Distance" IsChecked="{Binding NewWpShowDistance}" Margin="0,10,0,0"/>
+								</Grid>
+							</StackPanel>
+							<StackPanel Grid.Column="1" Spacing="10" Margin="20,0,0,0">
+								<TextBlock Text="Color" Foreground="White" FontWeight="SemiBold" FontSize="13"/>
+								<StackPanel Orientation="Horizontal" Spacing="10">
+									<Border Width="30" Height="30" CornerRadius="6"
+                                            Background="{Binding NewWpColor, Converter={x:Static viewmodels:IntStringColorConverter.Instance}}"/>
+									<Button Content="Change" Command="{Binding ChangeColorCommand}"
+                                            Background="#1F2937" Foreground="#D1D5DB" BorderBrush="#374151" BorderThickness="1" CornerRadius="6"/>
+								</StackPanel>
+							</StackPanel>
+						</Grid>
+					</StackPanel>
+
+					<Grid Grid.Row="2" Background="#0B0F19" Height="60">
+						<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,0" Spacing="10">
+							<Button Classes="ActionGreen" Content="Create" Command="{Binding SaveNewWaypointCommand}" Width="100" HorizontalContentAlignment="Center" Cursor="Hand"/>
+						</StackPanel>
+					</Grid>
+				</Grid>
+			</Border>
+		</Grid>
+
+		<!-- OPTIONS MODAL -->
+		<Grid Grid.RowSpan="4" Background="#CC000000" IsVisible="{Binding IsOptionsOpen}">
+			<Border Width="600" Height="500" Background="#111827" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" BoxShadow="0 10 30 0 #000000" BorderBrush="#374151" BorderThickness="1">
+				<Grid RowDefinitions="Auto, *, Auto">
+					<Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="20">
+						<StackPanel Orientation="Horizontal" Spacing="10">
+							<TextBlock Text="{Binding SelectedModName}" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+							<TextBlock Text="Settings" FontWeight="Regular" FontSize="18" Foreground="#9CA3AF" VerticalAlignment="Center"/>
+						</StackPanel>
+						<Button Grid.Column="1" Content="✕" Command="{Binding CloseOptionsCommand}" Background="Transparent" Foreground="#9CA3AF" FontSize="16" Cursor="Hand"/>
+					</Grid>
+
+					<ScrollViewer Grid.Row="1" Margin="20,0">
+						<ContentControl Content="{Binding CurrentModSettings}">
+							<ContentControl.DataTemplates>
+								<DataTemplate DataType="models:PerformanceConfig">
+									<StackPanel Spacing="15">
+										<TextBlock Text="Display" Foreground="#6B7280" FontWeight="Bold" FontSize="12"/>
+										<CheckBox Content="Show Memory Usage" IsChecked="{Binding ShowMemory}" Classes="Toggle"/>
+										<CheckBox Content="Show CPU Usage" IsChecked="{Binding ShowCpu}" Classes="Toggle"/>
+									</StackPanel>
+								</DataTemplate>
+								<DataTemplate DataType="models:KeystrokesConfig">
+									<StackPanel Spacing="15">
+										<TextBlock Text="Appearance" Foreground="#6B7280" FontWeight="Bold" FontSize="12"/>
+										<CheckBox Content="Show Animations" IsChecked="{Binding ShowAnimations}"/>
+										<CheckBox Content="Chroma Mode" IsChecked="{Binding ChromaMode}"/>
+										<CheckBox Content="Show Border" IsChecked="{Binding ShowBorder}"/>
+										<TextBlock Text="Scale" Foreground="White" Margin="0,10,0,0"/>
+										<Slider Value="{Binding Scale}" Minimum="0.5" Maximum="2.0" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
+										<TextBlock Text="Opacity" Foreground="White" Margin="0,10,0,0"/>
+										<Slider Value="{Binding Opacity}" Minimum="0.1" Maximum="1.0" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
+									</StackPanel>
+								</DataTemplate>
+								<DataTemplate DataType="models:ItemCounterConfig">
+									<StackPanel Spacing="15">
+										<TextBlock Text="General" Foreground="#6B7280" FontWeight="Bold" FontSize="12"/>
+										<CheckBox Content="Auto Detect Items" IsChecked="{Binding AutoDetect}"/>
+										<CheckBox Content="Horizontal Layout" IsChecked="{Binding HorizontalLayout}"/>
+										<TextBlock Text="Visuals" Foreground="#6B7280" FontWeight="Bold" FontSize="12" Margin="0,10,0,0"/>
+										<CheckBox Content="Show Icons" IsChecked="{Binding ShowIcons}"/>
+										<CheckBox Content="Show Animations" IsChecked="{Binding ShowAnimations}"/>
+										<TextBlock Text="Scale" Foreground="White"/>
+										<Slider Value="{Binding Scale}" Minimum="0.5" Maximum="2.0"/>
+									</StackPanel>
+								</DataTemplate>
+								<DataTemplate DataType="models:MinimapConfig">
+									<StackPanel Spacing="15">
+										<TextBlock Text="General" Foreground="#6B7280" FontWeight="Bold" FontSize="12"/>
+										<CheckBox Content="Show Waypoints" IsChecked="{Binding ShowWaypoints}"/>
+										<CheckBox Content="Show Coordinates" IsChecked="{Binding ShowCoordinates}"/>
+										<TextBlock Text="Map Size (Resolution)" Foreground="White" Margin="0,10,0,0"/>
+										<NumericUpDown Value="{Binding MapSize}" Minimum="128" Maximum="512" Increment="64" Background="#1F2937" BorderBrush="#374151"/>
+										<TextBlock Text="Display Size (Screen)" Foreground="White" Margin="0,10,0,0"/>
+										<NumericUpDown Value="{Binding DisplaySize}" Minimum="100" Maximum="400" Increment="10" Background="#1F2937" BorderBrush="#374151"/>
+									</StackPanel>
+								</DataTemplate>
+								<DataTemplate DataType="models:ToggleSprintConfig">
+									<StackPanel Spacing="15">
+										<CheckBox Content="Enable Fly Boost" IsChecked="{Binding FlyBoost}"/>
+									</StackPanel>
+								</DataTemplate>
+								<DataTemplate DataType="models:GenericModConfig">
+									<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+										<TextBlock Text="No specific options available for this mod." Foreground="#6B7280"/>
+									</StackPanel>
+								</DataTemplate>
+							</ContentControl.DataTemplates>
+						</ContentControl>
+					</ScrollViewer>
+
+					<Grid Grid.Row="2" Background="#0B0F19" Height="60">
+						<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,0" Spacing="10">
+							<Button Content="Cancel" Command="{Binding CloseOptionsCommand}" Background="Transparent" Foreground="#9CA3AF" Cursor="Hand"/>
+							<Button Classes="ActionGreen" Content="Save Changes" Command="{Binding SaveOptionsCommand}" Width="140" HorizontalContentAlignment="Center" Cursor="Hand"/>
+						</StackPanel>
+					</Grid>
+				</Grid>
+			</Border>
+		</Grid>
+
+		<!-- 4. Footer (Only for Mods View) -->
+		<Grid Grid.Row="3" Margin="30" IsVisible="{Binding !#WaypointsView.IsVisible}">
+			<Button Content="EDIT HUD LAYOUT"
+                    Click="EditHudLayoutButton_Click"
+                    Background="#3B82F6"
+                    Foreground="White"
+                    FontWeight="Bold"
+                    CornerRadius="8"
+                    Padding="20,12"
+                    HorizontalAlignment="Left"
+                    Cursor="Hand"/>
+		</Grid>
+	</Grid>
+</Window>

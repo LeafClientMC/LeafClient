@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Library</OutputType>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<LangVersion>12.0</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Minecraft login with Microsoft Xbox Live account</Description>
+		<Copyright>Copyright (c) 2023 AlphaBs</Copyright>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/CmlLib/CmlLib.Core.Auth.Microsoft</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/CmlLib/CmlLib.Core.Auth.Microsoft</RepositoryUrl>
+		<Authors>ksi123456ab</Authors>
+		<PackageTags>CmlLib Minecraft Login Auth Authentication Microsoft Xbox Live XboxLive</PackageTags>
+		<Version>3.3.0</Version>
+		<PackageIcon>icon.png</PackageIcon>
+		<RepositoryType>git</RepositoryType>
+		<PackageId>CmlLib.Core.Auth.Microsoft</PackageId>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<!-- private assets -->
+	<ItemGroup>
+		<PackageReference Include="ConfigureAwait.Fody" Version="3.3.2" PrivateAssets="All" />
+		<PackageReference Include="Fody" Version="6.8.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="TunnelVisionLabs.ReferenceAssemblyAnnotator" Version="1.0.0-alpha.160" PrivateAssets="all" />
+		<PackageDownload Include="Microsoft.NETCore.App.Ref" Version="[5.0.0]" />
+	</ItemGroup>
+
+	<!-- others-->
+	<ItemGroup>
+		<None Include="..\..\icon.png" Pack="true" Visible="false" PackagePath="" />
+		<None Include="..\..\README.md" Pack="true" Visible="false" PackagePath="" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\..\CmlLib.Core.Commons-main\CmlLib.Core.Commons-main\CmlLib.Core.Commons.csproj" />
+		<ProjectReference Include="..\XboxAuthNet.Game\XboxAuthNet.Game.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<Reference Include="CmlLib.Core.Commons">
+			<HintPath>..\..\..\..\CmlLib.Core.Commons-main\CmlLib.Core.Commons-main\bin\Debug\netstandard2.0\CmlLib.Core.Commons.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+</Project>

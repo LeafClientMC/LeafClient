@@ -1,0 +1,73 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36221.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LeafClient", "LeafClient.csproj", "{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LeafClientUpdater", "..\LeafClientUpdater\LeafClientUpdater.csproj", "{6A637A71-4BED-46FB-9762-C5C12EF5934A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CmlLib.Core", "..\CmlLib.Core-master\CmlLib.Core-master\src\CmlLib.Core.csproj", "{574A0C0A-F647-10C8-7061-0B83736A1BF6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CmlLib.Core.Commons", "..\CmlLib.Core.Commons-main\CmlLib.Core.Commons-main\CmlLib.Core.Commons.csproj", "{FC44BF28-DDE5-33D0-90EF-E524B0D0351E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CmlLib.Core.Auth.Microsoft", "..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\CmlLib.Core.Auth.Microsoft\CmlLib.Core.Auth.Microsoft.csproj", "{C6046C9E-2914-2867-B938-F7A302A932AD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XboxAuthNet.Game", "..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\XboxAuthNet.Game\XboxAuthNet.Game.csproj", "{0A18227F-17EC-5720-D9E9-1F3CBDA68A12}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XboxAuthNet.Game.Msal", "..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\XboxAuthNet.Game.Msal\XboxAuthNet.Game.Msal.csproj", "{3D549752-945D-AEC2-A4D5-4CF07461F181}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CmlLib.Core.Bedrock.Auth", "..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\CmlLib.Core.Bedrock.Auth\CmlLib.Core.Bedrock.Auth.csproj", "{F06775C7-EF09-0B01-C7BE-07975B8745E7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XboxAuthNet", "..\XboxAuthNet-main\XboxAuthNet-main\src\XboxAuthNet.csproj", "{6560A394-FFC7-4590-4055-43B7AFA41C2D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6A637A71-4BED-46FB-9762-C5C12EF5934A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6A637A71-4BED-46FB-9762-C5C12EF5934A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6A637A71-4BED-46FB-9762-C5C12EF5934A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6A637A71-4BED-46FB-9762-C5C12EF5934A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{574A0C0A-F647-10C8-7061-0B83736A1BF6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{574A0C0A-F647-10C8-7061-0B83736A1BF6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{574A0C0A-F647-10C8-7061-0B83736A1BF6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{574A0C0A-F647-10C8-7061-0B83736A1BF6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FC44BF28-DDE5-33D0-90EF-E524B0D0351E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FC44BF28-DDE5-33D0-90EF-E524B0D0351E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FC44BF28-DDE5-33D0-90EF-E524B0D0351E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FC44BF28-DDE5-33D0-90EF-E524B0D0351E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6046C9E-2914-2867-B938-F7A302A932AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6046C9E-2914-2867-B938-F7A302A932AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6046C9E-2914-2867-B938-F7A302A932AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6046C9E-2914-2867-B938-F7A302A932AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0A18227F-17EC-5720-D9E9-1F3CBDA68A12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A18227F-17EC-5720-D9E9-1F3CBDA68A12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A18227F-17EC-5720-D9E9-1F3CBDA68A12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A18227F-17EC-5720-D9E9-1F3CBDA68A12}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D549752-945D-AEC2-A4D5-4CF07461F181}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D549752-945D-AEC2-A4D5-4CF07461F181}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D549752-945D-AEC2-A4D5-4CF07461F181}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D549752-945D-AEC2-A4D5-4CF07461F181}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F06775C7-EF09-0B01-C7BE-07975B8745E7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F06775C7-EF09-0B01-C7BE-07975B8745E7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F06775C7-EF09-0B01-C7BE-07975B8745E7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F06775C7-EF09-0B01-C7BE-07975B8745E7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6560A394-FFC7-4590-4055-43B7AFA41C2D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6560A394-FFC7-4590-4055-43B7AFA41C2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6560A394-FFC7-4590-4055-43B7AFA41C2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6560A394-FFC7-4590-4055-43B7AFA41C2D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {319107BE-4C97-43AD-8965-1E7516254E04}
+	EndGlobalSection
+EndGlobal

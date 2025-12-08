@@ -1,0 +1,84 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+		<ApplicationIcon>Assets\leaf_client_icon.ico</ApplicationIcon>
+		<UseWindowsForms>False</UseWindowsForms>
+		<UseWPF>False</UseWPF>
+		<Authors>voidZiAD</Authors>
+		<Company>voidZiAD</Company>
+		<Product>LeafClient</Product>
+		<Description>LeafClient is a modern and performance-focused Minecraft launcher and in-game client, offering advanced version management, mod support, and exclusive features to enhance your gameplay experience.</Description>
+		<PackageTags>minecraft</PackageTags>
+		<PackageProjectUrl>https://github.com/LeafClientMC/LeafClient</PackageProjectUrl>
+		<PackageIcon>Leaf.png</PackageIcon>
+		<RepositoryUrl>https://github.com/LeafClientMC/LeafClient</RepositoryUrl>
+		<Version>1.1</Version>
+		<PublishAot>true</PublishAot>
+		<IsAotCompatible>true</IsAotCompatible>
+		<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<RdXmlFile Include="rd.xml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AvaloniaResource Include="Assets\**" />
+		<Folder Include="Fonts\" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AvaloniaResource Include="Themes\**\*.axaml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AvaloniaXaml Remove="Themes\DarkTheme.axaml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="Assets\leaf_client_icon.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
+		<!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.8">
+			<IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+			<PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="CmlLib.Core.Auth.Microsoft.MsalClient" Version="2.0.0" />
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+		<PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+		<PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.79.2" />
+		<PackageReference Include="Mojang.Api.Skins" Version="1.2.1" />
+		<PackageReference Include="MojangAPI" Version="1.2.1" />
+		<PackageReference Include="ReactiveUI" Version="22.3.1" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+		<PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\CmlLib.Core-master\CmlLib.Core-master\src\CmlLib.Core.csproj" />
+	  <ProjectReference Include="..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\CmlLib.Core.Auth.Microsoft\CmlLib.Core.Auth.Microsoft.csproj" />
+	  <ProjectReference Include="..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\CmlLib.Core.Bedrock.Auth\CmlLib.Core.Bedrock.Auth.csproj" />
+	  <ProjectReference Include="..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\XboxAuthNet.Game.Msal\XboxAuthNet.Game.Msal.csproj" />
+	  <ProjectReference Include="..\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\XboxAuthNet.Game\XboxAuthNet.Game.csproj" />
+	  <ProjectReference Include="..\CmlLib.Core.Commons-main\CmlLib.Core.Commons-main\CmlLib.Core.Commons.csproj" />
+	  <ProjectReference Include="..\XboxAuthNet-main\XboxAuthNet-main\src\XboxAuthNet.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Assets\Leaf.png">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+	</ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LeafClient.App">
+	<Application.Styles>
+		<FluentTheme />
+		<!-- Custom theme resources will be loaded dynamically by ThemeService -->
+	</Application.Styles>
+
+	<!-- Application-wide resources, populated by ThemeService -->
+	<Application.Resources>
+		<!-- Initial resources will be set by ThemeService.SetTheme("Dark") in App.axaml.cs -->
+	</Application.Resources>
+</Application>

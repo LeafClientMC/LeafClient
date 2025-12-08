@@ -1,0 +1,18 @@
+# Gradle files
+.gradle/
+build/
+gradle/
+*.jar
+
+# Minecraft/Fabric specific
+loom-cache/
+.minecraft/
+run/
+out/
+bin/
+
+# IDE files
+.idea/
+.vscode/
+*.suo
+*.user

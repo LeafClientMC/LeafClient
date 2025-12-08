@@ -1,0 +1,11 @@
+﻿<Directives>
+	<Application>
+		<!-- This tells the AOT trimmer to not remove any code from these libraries -->
+		<Assembly Name="CmlLib.Core" Dynamic="Required All" />
+		<Assembly Name="CmlLib.Core.Auth.Microsoft" Dynamic="Required All" />
+		<Assembly Name="CmlLib.Core.Commons" Dynamic="Required All" />
+		<Assembly Name="System.Text.Json" Dynamic="Required All" />
+		<Assembly Name="XboxAuthNet" Dynamic="Required All" />
+		<Assembly Name="XboxAuthNet.Game" Dynamic="Required All" />
+	</Application>
+</Directives>

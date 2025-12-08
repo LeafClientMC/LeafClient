@@ -1,0 +1,49 @@
+﻿<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Styles.Resources>
+		<!-- Dark Theme -->
+		<Color x:Key="PrimaryBackgroundColor">#0D0D0D</Color>
+		<Color x:Key="SecondaryBackgroundColor">#0A0A0A</Color>
+		<Color x:Key="TertiaryBackgroundColor">#0F0F0F</Color>
+		<Color x:Key="CardBackgroundColor">#1A1A1A</Color>
+		<Color x:Key="HoverBackgroundColor">#2A2A2A</Color>
+		<Color x:Key="PrimaryBorderColor">#1A1A1A</Color>
+		<Color x:Key="SecondaryBorderColor">#2A2A2A</Color>
+
+		<Color x:Key="PrimaryForegroundColor">#FFFFFF</Color>
+		<Color x:Key="SecondaryForegroundColor">#888888</Color>
+		<Color x:Key="DisabledForegroundColor">#666666</Color>
+
+		<SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="{StaticResource PrimaryBackgroundColor}"/>
+		<SolidColorBrush x:Key="SecondaryBackgroundBrush" Color="{StaticResource SecondaryBackgroundColor}"/>
+		<SolidColorBrush x:Key="TertiaryBackgroundBrush" Color="{StaticResource TertiaryBackgroundColor}"/>
+		<SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackgroundColor}"/>
+		<SolidColorBrush x:Key="HoverBackgroundBrush" Color="{StaticResource HoverBackgroundColor}"/>
+		<SolidColorBrush x:Key="PrimaryBorderBrush" Color="{StaticResource PrimaryBorderColor}"/>
+		<SolidColorBrush x:Key="SecondaryBorderBrush" Color="{StaticResource SecondaryBorderColor}"/>
+
+		<SolidColorBrush x:Key="PrimaryForegroundBrush" Color="{StaticResource PrimaryForegroundColor}"/>
+		<SolidColorBrush x:Key="SecondaryForegroundBrush" Color="{StaticResource SecondaryForegroundColor}"/>
+		<SolidColorBrush x:Key="DisabledForegroundBrush" Color="{StaticResource DisabledForegroundColor}"/>
+
+		<!-- Accent Colors/Brushes -->
+		<Color x:Key="PrimaryAccentColor">#7B2CBF</Color>
+		<SolidColorBrush x:Key="PrimaryAccentBrush" Color="{StaticResource PrimaryAccentColor}"/>
+
+		<Color x:Key="SuccessColor">#00C853</Color>
+		<SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}"/>
+
+		<Color x:Key="ErrorColor">#D32F2F</Color>
+		<SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource ErrorColor}"/>
+
+		<LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="0,1">
+			<GradientStop Color="#2DD6C1" Offset="0"/>
+			<GradientStop Color="#8465FF" Offset="1"/>
+		</LinearGradientBrush>
+
+		<LinearGradientBrush x:Key="LaunchGradientBrush" StartPoint="0,0" EndPoint="0,1">
+			<GradientStop Color="#00E676" Offset="0"/>
+			<GradientStop Color="#00C853" Offset="1"/>
+		</LinearGradientBrush>
+	</Styles.Resources>
+</Styles>

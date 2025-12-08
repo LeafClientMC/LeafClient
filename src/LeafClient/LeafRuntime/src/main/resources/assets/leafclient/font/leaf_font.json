@@ -1,0 +1,11 @@
+{
+  "providers": [
+    {
+      "type": "leafclient:custom_ttf",
+      "file": "leafclient:font/poppins_regular.ttf",
+      "size": 11.0,
+      "oversample": 1.0,
+      "shift": [0.0, 0.0]
+    }
+  ]
+}

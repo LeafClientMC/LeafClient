@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "leafclient",
+  "version": "${version}",
+  "name": "Leaf Client",
+  "description": "A custom client mod.",
+  "authors": ["ZiAD"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/leafclient/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.leafclient.core.RuntimeMain"
+    ],
+    "main": [
+      "com.leafclient.LeafClientCommon"
+    ]
+  },
+  "mixins": [
+    "leafclient.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17"
+  }
+}

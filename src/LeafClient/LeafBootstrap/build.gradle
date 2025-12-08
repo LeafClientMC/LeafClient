@@ -1,0 +1,38 @@
+// LeafBootstrap/build.gradle
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.leafclient'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+application {
+    // MUST match your Main.java
+    mainClass = 'com.leaf.bootstrap.Main'
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes(
+            'Main-Class': 'com.leaf.bootstrap.Main',
+            'Implementation-Title': 'LeafClient Bootstrap',
+            'Implementation-Version': version
+        )
+    }
+}

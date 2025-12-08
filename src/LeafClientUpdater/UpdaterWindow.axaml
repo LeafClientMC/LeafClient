@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
+        x:Class="LeafClientUpdater.Views.UpdaterWindow"
+        Title="Leaf Client Updater"
+        Width="400" Height="200"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E">
+	<!-- Dark background for consistency -->
+
+	<Grid RowDefinitions="*,Auto" Margin="20">
+		<StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+			<TextBlock x:Name="StatusText"
+                       Text="Starting update..."
+                       Foreground="White"
+                       FontSize="16"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"/>
+			<ProgressBar x:Name="UpdateProgressBar"
+                         IsIndeterminate="True"
+                         Width="250"
+                         Height="10"
+                         Foreground="#007ACC"/>
+			<!-- A blueish color -->
+		</StackPanel>
+
+		<Button Grid.Row="1"
+                x:Name="CloseButton"
+                Content="Close"
+                IsVisible="False"
+                HorizontalAlignment="Right"
+                Margin="0,15,0,0"
+                Padding="15,8"
+                Background="#333333"
+                Foreground="White"
+                BorderThickness="0"
+                CornerRadius="5"/>
+	</Grid>
+</Window>
