@@ -871,8 +871,8 @@ namespace LeafClient.Views
             string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
             System.IO.Directory.CreateDirectory(leafRuntimeDir);
 
-            string bootstrapUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/latestjars/LeafBootstrap-1.0.0.jar";
-            string runtimeUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/latestjars/LeafRuntime-1.0.0.jar";
+            string bootstrapUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/LeafBootstrap-1.0.0.jar";
+            string runtimeUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/LeafRuntime-1.0.0.jar";
 
             string bootstrapPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap-1.0.0.jar");
             string runtimePath = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime-1.0.0.jar");
@@ -1014,16 +1014,14 @@ namespace LeafClient.Views
             try
             {
                 string currentExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                string appDirectory = System.IO.Path.GetDirectoryName(currentExePath)!; // Get the directory of the running EXE
+                string appDirectory = System.IO.Path.GetDirectoryName(currentExePath)!;
 
-                // 1. Define paths for the updater executable
-                string updaterExeName = "LeafClientUpdater.exe"; // This is the name of your new Avalonia updater app's executable
-                string updaterLocalPath = System.IO.Path.Combine(appDirectory, updaterExeName);
-                // IMPORTANT: This URL should point directly to the LeafClientUpdater.exe release asset on GitHub
-                // Example: "https://github.com/LeafClientMC/LeafClient/releases/download/v1.2.0/LeafClientUpdater.exe"
-                // You will need to replace this with the actual URL from your GitHub Releases.
+                string updaterDir = System.IO.Path.Combine(appDirectory, "Updater");
+                System.IO.Directory.CreateDirectory(updaterDir);
 
-                // 2. Download the LeafClientUpdater.exe
+                string updaterExeName = "LeafClientUpdater.exe";
+                string updaterLocalPath = System.IO.Path.Combine(updaterDir, updaterExeName);
+
                 Console.WriteLine($"[Updater] Downloading updater from {updaterDownloadUrl} to {updaterLocalPath}");
                 using (var client = new HttpClient())
                 {
@@ -1032,22 +1030,18 @@ namespace LeafClient.Views
                 }
                 Console.WriteLine("[Updater] Updater downloaded successfully.");
 
-                // 3. Launch the updater and exit the current application
-                // The updater needs to know:
-                //   - The path to the current (old) LeafClient.exe (so it can be replaced)
-                //   - The URL to download the new LeafClient.exe
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = updaterLocalPath,
                     Arguments = $"\"{currentExePath}\" \"{newExeDownloadUrl}\"",
-                    UseShellExecute = false // Important for silent launch and argument passing
+                    UseShellExecute = false
                 });
 
                 Console.WriteLine("[Updater] Launched updater and exiting main application.");
 
                 if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
                 {
-                    desktop.Shutdown(); // Correctly cast to IClassicDesktopStyleApplicationLifetime
+                    desktop.Shutdown();
                 }
             }
             catch (Exception ex)
@@ -1056,6 +1050,7 @@ namespace LeafClient.Views
                 await ShowUpdateErrorDialog($"Failed to start update: {ex.Message}");
             }
         }
+
 
 
         // --- Helper Dialogs for Update Feature ---
