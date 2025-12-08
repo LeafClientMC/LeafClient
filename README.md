@@ -3,6 +3,11 @@
 A ___Minecraft: Java Edition client (no cheats)___.
 (and possibly supporting Bedrock Edition soon)
 
+# V1.1 BETA RELEASED
+
+We've released V1.1 BETA!
+PLEASE EXPECT BUGS! AND REPORT THEM IF FOUND USING THE FEEDBACK SYSTEM ON THE LAUNCHER.
+
 # 🏗️ REVAMPING
 
 We're revamping Leaf Client, entirely.
