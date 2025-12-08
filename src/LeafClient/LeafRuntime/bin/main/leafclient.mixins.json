@@ -1,0 +1,28 @@
+{
+  "required": true,
+  "package": "com.leafclient.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [],
+  "client": [
+    "MinecraftClientAccessor",
+    "InGameHudMixin",
+    "LightmapTextureManagerMixin",
+    "MouseMixin",
+    "MouseAccessor",
+    "GameRendererMixin",
+    "CameraMixin",
+    "PlayerRendererMixin",
+    "ReplayCameraMixin",
+    "ReplayFovMixin",
+    "ClientPlayerEntityMixin",
+    "TitleScreenMixin",
+    "PlayerListHudMixin",
+    "ReplayInputMixin",
+    "ReplayPlayerInputMixin",
+    "ClientConnectionMixin",
+    "MinecraftClientReplayMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

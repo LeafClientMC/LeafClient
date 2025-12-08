@@ -1,18 +1,31 @@
-# Gradle files
-.gradle/
-build/
-gradle/
-*.jar
+# =================================
+# IGNORING Build and cache files
+# =================================
 
-# Minecraft/Fabric specific
-loom-cache/
-.minecraft/
-run/
-out/
-bin/
+# Gradle build outputs (in src/LeafClient/)
+src/LeafClient/.gradle/
+src/LeafClient/build/
+src/LeafClient/gradle/
 
-# IDE files
-.idea/
-.vscode/
-*.suo
-*.user
+# Minecraft/Fabric cache (THE PROBLEMATIC ONE)
+src/LeafClient/.gradle/loom-cache/
+src/LeafClient/.minecraft/
+src/LeafClient/run/
+
+# =================================
+# Source jars
+# =================================
+# These patterns ensure your JARs are NOT ignored
+!src/LeafClient/LeafRuntime/**/*.jar
+!src/LeafClient/LeafBootstrap/**/*.jar
+
+# =================================
+# General ignores
+# =================================
+**/.gradle/
+**/build/
+**/target/
+**/.idea/
+**/.vscode/
+.DS_Store
+Thumbs.db
