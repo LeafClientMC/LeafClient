@@ -3,13 +3,10 @@
 A ___Minecraft: Java Edition client (no cheats)___.
 (and possibly supporting Bedrock Edition soon)
 
-# 🏗️ REVAMPING
+# V1.1 BETA RELEASED
 
-We're revamping Leaf Client, entirely.
-This is going to release in approx 1-2 months (maybe less time), and it's going to include in-game features just like other popular clients, and performance mods to improve gameplay.
-Not to mention, this will be **cross-platform**, just like other clients. Previously, this only supported Windows OS.
-
-**VIEW OUR PROGRESS AND WHAT'S LEFT BEFORE THE REVAMP RELEASE [HERE](https://github.com/orgs/LeafClientMC/projects/3)!**
+We've released V1.1 BETA!
+PLEASE EXPECT BUGS! AND REPORT THEM IF FOUND USING THE FEEDBACK SYSTEM ON THE LAUNCHER.
 
 **Currently featuring 20+ client features:**
 - **🛡️ ArmorHUD**
