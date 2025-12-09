@@ -1,52 +1,52 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "D:\\LeafClient\\LeafClient\\",
+  "WorkspaceRootPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{C6046C9E-2914-2867-B938-F7A302A932AD}|..\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj|d:\\leafclient\\cmllib.core.auth.microsoft-master\\cmllib.core.auth.microsoft-master\\src\\cmllib.core.auth.microsoft\\extensions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\leafclient.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:leafclient.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\models\\launchersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:models\\launchersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\leafclient.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:leafclient.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\views\\loginwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\loginwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\app.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:app.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\models\\modconfigs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:models\\modconfigs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\services\\modsettingsservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:services\\modsettingsservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\views\\modsmanager.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\modsmanager.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\modsmanager.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\views\\modsmanager.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\modsmanager.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\modsmanager.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|d:\\leafclient\\leafclient\\viewmodels\\modsmanagerviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\Extensions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\models\\launchersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:models\\launchersettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\loginwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\loginwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\app.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:app.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\models\\modconfigs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:models\\modconfigs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\services\\modsettingsservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:services\\modsettingsservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\viewmodels\\modsmanagerviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:viewmodels\\modsmanagerviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
@@ -57,148 +57,139 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Document",
               "DocumentIndex": 1,
               "Title": "LeafClient",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\LeafClient.csproj",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
               "RelativeDocumentMoniker": "LeafClient.csproj",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\LeafClient.csproj",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
               "RelativeToolTip": "LeafClient.csproj",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAADAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2025-12-08T21:08:00.539Z",
+              "WhenOpened": "2025-12-09T11:02:31.529Z",
               "IsPinned": true,
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 4,
               "Title": "Extensions.cs",
               "DocumentMoniker": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\Extensions.cs",
-              "RelativeDocumentMoniker": "..\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\Extensions.cs",
               "ToolTip": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\Extensions.cs",
-              "RelativeToolTip": "..\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\Extensions.cs",
-              "ViewState": "AgIAADoAAAAAAAAAAAAwwE0AAAAJAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAlAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-12-08T21:18:10.562Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 5,
               "Title": "LauncherSettings.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Models\\LauncherSettings.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Models\\LauncherSettings.cs",
               "RelativeDocumentMoniker": "Models\\LauncherSettings.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Models\\LauncherSettings.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Models\\LauncherSettings.cs",
               "RelativeToolTip": "Models\\LauncherSettings.cs",
               "ViewState": "AgIAABYAAAAAAAAAAAA9wCQAAAAmAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-08T20:53:40.795Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-12-08T20:53:40.795Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 0,
               "Title": "MainWindow.axaml.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Views\\MainWindow.axaml.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml.cs",
               "RelativeDocumentMoniker": "Views\\MainWindow.axaml.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Views\\MainWindow.axaml.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml.cs",
               "RelativeToolTip": "Views\\MainWindow.axaml.cs",
-              "ViewState": "AgIAAOgWAAAAAAAAAAAUwPoWAAARAAAAAAAAAA==",
+              "ViewState": "AgIAAI0DAAAAAAAAAAAYwKADAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-12-08T20:44:34.376Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "LoginWindow.axaml.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Views\\LoginWindow.axaml.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\LoginWindow.axaml.cs",
               "RelativeDocumentMoniker": "Views\\LoginWindow.axaml.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Views\\LoginWindow.axaml.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\LoginWindow.axaml.cs",
               "RelativeToolTip": "Views\\LoginWindow.axaml.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAYAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-08T20:44:28.422Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "Program.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Program.cs",
-              "RelativeDocumentMoniker": "Program.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Program.cs",
-              "RelativeToolTip": "Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAYAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-08T20:44:06.5Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-12-08T20:44:28.422Z"
             },
             {
               "$type": "Document",
               "DocumentIndex": 7,
-              "Title": "ModConfigs.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Models\\ModConfigs.cs",
-              "RelativeDocumentMoniker": "Models\\ModConfigs.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Models\\ModConfigs.cs",
-              "RelativeToolTip": "Models\\ModConfigs.cs",
-              "ViewState": "AgIAAGUAAAAAAAAAAAAgwGoAAAAAAAAAAAAAAA==",
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAYAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-06T16:16:35.277Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
-              "Title": "ModSettingsService.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Services\\ModSettingsService.cs",
-              "RelativeDocumentMoniker": "Services\\ModSettingsService.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Services\\ModSettingsService.cs",
-              "RelativeToolTip": "Services\\ModSettingsService.cs",
-              "ViewState": "AgIAAK8AAAAAAAAAAAAYwLYAAAANAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-06T16:13:30.66Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 6,
-              "Title": "App.axaml.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\App.axaml.cs",
-              "RelativeDocumentMoniker": "App.axaml.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\App.axaml.cs",
-              "RelativeToolTip": "App.axaml.cs",
-              "ViewState": "AgIAAGQAAAAAAAAAAAAnwGwAAAAdAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-12-06T14:06:02.463Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-12-08T20:44:06.5Z"
             },
             {
               "$type": "Document",
               "DocumentIndex": 9,
+              "Title": "ModConfigs.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Models\\ModConfigs.cs",
+              "RelativeDocumentMoniker": "Models\\ModConfigs.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Models\\ModConfigs.cs",
+              "RelativeToolTip": "Models\\ModConfigs.cs",
+              "ViewState": "AgIAAGUAAAAAAAAAAAAgwGoAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-12-06T16:16:35.277Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "ModSettingsService.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Services\\ModSettingsService.cs",
+              "RelativeDocumentMoniker": "Services\\ModSettingsService.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Services\\ModSettingsService.cs",
+              "RelativeToolTip": "Services\\ModSettingsService.cs",
+              "ViewState": "AgIAAK8AAAAAAAAAAAAYwLYAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-12-06T16:13:30.66Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "App.axaml.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\App.axaml.cs",
+              "RelativeDocumentMoniker": "App.axaml.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\App.axaml.cs",
+              "RelativeToolTip": "App.axaml.cs",
+              "ViewState": "AgIAAGQAAAAAAAAAAAAnwGwAAAAdAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-12-06T14:06:02.463Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "ModsManager.axaml.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Views\\ModsManager.axaml.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\ModsManager.axaml.cs",
               "RelativeDocumentMoniker": "Views\\ModsManager.axaml.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Views\\ModsManager.axaml.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\ModsManager.axaml.cs",
               "RelativeToolTip": "Views\\ModsManager.axaml.cs",
-              "ViewState": "AgIAACMBAAAAAAAAAAAjwDMBAAA9AAAAAAAAAA==",
+              "ViewState": "AgIAABEBAAAAAAAAAAAQwBcBAAA3AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-12-05T19:58:16.583Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 3,
               "Title": "ModsManager.axaml",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\Views\\ModsManager.axaml",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\ModsManager.axaml",
               "RelativeDocumentMoniker": "Views\\ModsManager.axaml",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\Views\\ModsManager.axaml",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\ModsManager.axaml",
               "RelativeToolTip": "Views\\ModsManager.axaml",
-              "ViewState": "AgIAAKIAAAAAAAAAAAAwwLMAAAAuAAAAAAAAAA==",
+              "ViewState": "AgIAAAkCAAAAAAAAAAAcwBECAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
               "WhenOpened": "2025-12-06T13:33:08.478Z",
               "EditorCaption": ""
@@ -207,9 +198,9 @@
               "$type": "Document",
               "DocumentIndex": 11,
               "Title": "ModsManagerViewModel.cs",
-              "DocumentMoniker": "D:\\LeafClient\\LeafClient\\ViewModels\\ModsManagerViewModel.cs",
+              "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\ViewModels\\ModsManagerViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\ModsManagerViewModel.cs",
-              "ToolTip": "D:\\LeafClient\\LeafClient\\ViewModels\\ModsManagerViewModel.cs",
+              "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\ViewModels\\ModsManagerViewModel.cs",
               "RelativeToolTip": "ViewModels\\ModsManagerViewModel.cs",
               "ViewState": "AgIAAJ4AAAAAAAAAAAAewKcAAAA4AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",

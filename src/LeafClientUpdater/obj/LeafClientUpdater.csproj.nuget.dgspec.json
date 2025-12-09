@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\LeafClient\\LeafClientUpdater\\LeafClientUpdater.csproj": {}
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj": {}
   },
   "projects": {
-    "D:\\LeafClient\\LeafClientUpdater\\LeafClientUpdater.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\LeafClientUpdater\\LeafClientUpdater.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj",
         "projectName": "LeafClientUpdater",
-        "projectPath": "D:\\LeafClient\\LeafClientUpdater\\LeafClientUpdater.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\LeafClientUpdater\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

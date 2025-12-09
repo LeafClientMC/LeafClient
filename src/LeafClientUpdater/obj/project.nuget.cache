@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "tK4AuGPIXRc=",
+  "dgSpecHash": "xrPdBKo8tfI=",
   "success": true,
-  "projectFilePath": "D:\\LeafClient\\LeafClientUpdater\\LeafClientUpdater.csproj",
+  "projectFilePath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\ziadf\\.nuget\\packages\\avalonia\\11.3.8\\avalonia.11.3.8.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\avalonia.angle.windows.natives\\2.1.25547.20250602\\avalonia.angle.windows.natives.2.1.25547.20250602.nupkg.sha512",

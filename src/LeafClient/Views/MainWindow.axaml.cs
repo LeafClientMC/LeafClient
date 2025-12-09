@@ -681,19 +681,21 @@ namespace LeafClient.Views
 
                 if (existingManager != null)
                 {
+                    // Just Show() and ensure Topmost. 
+                    // AVOID Activate() if possible, as it forces focus stealing which kills Exclusive Fullscreen.
                     existingManager.Show();
-                    existingManager.Activate(); // Bring to front
+                    existingManager.Topmost = true;
                     existingManager.WindowState = WindowState.Normal;
                 }
                 else
                 {
                     var modsManager = new ModsManager();
                     modsManager.Show();
+                    // Ensure the new window is Topmost so it floats over the game (requires Borderless Windowed game)
+                    modsManager.Topmost = true;
                 }
             }
         }
-
-
 
         private async Task PerformModCleanup()
         {

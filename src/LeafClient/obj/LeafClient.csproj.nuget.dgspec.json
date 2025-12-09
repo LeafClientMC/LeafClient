@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\LeafClient\\LeafClient\\LeafClient.csproj": {}
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj": {}
   },
   "projects": {
-    "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj": {
       "version": "4.0.6",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj",
         "projectName": "CmlLib.Core",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\obj\\",
         "projectStyle": "PackageReference",
         "crossTargeting": true,
         "fallbackFolders": [
@@ -35,16 +35,16 @@
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
               }
             }
           },
           "netstandard2.0": {
             "targetAlias": "netstandard2.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
               }
             }
           }
@@ -203,14 +203,14 @@
         }
       }
     },
-    "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj": {
       "version": "3.3.0",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj",
         "projectName": "CmlLib.Core.Auth.Microsoft",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -232,11 +232,11 @@
           "netstandard2.0": {
             "targetAlias": "netstandard2.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
               }
             }
           }
@@ -301,14 +301,14 @@
         }
       }
     },
-    "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj": {
       "version": "0.0.7",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj",
         "projectName": "CmlLib.Core.Bedrock.Auth",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -330,8 +330,8 @@
           "netstandard2.0": {
             "targetAlias": "netstandard2.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
               }
             }
           }
@@ -396,14 +396,14 @@
         }
       }
     },
-    "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj": {
       "version": "0.1.2",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj",
         "projectName": "XboxAuthNet.Game.Msal",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -425,8 +425,8 @@
           "netstandard2.0": {
             "targetAlias": "netstandard2.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
               }
             }
           }
@@ -499,14 +499,14 @@
         }
       }
     },
-    "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
       "version": "1.4.0",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj",
         "projectName": "XboxAuthNet.Game",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -598,14 +598,14 @@
         }
       }
     },
-    "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
       "version": "4.0.0",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj",
         "projectName": "CmlLib.Core.Commons",
-        "projectPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -671,14 +671,14 @@
         }
       }
     },
-    "D:\\LeafClient\\LeafClient\\LeafClient.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj": {
       "version": "1.1.0",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\LeafClient\\LeafClient.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
         "projectName": "LeafClient",
-        "projectPath": "D:\\LeafClient\\LeafClient\\LeafClient.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\LeafClient\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -700,26 +700,26 @@
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core-master\\CmlLib.Core-master\\src\\CmlLib.Core.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Auth.Microsoft\\CmlLib.Core.Auth.Microsoft.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\CmlLib.Core.Bedrock.Auth\\CmlLib.Core.Bedrock.Auth.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game.Msal\\XboxAuthNet.Game.Msal.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Auth.Microsoft-master\\CmlLib.Core.Auth.Microsoft-master\\src\\XboxAuthNet.Game\\XboxAuthNet.Game.csproj"
               },
-              "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
-                "projectPath": "D:\\LeafClient\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons-main\\CmlLib.Core.Commons.csproj"
               },
-              "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj": {
-                "projectPath": "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj"
+              "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj": {
+                "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj"
               }
             }
           }
@@ -837,14 +837,14 @@
         }
       }
     },
-    "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj": {
+    "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj": {
       "version": "3.0.5",
       "restore": {
-        "projectUniqueName": "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj",
+        "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj",
         "projectName": "XboxAuthNet",
-        "projectPath": "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj",
+        "projectPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\XboxAuthNet.csproj",
         "packagesPath": "C:\\Users\\ziadf\\.nuget\\packages\\",
-        "outputPath": "D:\\LeafClient\\XboxAuthNet-main\\XboxAuthNet-main\\src\\obj\\",
+        "outputPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\XboxAuthNet-main\\XboxAuthNet-main\\src\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

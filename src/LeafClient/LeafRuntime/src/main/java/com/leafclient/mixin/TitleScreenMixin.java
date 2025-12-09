@@ -177,7 +177,7 @@ public abstract class TitleScreenMixin extends Screen {
         }
 
         // Ensure we always have slightly more image than screen to allow scrolling
-        float finalScale = baseScale * BG_MIN_ZOOM_FACTOR; 
+        float finalScale = baseScale * BG_MIN_ZOOM_FACTOR;
 
         int bgRenderWidth = (int) (BG_NATIVE_WIDTH * finalScale);
         int bgRenderHeight = (int) (BG_NATIVE_HEIGHT * finalScale);
@@ -209,12 +209,15 @@ public abstract class TitleScreenMixin extends Screen {
             float alpha = (pass == BLUR_PASSES) ? 1f : BLUR_ALPHA;
             RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
 
+            // CORRECTED: Explicitly map the native texture size to the scaled render size
             ctx.drawTexture(
                     BG,
-                    drawX, drawY,
-                    0, 0,
-                    bgRenderWidth, bgRenderHeight,
-                    BG_NATIVE_WIDTH, BG_NATIVE_HEIGHT);
+                    drawX, drawY, // X, Y
+                    bgRenderWidth, bgRenderHeight, // Destination Width, Height (Screen)
+                    0.0f, 0.0f, // U, V Start
+                    BG_NATIVE_WIDTH, BG_NATIVE_HEIGHT, // Region Width, Height (Texture Source)
+                    BG_NATIVE_WIDTH, BG_NATIVE_HEIGHT // Texture File Dimensions
+            );
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
 
@@ -325,7 +328,6 @@ public abstract class TitleScreenMixin extends Screen {
         ctx.drawText(textRenderer, notice, x, y, 0x888888, false);
         ctx.getMatrices().pop();
     }
-
 
     private void drawSimpleTooltip(DrawContext ctx, int centerX, int y, String text, boolean below) {
         int w = textRenderer.getWidth(text) + 8;
@@ -559,7 +561,8 @@ public abstract class TitleScreenMixin extends Screen {
                         return true;
                     }
 
-                    // contentHeight measured from topY: content extends from 0..contentHeight in its own coords
+                    // contentHeight measured from topY: content extends from 0..contentHeight in
+                    // its own coords
                     double minOffset = visibleHeight - contentHeight; // negative
                     double maxOffset = 0; // can't scroll past the top
 
