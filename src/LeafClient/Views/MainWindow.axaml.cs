@@ -859,8 +859,8 @@ namespace LeafClient.Views
         }
         #region Updater Important Variables
 
-        string updaterDownloadUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/latestexe/LeafClientUpdater.exe";
-        string newExeDownloadUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/latestexe/LeafClient.exe";
+        string updaterDownloadUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClientUpdater.exe";
+        string newExeDownloadUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClient.exe";
         string versionFileUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestversion.txt";
 
         #endregion
@@ -1015,7 +1015,31 @@ namespace LeafClient.Views
 
             try
             {
-                string currentExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                // FIX: Use Process.MainModule.FileName to get the path in single-file/AOT builds
+                string? currentExePath = null;
+                try
+                {
+                    currentExePath = Process.GetCurrentProcess().MainModule?.FileName;
+                }
+                catch { /* Ignore permission errors */ }
+
+                // Fallback if MainModule fails
+                if (string.IsNullOrEmpty(currentExePath))
+                {
+                    currentExePath = Environment.ProcessPath;
+                }
+
+                // Final fallback
+                if (string.IsNullOrEmpty(currentExePath))
+                {
+                    currentExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                }
+
+                if (string.IsNullOrEmpty(currentExePath))
+                {
+                    throw new Exception("Could not determine executable path.");
+                }
+
                 string appDirectory = System.IO.Path.GetDirectoryName(currentExePath)!;
 
                 string updaterDir = System.IO.Path.Combine(appDirectory, "Updater");

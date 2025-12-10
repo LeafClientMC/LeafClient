@@ -17,7 +17,7 @@
 		<PackageProjectUrl>https://github.com/LeafClientMC/LeafClient</PackageProjectUrl>
 		<PackageIcon>Leaf.png</PackageIcon>
 		<RepositoryUrl>https://github.com/LeafClientMC/LeafClient</RepositoryUrl>
-		<Version>1.2</Version>
+		<Version>1.1</Version>
 		<PublishAot>true</PublishAot>
 		<IsAotCompatible>true</IsAotCompatible>
 		<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
