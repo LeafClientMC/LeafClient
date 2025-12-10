@@ -1,0 +1,12 @@
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\LeafClient.exe
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\LeafClient.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\av_libglesv2.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\libHarfBuzzSharp.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\libSkiaSharp.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\CmlLib.Core.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\CmlLib.Core.Auth.Microsoft.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\CmlLib.Core.Bedrock.Auth.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\XboxAuthNet.Game.Msal.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\XboxAuthNet.Game.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\CmlLib.Core.Commons.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\publish\XboxAuthNet.pdb

@@ -1,0 +1,5 @@
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\LeafClientUpdater.exe
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\LeafClientUpdater.pdb
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\av_libglesv2.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\libHarfBuzzSharp.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\libSkiaSharp.dll

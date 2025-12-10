@@ -5334,6 +5334,43 @@ namespace LeafClient.Views
             }
         }
 
+        private async Task RegisterAutoInstalledMod(string modId, string modName, string version, string mcVersion, string fileName, string url)
+        {
+            // Check if this specific mod file is already tracked
+            var existing = _currentSettings.InstalledMods.FirstOrDefault(m =>
+                m.ModId == modId &&
+                m.MinecraftVersion == mcVersion);
+
+            if (existing == null)
+            {
+                _currentSettings.InstalledMods.Add(new InstalledMod
+                {
+                    ModId = modId,
+                    Name = modName,
+                    Description = $"Auto-installed {modName}",
+                    Version = version,
+                    MinecraftVersion = mcVersion,
+                    FileName = fileName,
+                    DownloadUrl = url,
+                    Enabled = true,
+                    InstallDate = DateTime.Now,
+                    IconUrl = ""
+                });
+                Console.WriteLine($"[Mod Tracker] Registered {modName} for MC {mcVersion} in settings.");
+            }
+            else
+            {
+                // Update details if it exists (e.g. filename changed or url updated)
+                existing.FileName = fileName;
+                existing.DownloadUrl = url;
+                existing.Version = version;
+                existing.Enabled = true; // Ensure it's enabled
+            }
+
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+        }
+
+
         private async Task<bool> InstallSodiumIfNeededAsync(string mcVersion)
         {
             if (!_currentSettings.IsSodiumEnabled)
@@ -5353,26 +5390,17 @@ namespace LeafClient.Views
                 var apiUrl = $"https://api.modrinth.com/v2/project/AANobbMI/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
                 var response = await client.GetStringAsync(apiUrl);
 
-                if (string.IsNullOrWhiteSpace(response))
-                {
-                    throw new Exception("Empty response from Modrinth API for Sodium");
-                }
+                if (string.IsNullOrWhiteSpace(response)) throw new Exception("Empty response from Modrinth API for Sodium");
 
                 var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
-
                 var latest = versions?.FirstOrDefault();
-                if (latest?.files == null || latest.files.Count == 0)
-                {
-                    throw new Exception("No download files found for Sodium");
-                }
+
+                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No download files found for Sodium");
 
                 var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
                 var downloadUrl = file.url;
 
-                if (string.IsNullOrWhiteSpace(downloadUrl))
-                {
-                    throw new Exception("Invalid download URL for Sodium");
-                }
+                if (string.IsNullOrWhiteSpace(downloadUrl)) throw new Exception("Invalid download URL for Sodium");
 
                 Console.WriteLine($"[Sodium] Downloading from: {downloadUrl}");
                 var jarBytes = await client.GetByteArrayAsync(downloadUrl);
@@ -5382,6 +5410,9 @@ namespace LeafClient.Views
 
                 await File.WriteAllBytesAsync(sodiumPath, jarBytes);
                 Console.WriteLine($"[Sodium] Successfully installed for {mcVersion} at {sodiumPath}");
+
+                // TRACKING FIX: Register the mod so the cleaner knows about it later
+                await RegisterAutoInstalledMod("sodium", "Sodium", latest.versionNumber, mcVersion, fileName, downloadUrl);
 
                 return true;
             }
@@ -5396,6 +5427,8 @@ namespace LeafClient.Views
                 ShowProgress(false);
             }
         }
+
+
 
         private async Task<bool> ProcessModrinthPackInstallation(string mrpackPath, string modsFolder, string mcVersion)
         {
@@ -5775,16 +5808,15 @@ namespace LeafClient.Views
 
             _isLaunching = true;
             _gameStartingBannerShownForCurrentLaunch = false;
-            _launchFailureBannerShownForCurrentLaunch = false; // Reset for current launch attempt
+            _launchFailureBannerShownForCurrentLaunch = false;
             await UpdateServerButtonStates();
 
             _launchCancellationTokenSource = new CancellationTokenSource();
             CancellationToken cancellationToken = _launchCancellationTokenSource.Token;
 
             HideLaunchErrorBanner();
-            HideLaunchFailureBanner(); // Ensure the failure banner is hidden at the start of a new launch
+            HideLaunchFailureBanner();
 
-            // --- REVISED NETWORK AND SESSION CHECK logic omitted for brevity (unchanged) ---
             await LoadSessionAsync();
 
             if (_session == null)
@@ -5805,8 +5837,6 @@ namespace LeafClient.Views
                 await UpdateServerButtonStates();
                 return;
             }
-
-            // --- END REVISED NETWORK AND SESSION CHECK LOGIC ---
 
             string versionToLaunch = version;
 
@@ -5863,45 +5893,54 @@ namespace LeafClient.Views
                     return;
                 }
 
-                // This will enable/disable mods and remove incompatible ones for other versions.
-                SyncLauncherManagedMods(versionToLaunch); // Uses the new method
+                // FIX: Pass the base 'version' (e.g. "1.20.5"), NOT 'versionToLaunch' (e.g. "fabric-loader...").
+                // The mods are tracked by the base Minecraft version.
+                SyncLauncherManagedMods(version);
 
-                string leafClientModFileName = "leafclient-runtime-1.0.0.jar";
-                if (!_currentSettings.InstalledMods.Any(m => m.ModId == "leafclient" && m.MinecraftVersion == versionToLaunch))
+                // Only add Leaf Runtime Mod for modern versions (1.17+) to avoid crashes on old versions
+                bool isModernVersion = false;
+                if (Version.TryParse(version, out Version? semVer))
                 {
-                    _currentSettings.InstalledMods.Add(new InstalledMod
-                    {
-                        ModId = "leafclient",
-                        Name = "Leaf Client Runtime",
-                        Description = "Core Leaf Client runtime mod.",
-                        Version = "1.0.0",
-                        MinecraftVersion = versionToLaunch,
-                        FileName = leafClientModFileName,
-                        DownloadUrl = "internal",
-                        Enabled = true,
-                        InstallDate = DateTime.Now,
-                        IconUrl = ""
-                    });
-                    await _settingsService.SaveSettingsAsync(_currentSettings);
-                    Console.WriteLine($"[LeafClient Runtime] Added internal mod '{leafClientModFileName}' to settings.");
+                    isModernVersion = semVer >= new Version(1, 17);
                 }
-                else
+
+                if (isModernVersion)
                 {
-                    var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId == "leafclient" && m.MinecraftVersion == versionToLaunch);
-                    if (leafClientMod != null && !leafClientMod.Enabled)
+                    string leafClientModFileName = "leafclient-runtime-1.0.0.jar";
+                    if (!_currentSettings.InstalledMods.Any(m => m.ModId == "leafclient" && m.MinecraftVersion == version))
                     {
-                        leafClientMod.Enabled = true;
+                        _currentSettings.InstalledMods.Add(new InstalledMod
+                        {
+                            ModId = "leafclient",
+                            Name = "Leaf Client Runtime",
+                            Description = "Core Leaf Client runtime mod.",
+                            Version = "1.0.0",
+                            MinecraftVersion = version, // Use base version
+                            FileName = leafClientModFileName,
+                            DownloadUrl = "internal",
+                            Enabled = true,
+                            InstallDate = DateTime.Now,
+                            IconUrl = ""
+                        });
                         await _settingsService.SaveSettingsAsync(_currentSettings);
-                        Console.WriteLine($"[LeafClient Runtime] Ensured internal mod '{leafClientModFileName}' is enabled in settings.");
+                    }
+                    else
+                    {
+                        var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId == "leafclient" && m.MinecraftVersion == version);
+                        if (leafClientMod != null && !leafClientMod.Enabled)
+                        {
+                            leafClientMod.Enabled = true;
+                            await _settingsService.SaveSettingsAsync(_currentSettings);
+                        }
                     }
                 }
-
 
                 var jvmArguments = new List<MArgument>
         {
             new("-Dleaf.client=true"),
             new("-Dleaf.version=1.1.0")
         };
+
                 if (!string.IsNullOrWhiteSpace(_currentSettings.JvmArguments))
                 {
                     var customArgs = _currentSettings.JvmArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -5944,47 +5983,56 @@ namespace LeafClient.Views
                 var process = await _launcher.CreateProcessAsync(versionToLaunch, launchOption);
                 if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
 
-                await DownloadLeafRuntimeDependencies(version, GetSelectedAddon(version) == "Fabric");
+                // --- BOOTSTRAP INJECTION LOGIC ---
 
-                string originalJavaPath = process.StartInfo.FileName;
-                string originalArguments = process.StartInfo.Arguments ?? string.Empty;
-                string originalWorkingDirectory = process.StartInfo.WorkingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                // 1. Define which versions your Runtime Mod actually supports
+                // Currently, it seems built for 1.20.1. Add others only if you have updated the jar to support them.
+                var supportedRuntimeVersions = new HashSet<string> { "1.20.1" };
+                bool isRuntimeCompatible = supportedRuntimeVersions.Contains(version);
 
-                Console.WriteLine("[Leaf] Original Java path: " + originalJavaPath);
-                Console.WriteLine("[Leaf] Original arguments: " + originalArguments);
-                Console.WriteLine("[Leaf] Original working directory: " + originalWorkingDirectory);
-
-                string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
-
-                string bootstrapJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap-1.0.0.jar");
-                string runtimeJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime-1.0.0.jar");
-
-                if (!File.Exists(bootstrapJarPath))
-                    throw new FileNotFoundException("Leaf bootstrap JAR not found", bootstrapJarPath);
-
-                if (!File.Exists(runtimeJarPath))
-                    throw new FileNotFoundException("Leaf runtime JAR not found", runtimeJarPath);
-
-                Console.WriteLine("[Leaf] Using bootstrap JAR: " + bootstrapJarPath);
-                Console.WriteLine("[Leaf] Using runtime JAR: " + runtimeJarPath);
-
-                process.StartInfo.FileName = originalJavaPath;
-
-                process.StartInfo.Arguments = $"-jar \"{bootstrapJarPath}\" {originalArguments}";
-                process.StartInfo.WorkingDirectory = leafRuntimeDir;
-
-                try
+                if (isModernVersion)
                 {
-                    // Clear or update keys safely - depending on .NET version, EnvironmentVariables may be null for non-shell executes.
-                    process.StartInfo.EnvironmentVariables["LEAF_RUNTIME_PATH"] = runtimeJarPath;
-                    process.StartInfo.EnvironmentVariables["LEAF_BOOTSTRAP_DIR"] = leafRuntimeDir;
-                    process.StartInfo.EnvironmentVariables["LEAF_SPAWNER_WORKDIR"] = originalWorkingDirectory; // optional informational
+                    // Only download/update if compatible
+                    await DownloadLeafRuntimeDependencies(version, GetSelectedAddon(version) == "Fabric");
+
+                    string originalJavaPath = process.StartInfo.FileName;
+                    string originalArguments = process.StartInfo.Arguments ?? string.Empty;
+                    string originalWorkingDirectory = process.StartInfo.WorkingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+                    string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
+                    string bootstrapJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap-1.0.0.jar");
+                    string runtimeJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime-1.0.0.jar");
+
+                    // CRITICAL FIX: Only inject if the version is explicitly supported
+                    if (isRuntimeCompatible && File.Exists(bootstrapJarPath) && File.Exists(runtimeJarPath))
+                    {
+                        Console.WriteLine($"[Leaf] Injecting Bootstrap for {version}...");
+
+                        process.StartInfo.FileName = originalJavaPath;
+                        process.StartInfo.Arguments = $"-jar \"{bootstrapJarPath}\" {originalArguments}";
+                        process.StartInfo.WorkingDirectory = leafRuntimeDir;
+
+                        try
+                        {
+                            process.StartInfo.EnvironmentVariables["LEAF_RUNTIME_PATH"] = runtimeJarPath;
+                            process.StartInfo.EnvironmentVariables["LEAF_BOOTSTRAP_DIR"] = leafRuntimeDir;
+                            process.StartInfo.EnvironmentVariables["LEAF_SPAWNER_WORKDIR"] = originalWorkingDirectory;
+                        }
+                        catch
+                        {
+                            Console.WriteLine("[Leaf] Warning: could not set process environment variables for bootstrap.");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Leaf] Skipping Runtime injection for {version} (Not in supported list or files missing). Launching Vanilla/Fabric directly.");
+                    }
                 }
-                catch
+                else
                 {
-                    // Some environments throw on EnvironmentVariables access; ignore but log.
-                    Console.WriteLine("[Leaf] Warning: could not set process environment variables for bootstrap.");
+                    Console.WriteLine($"[Leaf] Legacy version {version} detected. Skipping Bootstrap injection to prevent Java 8 crash.");
                 }
+                // --- END BOOTSTRAP INJECTION ---
 
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -6009,7 +6057,6 @@ namespace LeafClient.Views
                 process.BeginErrorReadLine();
                 _gameProcess = process;
 
-                // --- Window / presence watcher (unchanged in logic) ---
                 _ = Task.Run(async () =>
                 {
                     try
@@ -6037,7 +6084,6 @@ namespace LeafClient.Views
                         Console.Error.WriteLine($"[Window Watcher ERROR] An error occurred while waiting for game window: {ex.Message}");
                     }
                 }, cancellationToken);
-                // --- END watcher ---
 
                 _isLaunching = false;
                 await UpdateServerButtonStates();
@@ -6088,10 +6134,8 @@ namespace LeafClient.Views
             {
                 _launchCancellationTokenSource?.Dispose();
                 _launchCancellationTokenSource = null;
-                // _launchFailureBannerShownForCurrentLaunch is managed by Show/HideLaunchFailureBanner and the new Task.Delay.
             }
         }
-
 
 
 
@@ -8906,12 +8950,9 @@ namespace LeafClient.Views
             var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == subVersion);
             string activeLoader = selectedVersionInfo?.Loader ?? "Vanilla";
 
-            // Determine if the version is CAPABLE of using Fabric, regardless of current selection.
+            // Fabric is only available for 1.14 and above
             bool isFabricCompatible = Version.TryParse(subVersion, out Version? semver) &&
-                                      semver >= new Version(1, 16) &&
-                                      !subVersion.StartsWith("1.12") &&
-                                      !subVersion.StartsWith("1.7") &&
-                                      !subVersion.StartsWith("1.8");
+                                      semver >= new Version(1, 14);
 
             if (_addonFabricButton != null)
             {
@@ -8926,6 +8967,7 @@ namespace LeafClient.Views
 
             if (_addonVanillaButton != null)
             {
+                // Hide the toggle buttons if only Vanilla is available (incompatible with Fabric)
                 _addonVanillaButton.IsVisible = isFabricCompatible;
                 if (_addonVanillaButton.Content is Border vanillaBorder)
                 {
@@ -8938,6 +8980,7 @@ namespace LeafClient.Views
             if (_versionLoader != null)
                 _versionLoader.Text = activeLoader;
         }
+
 
 
         private async Task<bool> InstallOptiFineForFabricIfNeededAsync(string mcVersion, string profileName, bool isFabric)
@@ -9706,58 +9749,49 @@ namespace LeafClient.Views
             string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
             System.IO.Directory.CreateDirectory(modsFolder);
 
-            // First, clean up any *other* fabric-api versions
-            foreach (var existingFabricApi in Directory.GetFiles(modsFolder, "fabric-api-*.jar", SearchOption.TopDirectoryOnly).ToList())
-            {
-                string fileName = System.IO.Path.GetFileName(existingFabricApi);
-                string existingVersion = DetectModVersion(fileName) ?? ""; // Use DetectModVersion to get the MC version from filename
-
-                // Only delete if it's a Fabric API file AND its MC version does NOT match the current MC version
-                if (!existingVersion.Equals(mcVersion, StringComparison.OrdinalIgnoreCase))
-                {
-                    try
-                    {
-                        File.Delete(existingFabricApi);
-                        Console.WriteLine($"[Fabric API Cleaner] Deleted incompatible Fabric API: {fileName} (for MC {existingVersion}, current: {mcVersion})");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Fabric API Cleaner] Failed to delete incompatible Fabric API {fileName}: {ex.Message}");
-                    }
-                }
-            }
-
             string fabricApiPath = System.IO.Path.Combine(modsFolder, $"fabric-api-{mcVersion}.jar");
-            if (System.IO.File.Exists(fabricApiPath))
-            {
-                Console.WriteLine($"[Fabric API] Fabric API for {mcVersion} already exists.");
-                return true;
-            }
+
+            // Even if it exists, we ensure it's registered in settings
+            bool fileExists = System.IO.File.Exists(fabricApiPath);
 
             try
             {
+                // If file exists, we might still want to register it if it's missing from settings
+                // But to be safe and simple, we'll just run the install check logic.
+
+                if (fileExists && _currentSettings.InstalledMods.Any(m => m.ModId == "fabric-api" && m.MinecraftVersion == mcVersion))
+                {
+                    Console.WriteLine($"[Fabric API] Fabric API for {mcVersion} already exists and is tracked.");
+                    return true;
+                }
+
                 ShowProgress(true, $"Installing Fabric API for {mcVersion}...");
 
                 using var client = new HttpClient();
-                // Fabric API Modrinth project id
                 var apiUrl = $"https://api.modrinth.com/v2/project/P7dR8mSH/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
                 var response = await client.GetStringAsync(apiUrl);
-                if (string.IsNullOrWhiteSpace(response))
-                    throw new Exception("Empty response from Modrinth API");
+
+                if (string.IsNullOrWhiteSpace(response)) throw new Exception("Empty response from Modrinth API");
 
                 var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
-
                 var latest = versions?.FirstOrDefault();
-                if (latest?.files == null || latest.files.Count == 0)
-                    throw new Exception("No Fabric API file found");
 
-                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
-                    ?? latest.files.First();
+                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found");
+
+                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
                 var downloadUrl = file.url;
-                var jarBytes = await client.GetByteArrayAsync(downloadUrl);
-                await System.IO.File.WriteAllBytesAsync(fabricApiPath, jarBytes);
 
-                Console.WriteLine($"[Fabric API] Installed for {mcVersion}");
+                if (!fileExists)
+                {
+                    var jarBytes = await client.GetByteArrayAsync(downloadUrl);
+                    await System.IO.File.WriteAllBytesAsync(fabricApiPath, jarBytes);
+                    Console.WriteLine($"[Fabric API] Installed file for {mcVersion}");
+                }
+
+                // TRACKING FIX: Register the mod so the cleaner knows about it later
+                string fileName = $"fabric-api-{mcVersion}.jar";
+                await RegisterAutoInstalledMod("fabric-api", "Fabric API", latest.versionNumber, mcVersion, fileName, downloadUrl);
+
                 return true;
             }
             catch (Exception ex)
@@ -9771,38 +9805,47 @@ namespace LeafClient.Views
             }
         }
 
+
         private async void OnSubVersionSelected(object? sender, SelectionChangedEventArgs? e)
         {
             if (_versionDropdown?.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content is string selectedSubVersion)
             {
-                // Save the newly selected sub-version to our settings state
                 _currentSettings.SelectedSubVersion = selectedSubVersion;
 
                 var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == selectedSubVersion);
                 if (selectedVersionInfo != null)
                 {
-                    // Update the major version in settings based on the selected sub-version
                     _currentSettings.SelectedMajorVersion = selectedVersionInfo.MajorVersion;
 
-                    // Instead of recalculating the loader, GET the user's saved preference for this version.
+                    // Check compatibility: Fabric requires 1.14+
+                    bool isFabricCompatible = Version.TryParse(selectedSubVersion, out Version? semver) &&
+                                              semver >= new Version(1, 14);
+
                     string savedLoader = GetSelectedAddon(selectedSubVersion);
 
-                    // Update the in-memory version info object to reflect the saved setting.
-                    // This ensures the UI is consistent with what's saved.
+                    // FORCE Vanilla if Fabric is not supported for this version
+                    if (!isFabricCompatible)
+                    {
+                        savedLoader = "Vanilla";
+
+                        // Ensure the dictionary exists and update the preference to Vanilla
+                        if (_currentSettings.SelectedAddonByVersion == null)
+                            _currentSettings.SelectedAddonByVersion = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                        _currentSettings.SelectedAddonByVersion[selectedSubVersion] = "Vanilla";
+                    }
+
                     selectedVersionInfo.Loader = savedLoader;
                 }
 
-                // Save settings because the selected version has changed
                 await _settingsService.SaveSettingsAsync(_currentSettings);
 
-                // Update all UI elements based on the correct, loaded state
                 UpdateSidebarDetails(selectedSubVersion);
                 UpdateAddonSelectionUI(selectedSubVersion);
                 UpdateLaunchVersionText();
             }
             else if (_versionDropdown?.ItemCount > 0 && _versionDropdown.SelectedIndex == -1)
             {
-                // Fallback: if nothing is selected, select the first item
                 _versionDropdown.SelectedIndex = 0;
             }
 

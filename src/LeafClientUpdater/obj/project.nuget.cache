@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "xrPdBKo8tfI=",
+  "dgSpecHash": "ItP7GFgV4W0=",
   "success": true,
   "projectFilePath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\LeafClientUpdater.csproj",
   "expectedPackageFiles": [
@@ -25,8 +25,9 @@
     "C:\\Users\\ziadf\\.nuget\\packages\\harfbuzzsharp.nativeassets.webassembly\\8.3.1.1\\harfbuzzsharp.nativeassets.webassembly.8.3.1.1.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\harfbuzzsharp.nativeassets.win32\\8.3.1.1\\harfbuzzsharp.nativeassets.win32.8.3.1.1.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\microcom.runtime\\0.11.0\\microcom.runtime.0.11.0.nupkg.sha512",
-    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.dotnet.ilcompiler\\8.0.17\\microsoft.dotnet.ilcompiler.8.0.17.nupkg.sha512",
-    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.17\\microsoft.net.illink.tasks.8.0.17.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.dotnet.ilcompiler\\8.0.22\\microsoft.dotnet.ilcompiler.8.0.22.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.22\\microsoft.net.illink.tasks.8.0.22.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\runtime.win-x64.microsoft.dotnet.ilcompiler\\8.0.22\\runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.22.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\skiasharp\\2.88.9\\skiasharp.2.88.9.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\skiasharp.nativeassets.linux\\2.88.9\\skiasharp.nativeassets.linux.2.88.9.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\skiasharp.nativeassets.macos\\2.88.9\\skiasharp.nativeassets.macos.2.88.9.nupkg.sha512",
@@ -34,7 +35,10 @@
     "C:\\Users\\ziadf\\.nuget\\packages\\skiasharp.nativeassets.win32\\2.88.9\\skiasharp.nativeassets.win32.2.88.9.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\system.io.pipelines\\8.0.0\\system.io.pipelines.8.0.0.nupkg.sha512",
     "C:\\Users\\ziadf\\.nuget\\packages\\tmds.dbus.protocol\\0.21.2\\tmds.dbus.protocol.0.21.2.nupkg.sha512",
-    "C:\\Users\\ziadf\\.nuget\\packages\\runtime.win-x64.microsoft.dotnet.ilcompiler\\8.0.17\\runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.17.nupkg.sha512"
+    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.22\\microsoft.netcore.app.runtime.win-x64.8.0.22.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.22\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.22.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.22\\microsoft.aspnetcore.app.runtime.win-x64.8.0.22.nupkg.sha512",
+    "C:\\Users\\ziadf\\.nuget\\packages\\runtime.win-x64.microsoft.dotnet.ilcompiler\\8.0.22\\runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.22.nupkg.sha512"
   ],
   "logs": []
 }

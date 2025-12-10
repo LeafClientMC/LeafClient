@@ -59,7 +59,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
@@ -89,7 +89,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.17, )",
+              "version": "[8.0.22, )",
               "autoReferenced": true
             },
             "SharpZipLib": {
@@ -132,7 +132,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json"
         },
         "netstandard2.0": {
           "targetAlias": "netstandard2.0",
@@ -199,7 +199,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -251,7 +251,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "netstandard2.0": {
@@ -297,7 +297,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -346,7 +346,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "netstandard2.0": {
@@ -392,7 +392,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -441,7 +441,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "netstandard2.0": {
@@ -495,7 +495,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -540,7 +540,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "netstandard2.0": {
@@ -594,7 +594,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -639,7 +639,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "netstandard2.0": {
@@ -667,12 +667,12 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101\\RuntimeIdentifierGraph.json"
         }
       }
     },
     "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "restore": {
         "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
         "projectName": "LeafClient",
@@ -734,7 +734,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
@@ -777,7 +777,7 @@
             "Microsoft.DotNet.ILCompiler": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.17, )",
+              "version": "[8.0.22, )",
               "autoReferenced": true
             },
             "Microsoft.Identity.Client.Extensions.Msal": {
@@ -787,7 +787,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.17, )",
+              "version": "[8.0.22, )",
               "autoReferenced": true
             },
             "Mojang.Api.Skins": {
@@ -824,8 +824,20 @@
           "warn": true,
           "downloadDependencies": [
             {
+              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.win-x64",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
               "name": "runtime.win-x64.Microsoft.DotNet.ILCompiler",
-              "version": "[8.0.17, 8.0.17]"
+              "version": "[8.0.22, 8.0.22]"
             }
           ],
           "frameworkReferences": {
@@ -833,7 +845,12 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
         }
       }
     },
@@ -878,7 +895,7 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
@@ -920,7 +937,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.301/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json"
         }
       }
     }
