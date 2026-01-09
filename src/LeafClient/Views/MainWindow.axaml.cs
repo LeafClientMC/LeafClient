@@ -942,9 +942,9 @@ namespace LeafClient.Views
         #endregion
 
         private async Task DownloadLeafRuntimeDependencies(string version, bool isFabric)
-{
-    // Only for Fabric profiles and for versions we host in latestjars/<version>/
-    var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Only for Fabric profiles and for versions we host in latestjars/<version>/
+            var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "1.20.1",
         "1.20.2",
@@ -952,37 +952,34 @@ namespace LeafClient.Views
         "1.21.5",
     };
 
-    if (!isFabric || !supported.Contains(version))
-        return;
+            if (!isFabric || !supported.Contains(version))
+                return;
 
-    // Store per-version locally to avoid conflicts between versions
-    string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime", version);
-    System.IO.Directory.CreateDirectory(leafRuntimeDir);
+            // Store per-version locally to avoid conflicts between versions
+            string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime", version);
+            System.IO.Directory.CreateDirectory(leafRuntimeDir);
 
-    // Download from the versioned folder on GitHub
-    string bootstrapUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/LeafBootstrap.jar";
-    string runtimeUrl   = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/LeafRuntime.jar";
+            // Download from the versioned folder on GitHub
+            string runtimeUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
 
-    string bootstrapPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap.jar");
-    string runtimePath   = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime.jar");
+            string runtimePath = System.IO.Path.Combine(leafRuntimeDir, "leafclient.jar");
 
-    ShowProgress(true, "Downloading Leaf Client Runtime...");
+            ShowProgress(true, "Downloading Leaf Client Runtime...");
 
-    try
-    {
-        await DownloadFileAsync(bootstrapUrl, bootstrapPath);
-        await DownloadFileAsync(runtimeUrl, runtimePath);
-        Console.WriteLine($"[Leaf Runtime] Runtime dependencies downloaded successfully for {version}.");
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"[Leaf Runtime ERROR] Failed to download dependencies for {version}: {ex.Message}");
-    }
-    finally
-    {
-        ShowProgress(false);
-    }
-}
+            try
+            {
+                await DownloadFileAsync(runtimeUrl, runtimePath);
+                Console.WriteLine($"[Leaf Runtime] Runtime dependencies downloaded successfully for {version}.");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Leaf Runtime ERROR] Failed to download dependencies for {version}: {ex.Message}");
+            }
+            finally
+            {
+                ShowProgress(false);
+            }
+        }
 
         private async void CheckForUpdates(object? sender, RoutedEventArgs e, bool isManualCheck = false)
         {
@@ -3427,14 +3424,29 @@ namespace LeafClient.Views
                         }
                     }
 
-                    // If the DownloadUrl is "internal", it means it's the launcher's own mod.
-                    // Copy it from the launcher's directory to the mods folder.
                     if (mod.DownloadUrl.Equals("internal", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Assuming leafclient.jar is in the same directory as the launcher executable
-                        string launcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                        string launcherDir = System.IO.Path.GetDirectoryName(launcherExePath)!;
-                        string sourceLeafClientJarPath = System.IO.Path.Combine(launcherDir, "leafclient.jar");
+                        string? launcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        if (string.IsNullOrEmpty(launcherExePath))
+                        {
+                            launcherExePath = Environment.ProcessPath; // Fallback for single-file deployments
+                        }
+
+                        string? launcherDir = null;
+                        if (!string.IsNullOrEmpty(launcherExePath))
+                        {
+                            launcherDir = System.IO.Path.GetDirectoryName(launcherExePath);
+                        }
+
+                        if (string.IsNullOrEmpty(launcherDir))
+                        {
+                            Console.Error.WriteLine($"[User Mods] Could not determine launcher directory for internal mod '{mod.Name}'.");
+                            ShowLaunchErrorBanner($"Internal mod '{mod.Name}' could not be located. Launch might fail.");
+                            continue; // Skip to next mod
+                        }
+
+                        // Use mod.FileName (which should now be "leafclient.jar") to construct the source path
+                        string sourceLeafClientJarPath = System.IO.Path.Combine(launcherDir, mod.FileName);
 
                         if (System.IO.File.Exists(sourceLeafClientJarPath))
                         {
@@ -3447,18 +3459,16 @@ namespace LeafClient.Views
                             catch (Exception ex)
                             {
                                 Console.Error.WriteLine($"[User Mods] Failed to copy internal mod '{mod.Name}': {ex.Message}");
-                                ShowLaunchErrorBanner($"Failed to copy internal mod '{mod.Name}'.");
-                                continue; // Skip to next mod
+                                ShowLaunchErrorBanner($"Failed to copy internal mod '{mod.Name}'. It might be in use.");
                             }
                         }
                         else
                         {
-                            Console.Error.WriteLine($"[User Mods] Internal mod '{mod.Name}' (leafclient.jar) not found next to launcher EXE: {sourceLeafClientJarPath}");
-                            ShowLaunchErrorBanner($"Internal mod 'leafclient.jar' not found. Launch might fail.");
+                            Console.Error.WriteLine($"[User Mods] Internal mod '{mod.Name}' ({mod.FileName}) not found next to launcher EXE: {sourceLeafClientJarPath}");
+                            ShowLaunchErrorBanner($"Internal mod '{mod.Name}' not found. Launch might fail.");
                         }
                         continue; // Skip to next mod as it's now handled
                     }
-
                     // Check if the mod (as .jar) already exists
                     if (File.Exists(targetFilePath))
                     {
@@ -6009,6 +6019,66 @@ namespace LeafClient.Views
                 UpdateLaunchButton("PREPARING LAUNCH...", "DeepSkyBlue");
                 ClearModsFolder();
 
+                // --- Start Leaf Client Mod Registration ---
+                // MOVED UP: Register/Update the mod settings BEFORE InstallUserModsAsync runs
+                bool isModernVersion = false;
+                if (Version.TryParse(version, out Version? semVer))
+                {
+                    isModernVersion = semVer >= new Version(1, 17);
+                }
+
+                string leafClientModFileName = "leafclient.jar";
+                string leafClientModId = "leafclient";
+                string leafClientModName = "Leaf Client";
+                string leafClientJarFileName = "leafclient.jar";
+                string leafClientDownloadUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/{leafClientJarFileName}";
+
+                if (isModernVersion)
+                {
+                    // Check if the Leaf Client mod is already tracked for this Minecraft version
+                    var existingLeafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
+
+                    if (existingLeafClientMod == null)
+                    {
+                        _currentSettings.InstalledMods.Add(new InstalledMod
+                        {
+                            ModId = leafClientModId,
+                            Name = leafClientModName,
+                            Description = "Core Leaf Client mod.",
+                            Version = GetCurrentAppVersion().ToString(), // Use launcher version
+                            MinecraftVersion = version, // Use base Minecraft version
+                            FileName = leafClientJarFileName,
+                            DownloadUrl = leafClientDownloadUrl, // Now points to GitHub
+                            Enabled = true,
+                            InstallDate = DateTime.Now,
+                            IconUrl = ""
+                        });
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        Console.WriteLine($"[Leaf Client Mod] Registered new internal mod entry for MC {version} with GitHub URL.");
+                    }
+                    else
+                    {
+                        // Update existing mod details to ensure consistency and correct download URL
+                        existingLeafClientMod.Enabled = true;
+                        existingLeafClientMod.FileName = leafClientJarFileName;
+                        existingLeafClientMod.DownloadUrl = leafClientDownloadUrl; // Ensure URL is updated
+                        existingLeafClientMod.Version = GetCurrentAppVersion().ToString();
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        Console.WriteLine($"[Leaf Client Mod] Updated existing internal mod entry for MC {version} with GitHub URL.");
+                    }
+                }
+                else // If not a modern version, ensure the Leaf Client mod is NOT tracked for it
+                {
+                    var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
+                    if (leafClientMod != null)
+                    {
+                        _currentSettings.InstalledMods.Remove(leafClientMod);
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        Console.WriteLine($"[Leaf Client Mod] Removed internal mod entry for legacy version {version}.");
+                    }
+                }
+                // --- End Leaf Client Mod Registration ---
+
                 if (GetSelectedAddon(version).Equals("Fabric", StringComparison.OrdinalIgnoreCase))
                 {
                     versionToLaunch = await EnsureFabricProfileAsync(version);
@@ -6063,42 +6133,7 @@ namespace LeafClient.Views
                 SyncLauncherManagedMods(version);
 
                 // Only add Leaf Runtime Mod for modern versions (1.17+) to avoid crashes on old versions
-                bool isModernVersion = false;
-                if (Version.TryParse(version, out Version? semVer))
-                {
-                    isModernVersion = semVer >= new Version(1, 17);
-                }
-
-                if (isModernVersion)
-                {
-                    string leafClientModFileName = "leafclient-runtime.jar";
-                    if (!_currentSettings.InstalledMods.Any(m => m.ModId == "leafclient" && m.MinecraftVersion == version))
-                    {
-                        _currentSettings.InstalledMods.Add(new InstalledMod
-                        {
-                            ModId = "leafclient",
-                            Name = "Leaf Client Runtime",
-                            Description = "Core Leaf Client runtime mod.",
-                            Version = "1.0.0",
-                            MinecraftVersion = version, // Use base version
-                            FileName = leafClientModFileName,
-                            DownloadUrl = "internal",
-                            Enabled = true,
-                            InstallDate = DateTime.Now,
-                            IconUrl = ""
-                        });
-                        await _settingsService.SaveSettingsAsync(_currentSettings);
-                    }
-                    else
-                    {
-                        var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId == "leafclient" && m.MinecraftVersion == version);
-                        if (leafClientMod != null && !leafClientMod.Enabled)
-                        {
-                            leafClientMod.Enabled = true;
-                            await _settingsService.SaveSettingsAsync(_currentSettings);
-                        }
-                    }
-                }
+                // [DELETED OLD REGISTRATION BLOCK FROM HERE]
 
                 var jvmArguments = new List<MArgument>
         {
@@ -6250,8 +6285,6 @@ namespace LeafClient.Views
                 _launchCancellationTokenSource = null;
             }
         }
-
-
 
         private async Task ManageOptiFineForFabricMods(string mcVersion, bool enable)
         {
