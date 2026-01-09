@@ -1,20 +1,46 @@
-##  ⚠️ LEAF CLIENT LICENSE / GUIDELINES / RULES
+Leaf Client – Custom Non-Commercial License
 
-📝 __NOTE:__ WE ARE NOT A COMPANY OR ORGANIZATION. THIS IS A PERSONAL PROJECT. 
+Copyright (c) 2025 ZiAD
 
-__🔧 WE PERMIT EVERYONE TO MODIFY LEAF CLIENT UNDER THOSE CONDITIONS:__
-- EXPLICITLY GETTING PERMISSION FROM ME
-- YOU DO NOT ATTEMPT TO TAKE ANY UNETHICAL ACTIONS WITH THIS CLIENT
+All rights reserved.
 
-__♻️ AND WE PERMIT EVERYONE TO SHARE THIS CLIENT UNDER THOSE CONDITIONS:__
-- YOU DO NOT MODIFY THIS CLIENT AND SHARE YOUR VERSION INSTEAD OF THE ORIGINAL VERSION
-- YOU DO YOUR OWN DUE DILIGENCE AND RESEARCH ABOUT THIS CLIENT FOR YOUR OWN SAFETY
-- YOU CREDIT THE CREATOR OF THE CLIENT, AND SPECIFY THAT YOU ARE ONLY SHARING IT HOWEVER DO NOT OWN IT
-- YOU MUST DISCOURAGE USING OFFLINE MODE ON THIS CLIENT, AND ENCOURAGE PURCHASING THE GAME BEFORE USING THE CLIENT (IT WOULD BE RECOMMENDED TO NOT MENTION OFFLINE MODE AT ALL FOR YOUR OWN SAFETY)
+Permission is hereby granted to any individual to use and share the
+unmodified version of the Leaf Client software (the “Software”),
+subject to the following conditions:
 
-__🧑‍💻 AND WE PERMIT EVERYONE TO USE CODE FROM THIS CLIENT UNDER THOSE CONDITIONS:__
-- YOUR INTENTION TO USE CODE FROM THIS CLIENT MUST BE ETHICAL
-- YOU MUST GIVE CREDIT TO ME AND SPECIFY THAT YOU'VE USED CODE FROM THIS CLIENT
-- YOU MUST CREATE A CODE COMMENT CREDITING THE CLIENT
+1. NON-COMMERCIAL USE ONLY  
+   The Software may not be used, sold, sublicensed, monetized, or
+   distributed as part of any commercial product, service, or platform.
 
-  THANK YOU.
+2. NO MODIFIED REDISTRIBUTION  
+   You may not distribute modified versions of the Software.
+   Forks, reuploads, or derivative distributions are prohibited
+   without explicit written permission from the copyright holder.
+
+3. MODIFICATIONS  
+   Modification of the Software is prohibited unless explicit
+   permission is granted by the copyright holder.
+
+4. CODE USAGE AND ATTRIBUTION  
+   You may reuse portions of the source code for non-commercial purposes
+   provided that:
+   - Clear credit is given to the original author (ZiAD)
+   - The use of the code is disclosed
+   - A visible code comment acknowledging Leaf Client is included
+
+5. ATTRIBUTION  
+   Any redistribution of the unmodified Software must include:
+   - This license
+   - Clear attribution to the original author
+   - A statement that the distributor is not the owner of the Software
+
+6. NO AFFILIATION  
+   This project is a personal, independent project and is not affiliated
+   with Mojang, Microsoft, or any other third party.
+
+7. DISCLAIMER OF WARRANTY  
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.

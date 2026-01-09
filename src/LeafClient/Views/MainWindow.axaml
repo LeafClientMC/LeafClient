@@ -109,7 +109,7 @@
 
 				<!-- Logo -->
 				<Border Grid.Row="0" Width="60" Height="60" Background="{DynamicResource LogoBackgroundBrush}" CornerRadius="12" Margin="15,20,15,20" HorizontalAlignment="Center">
-					<Image Source="/Assets/logo_icon.png" Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+					<Image Source="/Assets/LeafRebrandedTransparent.png" Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 				</Border>
 
 				<!-- Buttons + Indicators -->
@@ -235,7 +235,7 @@
 										<MenuItem Header="Launcher Logs" Click="OpenLauncherLogsFolder">
 											<!-- Added Click event -->
 											<MenuItem.Icon>
-												<Image Source="/Assets/logo_icon.png" Width="16" Height="16"/>
+												<Image Source="/Assets/LeafRebrandedTransparent.png" Width="16" Height="16"/>
 											</MenuItem.Icon>
 										</MenuItem>
 									</MenuItem>
@@ -388,8 +388,8 @@
 							</Border.Transitions>
 							<Grid>
 								<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
-									<TextBlock Text="🎉" FontSize="18" VerticalAlignment="Center"/>
-									<TextBlock Text="Leaf Client Official Beta Release is here!" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+									<TextBlock Text="🏗️" FontSize="18" VerticalAlignment="Center"/>
+									<TextBlock Text="We're slowly rolling out new versions with Leaf Client's ingame features" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
 								</StackPanel>
 								<Button Classes="IconButton" HorizontalAlignment="Right" VerticalAlignment="Center" Click="CloseBanner">
 									<TextBlock Text="✕" Foreground="{DynamicResource AccentButtonForegroundBrush}" FontSize="16" FontWeight="Bold"/>
@@ -442,7 +442,7 @@
 														   FontSize="20"
 														   HorizontalAlignment="Center" />
 												<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-													<Image Source="/Assets/logo_icon.png"
+													<Image Source="/Assets/LeafRebrandedTransparent.png"
 														   Width="14" Height="14"
 														   VerticalAlignment="Center" />
 													<TextBlock x:Name="LaunchVersionText"
@@ -806,7 +806,7 @@
 														CornerRadius="30"
 														Background="{DynamicResource PrimaryAccentBrush}"
 														ClipToBounds="True">
-													<Image Source="/Assets/logo_icon.png"
+													<Image Source="/Assets/LeafRebrandedTransparent.png"
 														   Width="28" Height="28"
 														   HorizontalAlignment="Center"
 														   VerticalAlignment="Center"
@@ -1063,7 +1063,7 @@
 												<Grid ColumnDefinitions="*,Auto">
 													<StackPanel Grid.Column="0" Spacing="5">
 														<TextBlock Text="Launch on Startup" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold"/>
-														<TextBlock Text="Automatically start Leaf Client when you log in" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
+														<TextBlock Text="Automatically start Leaf Client when your computer opens" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12"/>
 													</StackPanel>
 													<ToggleSwitch x:Name="LaunchOnStartupToggle" Grid.Column="1" IsChecked="False"/>
 												</Grid>
@@ -1744,7 +1744,7 @@
 										<TextBlock Text="ABOUT" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="20"/>
 										<Border Background="{DynamicResource CardBackgroundColor}" CornerRadius="12" Padding="20">
 											<StackPanel Spacing="15" HorizontalAlignment="Center">
-												<Image Source="/Assets/logo_icon.png" Width="64" Height="64"/>
+												<Image Source="/Assets/LeafRebrandedTransparent.png" Width="64" Height="64"/>
 												<TextBlock Text="Leaf Client" Foreground="{DynamicResource PrimaryForegroundBrush}" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center"/>
 												<TextBlock x:Name="AppVersionTextBlock" Foreground="{DynamicResource SecondaryForegroundBrush}" FontSize="12" HorizontalAlignment="Center"/>
 												<Grid HorizontalAlignment="Center" Margin="0,10,0,0">
@@ -3158,13 +3158,6 @@
 		</Grid>
 		<!-- Planned Updates Mini-Window Overlay -->
 		<Grid x:Name="PlannedUpdatesOverlay" IsVisible="False" ZIndex="2002" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,60,70">
-			<!-- Remove the problematic background border -->
-			<!-- <Border Background="Transparent"
-            HorizontalAlignment="Stretch"
-            VerticalAlignment="Stretch"
-            IsHitTestVisible="True"
-            PointerPressed="ClosePlannedUpdates"/> -->
-
 			<Border x:Name="PlannedUpdatesPanel"
 					Width="260" Height="320"
 					Background="{DynamicResource CardBackgroundColor}"
@@ -3173,8 +3166,6 @@
 					BoxShadow="0 4 20 0 #66000000"
 					Opacity="0"
 					PointerExited="ClosePlannedUpdates">
-				<!-- Add PointerExited here too -->
-
 				<Border.RenderTransform>
 					<TranslateTransform Y="20"/>
 				</Border.RenderTransform>
@@ -3205,6 +3196,66 @@
 				</Grid>
 			</Border>
 		</Grid>
+		<!-- ============================================================ -->
+		<!-- PROFESSIONAL CINEMATIC STARTUP                               -->
+		<!-- ============================================================ -->
+		<Grid x:Name="StartupOverlay"
+			  IsVisible="True"
+			  ZIndex="99999"
+			  Background="Black">
+
+			<Image x:Name="StartupBg"
+				   Source="/Assets/bg.png"
+				   Stretch="UniformToFill"
+				   Opacity="0"
+				   RenderTransformOrigin="50%,50%"
+				   RenderOptions.BitmapInterpolationMode="HighQuality">
+				<Image.Effect>
+					<BlurEffect Radius="20"/>
+				</Image.Effect>
+				<Image.RenderTransform>
+					<ScaleTransform ScaleX="1.2" ScaleY="1.2"/>
+				</Image.RenderTransform>
+			</Image>
+
+			<Rectangle Fill="Black" Opacity="0.4"/>
+
+			<Panel HorizontalAlignment="Center" VerticalAlignment="Center">
+				<!-- Initial Logo -->
+				<Image x:Name="StartupLogo"
+					   Source="/Assets/LeafRebrandedTransparent.png"
+					   Width="180" Height="180"
+					   Opacity="0"
+					   RenderTransformOrigin="50%,50%"
+					   HorizontalAlignment="Center"
+					   VerticalAlignment="Center"
+					   RenderOptions.BitmapInterpolationMode="HighQuality">
+					<Image.RenderTransform>
+						<ScaleTransform ScaleX="0.8" ScaleY="0.8"/>
+					</Image.RenderTransform>
+					<Image.Effect>
+						<DropShadowEffect Color="#CC000000" BlurRadius="30" OffsetX="0" OffsetY="12" Opacity="0.6"/>
+					</Image.Effect>
+				</Image>
+
+				<!-- Logo Text (Fades in later) -->
+				<Image x:Name="StartupLogoText"
+					   Source="/Assets/logo_text.png"
+					   Width="320"
+					   Opacity="0"
+					   RenderTransformOrigin="50%,50%"
+					   HorizontalAlignment="Center"
+					   VerticalAlignment="Center"
+					   RenderOptions.BitmapInterpolationMode="HighQuality">
+					<Image.RenderTransform>
+						<ScaleTransform ScaleX="0.9" ScaleY="0.9"/>
+					</Image.RenderTransform>
+					<Image.Effect>
+						<DropShadowEffect Color="#CC000000" BlurRadius="30" OffsetX="0" OffsetY="12" Opacity="0.6"/>
+					</Image.Effect>
+				</Image>
+			</Panel>
+		</Grid>
 	</Grid>
-	<!-- This is the final closing Grid tag for the MainWindow -->
+	<!-- This closes the MAIN Grid -->
 </Window>

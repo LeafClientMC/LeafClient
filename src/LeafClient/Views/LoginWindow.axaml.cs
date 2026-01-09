@@ -121,7 +121,7 @@ namespace LeafClient.Views
             }
         }
 
-        // Helper method to handle successful session setup and state saving
+
         private async Task HandleSuccessfulLogin(MSession? session)
         {
             if (session is not null && session.CheckIsValid())
@@ -139,7 +139,9 @@ namespace LeafClient.Views
 
                 await _settingsService.SaveSettingsAsync(_settings);
 
-                LoginSuccessful = true;
+                // CRITICAL: Set this flag BEFORE invoking the completion event
+                // so that App.xaml.cs knows this was a successful transition.
+                this.LoginSuccessful = true;
 
                 // FIRE EVENT ON UI THREAD
                 Dispatcher.UIThread.Post(() => LoginCompleted?.Invoke(true));
@@ -150,6 +152,7 @@ namespace LeafClient.Views
                 ShowLoginForm();
             }
         }
+
 
         // -------------------------
         //  OFFLINE LOGIN

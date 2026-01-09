@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+044edc394d37af0c1535db0c8f70aff5f4ab29f7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+00163ae63198a3adbff645ae15261ce4d0571da6")]
 [assembly: System.Reflection.AssemblyProductAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

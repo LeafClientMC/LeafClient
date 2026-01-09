@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cc200ab497d917453ed503e62b5ca678b3174b79")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+00163ae63198a3adbff645ae15261ce4d0571da6")]
 [assembly: System.Reflection.AssemblyProductAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LeafClientUpdater")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

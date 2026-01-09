@@ -281,3 +281,4 @@ C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\obj\Release\n
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\obj\Release\net8.0\win-x64\LeafClient.pdb
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\obj\Release\net8.0\win-x64\LeafClient.genruntimeconfig.cache
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\obj\Release\net8.0\win-x64\ref\LeafClient.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClient\bin\Release\net8.0\win-x64\LeafClient.exe

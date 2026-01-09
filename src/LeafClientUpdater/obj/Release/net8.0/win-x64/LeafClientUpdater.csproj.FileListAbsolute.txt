@@ -227,3 +227,4 @@ C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Re
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\LeafClientUpdater.pdb
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\LeafClientUpdater.genruntimeconfig.cache
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\ref\LeafClientUpdater.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.exe

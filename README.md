@@ -3,6 +3,10 @@
 A ___Minecraft: Java Edition client (no cheats)___.
 (and possibly supporting Bedrock Edition soon)
 
+# IMPORTANT
+
+BEFORE USE OR MODIFICATION OF LEAF CLIENT, PLEASE VIEW AND READ OUR [LICENSE](https://github.com/LeafClientMC/LeafClient/blob/main/LICENSE.md).
+
 # V1.1 BETA RELEASED
 
 We've released V1.1 BETA!

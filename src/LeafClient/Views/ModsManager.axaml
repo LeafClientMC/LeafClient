@@ -137,7 +137,7 @@
 		<!-- 1. Header -->
 		<Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="20,20,20,10">
 			<StackPanel Orientation="Horizontal" Spacing="10">
-				<Image Source="/Assets/logo_icon.png" Height="24" Width="24" VerticalAlignment="Center"/>
+				<Image Source="/Assets/LeafRebrandedTransparent.png" Height="24" Width="24" VerticalAlignment="Center"/>
 				<TextBlock Text="LEAF" FontWeight="Bold" FontSize="20" VerticalAlignment="Center" Foreground="White" LetterSpacing="2"/>
 			</StackPanel>
 
@@ -227,7 +227,7 @@
 					<Grid RowDefinitions="Auto, *, Auto">
 						<StackPanel Grid.Row="0" Spacing="15" Margin="0,0,0,20">
 							<StackPanel Orientation="Horizontal" Spacing="10">
-								<Image Source="/Assets/logo_icon.png" Width="16" Height="16"/>
+								<Image Source="/Assets/LeafRebrandedTransparent.png" Width="16" Height="16"/>
 								<TextBlock Text="Navigator" FontWeight="Bold" Foreground="White" FontSize="16"/>
 							</StackPanel>
 

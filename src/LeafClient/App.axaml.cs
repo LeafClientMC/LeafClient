@@ -11,9 +11,11 @@ using System;
 using System.Threading.Tasks;
 using Avalonia.Diagnostics;
 using Avalonia.Data.Core;
+using System.Linq;
 
 namespace LeafClient
 {
+    // In App.xaml.cs
     public partial class App : Application
     {
         private static bool _themeInitialized = false;
@@ -49,7 +51,7 @@ namespace LeafClient
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
 #if DEBUG
-                this.AttachDevTools();
+            this.AttachDevTools();
 #endif
                 // Keep process alive when windows are swapped (logout -> login)
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -143,7 +145,7 @@ namespace LeafClient
 
             Console.WriteLine("[App] ShowLoginWindow called");
 
-            // CRITICAL: Never shutdown automatically
+            // Ensure we never auto-shutdown when swapping windows
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             var loginWindow = new LoginWindow();
@@ -153,43 +155,44 @@ namespace LeafClient
                 Console.WriteLine($"[App] LoginCompleted - success: {success}");
                 if (success)
                 {
-                    // Login successful - show main window
-                    Dispatcher.UIThread.Post(() =>
+                    // Show MainWindow first, then close the LoginWindow to avoid race conditions
+                    Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         var mainWindow = new MainWindow();
-                        mainWindow.Show();
                         desktop.MainWindow = mainWindow;
+                        mainWindow.Show();
+                        mainWindow.Activate();
+
+                        // Close login AFTER main is shown
                         loginWindow.Close();
-                    });
+                    }, DispatcherPriority.Normal);
                 }
             };
 
             loginWindow.Closed += (_, __) =>
             {
-                Console.WriteLine($"[App] LoginWindow Closed - LoginSuccessful: {loginWindow.LoginSuccessful}, WindowCount: {desktop.Windows.Count}");
-
-                // If login failed, check if there are ANY windows left
-                // We need to post this check to ensure window count is updated after close
-                Dispatcher.UIThread.Post(() =>
+                // Delay and verify visible windows to avoid shutting down during the swap
+                Dispatcher.UIThread.Post(async () =>
                 {
-                    if (!loginWindow.LoginSuccessful && desktop.Windows.Count == 0)
+                    await Task.Delay(200); // small stabilization delay
+
+                    bool hasVisibleWindow = desktop.Windows.Any(w => w.IsVisible);
+                    if (!loginWindow.LoginSuccessful && !hasVisibleWindow)
                     {
-                        Console.WriteLine("[App] No successful login and no windows - shutting down");
+                        Console.WriteLine("[App] Login cancelled or failed. No visible windows. Shutting down.");
                         desktop.Shutdown();
                     }
                     else
                     {
-                        Console.WriteLine("[App] Not shutting down - either login succeeded or other windows exist");
+                        Console.WriteLine("[App] LoginWindow closed; keeping app alive.");
                     }
-                });
+                }, DispatcherPriority.Background);
             };
 
             desktop.MainWindow = loginWindow;
             loginWindow.Show();
             loginWindow.Activate();
         }
-
-
         public void SwitchToLoginWindow()
         {
             if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
@@ -197,7 +200,6 @@ namespace LeafClient
 
             Console.WriteLine("[App] Switching to login window");
 
-            // Ensure we don't auto-shutdown
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             var loginWindow = new LoginWindow();
@@ -207,30 +209,37 @@ namespace LeafClient
                 Console.WriteLine($"[App] Login completed: {success}");
                 if (success)
                 {
-                    // Create new main window
                     var mainWindow = new MainWindow();
-                    mainWindow.Show();
                     desktop.MainWindow = mainWindow;
+                    mainWindow.Show();
+                    mainWindow.Activate();
                     loginWindow.Close();
                 }
             };
 
             loginWindow.Closed += (_, __) =>
             {
-                Console.WriteLine($"[App] LoginWindow closed - successful: {loginWindow.LoginSuccessful}");
-
-                // Only shutdown if login failed AND no other windows exist
-                if (!loginWindow.LoginSuccessful && desktop.Windows.Count == 0)
+                Dispatcher.UIThread.Post(async () =>
                 {
-                    Console.WriteLine("[App] No successful login and no windows - shutting down");
-                    desktop.Shutdown();
-                }
+                    await Task.Delay(200); // small stabilization delay
+
+                    bool hasVisibleWindow = desktop.Windows.Any(w => w.IsVisible);
+                    if (!loginWindow.LoginSuccessful && !hasVisibleWindow)
+                    {
+                        Console.WriteLine("[App] No successful login and no windows - shutting down");
+                        desktop.Shutdown();
+                    }
+                    else
+                    {
+                        Console.WriteLine("[App] LoginWindow closed; keeping app alive.");
+                    }
+                }, DispatcherPriority.Background);
             };
 
             desktop.MainWindow = loginWindow;
             loginWindow.Show();
+            loginWindow.Activate();
         }
-
         private void EnsureSingleWindow()
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

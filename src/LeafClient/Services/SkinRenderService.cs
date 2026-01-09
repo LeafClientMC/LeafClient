@@ -186,20 +186,14 @@ namespace LeafClient.Services
         public string GetRandomLargePoseName() =>
             _largePreviewPoseNames[_rand.Next(_largePreviewPoseNames.Count)];
 
-        // MODIFIED: Reverted to original signature, removed accessToken parameter
         public async Task<Bitmap?> LoadSkinImageAsync(string username, string poseName, string viewType, string? uuid = null)
         {
             Bitmap? loadedBitmap = null;
-            string? skinImageUrl = null;
-            string? skinModel = null;
-
-            // Removed MojangApiService call as requested.
-            // If you want to use official Mojang API for skin URLs, it would need to be outside this method
-            // or MojangApiService would need to be re-introduced with proper initialization.
 
             // Attempt 1: Starlight Skins
+            // The API expects render/{pose}/{username or uuid}/{type}
             string starlightUrl = $"https://starlightskins.lunareclipse.studio/render/{poseName}/{username}/{viewType}";
-            Console.WriteLine($"[SkinRenderService] Starlight Request: {starlightUrl}"); // MODIFIED: Use Console.WriteLine
+            Console.WriteLine($"[SkinRenderService] Starlight Request: {starlightUrl}");
 
             try
             {
@@ -214,15 +208,13 @@ namespace LeafClient.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SkinRenderService] Starlight error: {ex.Message}"); // MODIFIED: Use Console.WriteLine
+                Console.WriteLine($"[SkinRenderService] Starlight error: {ex.Message}");
             }
 
-            // Attempt 2: Visage fallback
+            // Fallback logic remains unchanged...
             if (loadedBitmap == null && (!string.IsNullOrWhiteSpace(username) || !string.IsNullOrWhiteSpace(uuid)))
             {
                 string visageUrl = $"https://visage.surgeplay.com/{viewType}/{username}";
-                Console.WriteLine($"[SkinRenderService] Visage Request: {visageUrl}"); // MODIFIED: Use Console.WriteLine
-
                 try
                 {
                     var response = await _httpClient.GetAsync(visageUrl);
@@ -236,15 +228,8 @@ namespace LeafClient.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SkinRenderService] Visage error: {ex.Message}"); // MODIFIED: Use Console.WriteLine
+                    Console.WriteLine($"[SkinRenderService] Visage error: {ex.Message}");
                 }
-            }
-
-            // Removed direct Mojang skin download fallback as requested.
-
-            if (loadedBitmap == null)
-            {
-                Console.WriteLine($"[SkinRenderService] No renderer succeeded for '{username}'. Returning null."); // MODIFIED: Use Console.WriteLine
             }
 
             return loadedBitmap;

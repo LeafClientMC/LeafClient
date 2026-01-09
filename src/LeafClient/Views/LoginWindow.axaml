@@ -95,7 +95,7 @@
 							Background="{DynamicResource LogoBackgroundBrush}"
 							CornerRadius="20"
 							HorizontalAlignment="Center">
-						<Image Source="/Assets/logo_icon.png"
+						<Image Source="/Assets/LeafRebrandedTransparent.png"
 							   Width="80" Height="80"/>
 					</Border>
 
@@ -169,7 +169,7 @@
 								Click="OfflineLogin_Click">
 							<StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
 								<!-- Leaf Client Logo Icon -->
-								<Image Source="/Assets/logo_icon.png" Width="20" Height="20" VerticalAlignment="Center"/>
+								<Image Source="/Assets/LeafRebrandedTransparent.png" Width="20" Height="20" VerticalAlignment="Center"/>
 								<TextBlock Text="PLAY OFFLINE"/>
 							</StackPanel>
 						</Button>

@@ -228,7 +228,6 @@ obj\Release\net8.0\win-x64\LeafClientUpdater.dll
 --feature:System.Text.Encoding.EnableUnsafeUTF7Encoding=false
 --feature:System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false
 --feature:System.Threading.Thread.EnableAutoreleasePool=false
---feature:System.Threading.ThreadPool.UseWindowsThreadPool=true
 --feature:System.Linq.Expressions.CanEmitObjectArrayDelegate=false
 --runtimeknob:Microsoft.Extensions.DependencyInjection.VerifyOpenGenericServiceTrimmability=true
 --runtimeknob:System.ComponentModel.TypeConverter.EnableUnsafeBinaryFormatterInDesigntimeLicenseContextSerialization=false

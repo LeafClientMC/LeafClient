@@ -1,36 +1,98 @@
 # ==================================================================
-# IGNORING Build and cache files
+# OS / System files
 # ==================================================================
-
-# Gradle build outputs (in src/LeafClient/)
-src/LeafClient/.gradle/
-src/LeafClient/build/
-src/LeafClient/gradle/
-
-# Minecraft/Fabric cache (THE PROBLEMATIC ONE)
-src/LeafClient/.gradle/loom-cache/
-src/LeafClient/.minecraft/
-src/LeafClient/run/
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
 
 # ==================================================================
-# Private / Sensitive Data
+# IDE / Editor files
+# ==================================================================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+.vscode/*.log
+.vscode/*.tmp
+
+# ==================================================================
+# Java / JVM
+# ==================================================================
+*.class
+*.log
+hs_err_pid*
+replay_pid*
+
+# ==================================================================
+# Gradle (keep wrapper!)
+# ==================================================================
+**/.gradle/
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# Build outputs
+**/build/
+**/target/
+**/out/
+
+# ==================================================================
+# Fabric / Loom / Minecraft
+# ==================================================================
+**/run/
+**/.minecraft/
+**/loom-cache/
+**/fabric-loom-cache/
+**/remappedSrc/
+
+# ==================================================================
+# Native / Compiler artifacts
+# ==================================================================
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+
+# Debug symbols
+*.pdb
+*.idb
+*.dbg
+*.dSYM/
+
+# ==================================================================
+# Temporary / backup files
+# ==================================================================
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# ==================================================================
+# Logs
+# ==================================================================
+logs/
+*.log
+
+# ==================================================================
+# Private / Sensitive data
 # ==================================================================
 src/LeafClient/PrivateServices/
 
 # ==================================================================
-# Source jars
+# Source JAR exceptions (explicitly tracked)
 # ==================================================================
-# These patterns ensure your JARs are NOT ignored
 !src/LeafClient/LeafRuntime/**/*.jar
 !src/LeafClient/LeafBootstrap/**/*.jar
-
-# ==================================================================
-# General ignores
-# ==================================================================
-**/.gradle/
-**/build/
-**/target/
-**/.idea/
-**/.vscode/
-.DS_Store
-Thumbs.db

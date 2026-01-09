@@ -4,11 +4,13 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Shapes;
+using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.Templates;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -38,6 +40,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Runtime.InteropServices; // Required for DataTemplate
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -45,8 +48,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using XboxAuthNet.Game.Msal;
 using static LeafClient.Models.LauncherSettings;
-using Avalonia.Controls.Templates;
-using System.Runtime.InteropServices; // Required for DataTemplate
 
 namespace LeafClient.Views
 {
@@ -150,7 +151,7 @@ namespace LeafClient.Views
         private ComboBox? _themeComboBox;
         private ToggleSwitch? _animationsEnabledToggle;
         // Logout flag
-        private bool _isLoggingOut = false;
+        //private bool _isLoggingOut = false;
         // Skin render
         private readonly SkinRenderService? _skinRenderService;
         // Game Options
@@ -449,9 +450,14 @@ namespace LeafClient.Views
         // Signals watcher
         private FileSystemWatcher? _externalSignalWatcher;
 
-        #endregion
+        // --- PROFESSIONAL STARTUP FIELDS ---
+        private Grid? _startupOverlay;
+        private Image? _startupBg;
+        private Image? _startupLogo;
+        private Image? _startupLogoText;
 
-        // File: MainWindow.cs (within the MainWindow() constructor)
+
+        #endregion
 
         public MainWindow()
         {
@@ -501,6 +507,7 @@ namespace LeafClient.Views
             }
 
             InitializeComponent();
+            InitializeStartupControls();
             DataContext = new MainWindowViewModel();
 
             _skinRenderService = new SkinRenderService();
@@ -543,69 +550,56 @@ namespace LeafClient.Views
                 _onlineCountService = null;
             }
 
+            // Update your Opened handler in the constructor
             this.Opened += async (_, __) =>
             {
-                StartRichPresenceIfEnabled();
-
-                // Ensure defaults exist before drawing UI, then build the UI
-                await InitializeDefaultServersAsync();
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                try
                 {
-                    LoadServers();
-                    RefreshQuickPlayBar();
-                });
+                    await PlayCinematicStartupAsync();
+                    StartRichPresenceIfEnabled();
 
-                _ = Task.Run(async () =>
-                {
-                    try
+                    await InitializeDefaultServersAsync();
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        await RefreshAllServerStatusesAsync();
-                        await WarmupServerIconsAsync();
-                    }
-                    catch (Exception ex)
+                        LoadServers();
+                        RefreshQuickPlayBar();
+                    });
+
+                    // Run these tasks in the background and gracefully handle their exceptions
+                    _ = Task.Run(async () =>
                     {
-                        Console.WriteLine($"[Startup Server Refresh] Error: {ex.Message}");
+                        try { await RefreshAllServerStatusesAsync(); } catch (Exception ex) { Console.WriteLine($"[RefreshAllServerStatusesAsync Error] {ex.Message}"); }
+                        try { await WarmupServerIconsAsync(); } catch (Exception ex) { Console.WriteLine($"[WarmupServerIconsAsync Error] {ex.Message}"); }
+                    });
+
+                    UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
+
+                    if (_currentSettings.IsFirstLaunch)
+                    {
+                        await Task.Delay(500);
+                        OpenAboutLeafClient(null, new RoutedEventArgs());
+                        _currentSettings.IsFirstLaunch = false;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
                     }
-                });
 
-                UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
+                    // Explicitly wrap these in try-catch as they are async void and can crash the app
+                    try { CheckForUpdates(null, new RoutedEventArgs()); } catch (Exception ex) { Console.WriteLine($"[CheckForUpdates Error] {ex.Message}"); }
 
-                if (_currentSettings.IsFirstLaunch)
-                {
-                    await Task.Delay(500); // Small delay to ensure main window is fully settled before pop-up animation
-                    OpenAboutLeafClient(null, new RoutedEventArgs()); // Open the About page
+                    if (_onlineCountService != null)
+                    {
+                        try { await _onlineCountService.UpdateCount(true); } catch (Exception ex) { Console.WriteLine($"[UpdateCount Error] {ex.Message}"); }
+                        try { await UpdateOnlineCountDisplay(); } catch (Exception ex) { Console.WriteLine($"[UpdateOnlineCountDisplay Error] {ex.Message}"); }
+                    }
 
-                    _currentSettings.IsFirstLaunch = false; // Mark as no longer first launch
-                    await _settingsService.SaveSettingsAsync(_currentSettings); // Save this change
+                    _ = Task.Run(async () => { try { await PerformModCleanup(); } catch (Exception ex) { Console.WriteLine($"[PerformModCleanup Error] {ex.Message}"); } });
                 }
-
-                CheckForUpdates(null, new RoutedEventArgs());
-
-                if (_onlineCountService != null)
+                catch (Exception ex)
                 {
-                    // before fetching the count for display.
-                    await _onlineCountService.UpdateCount(true);
-
-                    // Now fetch and display the initial online count, which will now be correct
-                    await UpdateOnlineCountDisplay();
+                    Console.Error.WriteLine($"[MainWindow.Opened Critical Error] An unhandled exception occurred during startup tasks: {ex.Message}");
+                    // Potentially show an error to the user if the app is in a bad state
                 }
-                else
-                {
-                    Console.Error.WriteLine("[MainWindow ERROR] OnlineCountService was not initialized. Skipping online count updates.");
-                    // Optionally, update UI to reflect that online count is unavailable.
-                    if (_onlineCountTextBlock != null)
-                    {
-                        _onlineCountTextBlock.Text = "You're offline";
-                    }
-                    if (_onlineStatusDot != null)
-                    {
-                        _onlineStatusDot.Fill = new SolidColorBrush(Colors.Red); // Indicate error
-                    }
-                }
-                _ = PerformModCleanup(); // Fire and forget cleanup on startup
             };
-
 
             this.Closing += OnWindowClosing;
 
@@ -647,6 +641,88 @@ namespace LeafClient.Views
                 Console.WriteLine($"[Signal Watcher] Failed to start: {ex.Message}");
             }
         }
+
+        private void InitializeStartupControls()
+        {
+            _startupOverlay = this.FindControl<Grid>("StartupOverlay");
+            _startupBg = this.FindControl<Image>("StartupBg");
+            _startupLogo = this.FindControl<Image>("StartupLogo");
+            _startupLogoText = this.FindControl<Image>("StartupLogoText");
+        }
+
+        private async Task PlayCinematicStartupAsync()
+        {
+            if (_startupOverlay == null || _startupLogo == null || _startupBg == null || _startupLogoText == null) return;
+
+            // Ensure initial state
+            _startupOverlay.IsVisible = true;
+            _startupOverlay.Opacity = 1;
+            _startupLogo.Opacity = 0;
+            _startupLogoText.Opacity = 0;
+
+            var easing = new CubicEaseOut();
+
+            // 1. Setup Transitions
+            _startupBg.Transitions = new Transitions
+    {
+        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(1200), Easing = easing },
+        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(3000), Easing = easing }
+    };
+
+            _startupLogo.Transitions = new Transitions
+    {
+        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(800), Easing = easing },
+        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(2000), Easing = easing }
+    };
+
+            _startupLogoText.Transitions = new Transitions
+    {
+        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(800), Easing = easing },
+        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(2000), Easing = easing }
+    };
+
+            // 2. Start Background and First Logo Animation
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _startupBg.Opacity = 1;
+                _startupBg.RenderTransform = TransformOperations.Parse("scale(1.0)");
+
+                _startupLogo.Opacity = 1;
+                _startupLogo.RenderTransform = TransformOperations.Parse("scale(1.15)");
+            });
+
+            // Wait for the logo to enlarge
+            await Task.Delay(1500);
+
+            // 3. Cross-fade Logo to LogoText
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _startupLogo.Opacity = 0;
+
+                _startupLogoText.Opacity = 1;
+                _startupLogoText.RenderTransform = TransformOperations.Parse("scale(1.1)");
+            });
+
+            // Wait for the text to be seen
+            await Task.Delay(1200);
+
+            // 4. Exit Animation
+            _startupOverlay.Transitions = new Transitions
+    {
+        new DoubleTransition { Property = Grid.OpacityProperty, Duration = TimeSpan.FromMilliseconds(600), Easing = new QuarticEaseIn() }
+    };
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _startupLogoText.RenderTransform = TransformOperations.Parse("scale(1.2)");
+                _startupOverlay.Opacity = 0;
+            });
+
+            await Task.Delay(600);
+            _startupOverlay.IsVisible = false;
+        }
+
+
 
         private void OnExternalSignalDetected(object sender, FileSystemEventArgs e)
         {
@@ -866,38 +942,47 @@ namespace LeafClient.Views
         #endregion
 
         private async Task DownloadLeafRuntimeDependencies(string version, bool isFabric)
-        {
-            if (version != "1.20.1" || !isFabric)
-                return;
+{
+    // Only for Fabric profiles and for versions we host in latestjars/<version>/
+    var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "1.20.1",
+        "1.20.2",
+        "1.21.4",
+        "1.21.5",
+    };
 
-            string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
-            System.IO.Directory.CreateDirectory(leafRuntimeDir);
+    if (!isFabric || !supported.Contains(version))
+        return;
 
-            string bootstrapUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/LeafBootstrap-1.0.0.jar";
-            string runtimeUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/LeafRuntime-1.0.0.jar";
+    // Store per-version locally to avoid conflicts between versions
+    string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime", version);
+    System.IO.Directory.CreateDirectory(leafRuntimeDir);
 
-            string bootstrapPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap-1.0.0.jar");
-            string runtimePath = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime-1.0.0.jar");
+    // Download from the versioned folder on GitHub
+    string bootstrapUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/LeafBootstrap.jar";
+    string runtimeUrl   = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/LeafRuntime.jar";
 
-            ShowProgress(true, "Downloading Leaf Client Runtime...");
+    string bootstrapPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap.jar");
+    string runtimePath   = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime.jar");
 
-            try
-            {
-                await DownloadFileAsync(bootstrapUrl, bootstrapPath);
-                await DownloadFileAsync(runtimeUrl, runtimePath);
-                Console.WriteLine("[Leaf Runtime] Runtime dependencies downloaded successfully.");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Leaf Runtime ERROR] Failed to download dependencies: {ex.Message}");
-            }
-            finally
-            {
-                ShowProgress(false);
-            }
-        }
+    ShowProgress(true, "Downloading Leaf Client Runtime...");
 
-
+    try
+    {
+        await DownloadFileAsync(bootstrapUrl, bootstrapPath);
+        await DownloadFileAsync(runtimeUrl, runtimePath);
+        Console.WriteLine($"[Leaf Runtime] Runtime dependencies downloaded successfully for {version}.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[Leaf Runtime ERROR] Failed to download dependencies for {version}: {ex.Message}");
+    }
+    finally
+    {
+        ShowProgress(false);
+    }
+}
 
         private async void CheckForUpdates(object? sender, RoutedEventArgs e, bool isManualCheck = false)
         {
@@ -1261,6 +1346,13 @@ namespace LeafClient.Views
 
             foreach (var mod in modsForCurrentVersion)
             {
+                // ADDED: Skip rendering the Leaf Client Runtime mod in the UI
+                if (mod.ModId.Equals("leafclient", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[User Mods] Skipping display of internal mod: {mod.Name}");
+                    continue;
+                }
+
                 Console.WriteLine($"[User Mods] Creating card for: {mod.Name} (MC {mod.MinecraftVersion}, Enabled: {mod.Enabled})");
                 var modCard = CreateUserModCard(mod);
                 _userModsPanel.Children.Add(modCard);
@@ -1268,6 +1360,7 @@ namespace LeafClient.Views
 
             Console.WriteLine($"[User Mods] Loaded {_userModsPanel.Children.Count} mod cards for MC {currentMcVersion}");
         }
+
 
         private Border CreateUserModCard(InstalledMod mod)
         {
@@ -1816,9 +1909,9 @@ namespace LeafClient.Views
                 _quickPlayTooltip.IsVisible = false;
                 _quickPlayTooltip.Opacity = 0;
             }
-            _quickPlayServersContainer = this.FindControl<StackPanel>("QuickPlayServersContainer"); // Re-assignment, fine if intended
+            _quickPlayServersContainer = this.FindControl<StackPanel>("QuickPlayServersContainer");
             _playingAsImage = this.FindControl<Image>("PlayingAsImage");
-            _accountCharacterImage = this.FindControl<Image>("Image");
+            _accountCharacterImage = this.FindControl<Image>("AccountCharacterImage");
             _launchProgressPanel = this.FindControl<StackPanel>("LaunchProgressPanel");
             _launchProgressBar = this.FindControl<ProgressBar>("LaunchProgressBar");
             _launchProgressText = this.FindControl<TextBlock>("LaunchProgressText");
@@ -3334,6 +3427,38 @@ namespace LeafClient.Views
                         }
                     }
 
+                    // If the DownloadUrl is "internal", it means it's the launcher's own mod.
+                    // Copy it from the launcher's directory to the mods folder.
+                    if (mod.DownloadUrl.Equals("internal", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Assuming leafclient.jar is in the same directory as the launcher executable
+                        string launcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        string launcherDir = System.IO.Path.GetDirectoryName(launcherExePath)!;
+                        string sourceLeafClientJarPath = System.IO.Path.Combine(launcherDir, "leafclient.jar");
+
+                        if (System.IO.File.Exists(sourceLeafClientJarPath))
+                        {
+                            try
+                            {
+                                // Copy the internal mod, overwriting if it already exists
+                                System.IO.File.Copy(sourceLeafClientJarPath, targetFilePath, true);
+                                Console.WriteLine($"[User Mods] Copied internal mod '{mod.Name}' from launcher dir to mods folder.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"[User Mods] Failed to copy internal mod '{mod.Name}': {ex.Message}");
+                                ShowLaunchErrorBanner($"Failed to copy internal mod '{mod.Name}'.");
+                                continue; // Skip to next mod
+                            }
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[User Mods] Internal mod '{mod.Name}' (leafclient.jar) not found next to launcher EXE: {sourceLeafClientJarPath}");
+                            ShowLaunchErrorBanner($"Internal mod 'leafclient.jar' not found. Launch might fail.");
+                        }
+                        continue; // Skip to next mod as it's now handled
+                    }
+
                     // Check if the mod (as .jar) already exists
                     if (File.Exists(targetFilePath))
                     {
@@ -4710,50 +4835,61 @@ namespace LeafClient.Views
         private bool _isShuttingDown = false; // Add this flag at the top of your class with other fields
         private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
         {
-            // If we are already in the process of shutting down, just let it happen.
+            // Get the global application state for window swapping
+            bool isAppSwappingToLogin = (Application.Current as App)?.IsSwapToLogin ?? false;
+
+            // If a shutdown process is already initiated, let it proceed.
             if (_isShuttingDown)
             {
                 e.Cancel = false;
                 return;
             }
 
+            // Handle the case where the old MainWindow is closing because a new LoginWindow/MainWindow is taking over.
+            // This happens after a successful login following a logout, or initial startup.
+            // We should NOT trigger a full app shutdown in this scenario.
+            if (isAppSwappingToLogin)
+            {
+                Console.WriteLine($"[MainWindow] OnWindowClosing: Detected app is swapping windows. Cancelling close for this window.");
+                e.Cancel = false; // Allow this specific window to close
+
+                // Reset the flag immediately after this window acknowledges the swap.
+                // This ensures subsequent window closures (e.g., if the user closes the *new* MainWindow later)
+                // behave normally and can trigger a full shutdown.
+                if (Application.Current is App app)
+                {
+                    app.IsSwapToLogin = false;
+                }
+                return;
+            }
+
             // --- Handle Minimize to Tray ---
+            // This path is for when the user clicks the 'X' and MinimizeToTray is enabled,
+            // but it's *not* an explicit exit.
             if (_currentSettings.MinimizeToTray && !_isExitingApp)
             {
-                e.Cancel = true;
+                Console.WriteLine("[MainWindow] OnWindowClosing: Minimize to tray enabled. Hiding window.");
+                e.Cancel = true; // Prevent the window from closing immediately
                 MinimizeToTray();
-
-                if (_currentSettings.ClosingNotificationsPreference == NotificationPreference.Always ||
-                    (_currentSettings.ClosingNotificationsPreference == NotificationPreference.JustOnce))
-                {
-                    Console.WriteLine("[Notification] Launcher is running in the background. Click the tray icon to restore.");
-                }
-
                 return;
             }
 
-            // --- If this is a logout scenario, don't do full shutdown ---
-            if (_isLoggingOut)
-            {
-                Console.WriteLine("[MainWindow] Closing during logout - skipping cleanup");
-                e.Cancel = false;
-                return;
-            }
+            // --- Initiate Graceful Application Shutdown (Explicit User Exit or last window close) ---
+            // This path is taken if it's an explicit exit, or if it's the last window closing and
+            // not a swap, and not minimize-to-tray.
+            _isShuttingDown = true; // Mark that a shutdown is in progress
+            e.Cancel = true; // Prevent the window from closing immediately to allow async cleanup
 
-            // --- Start Graceful Shutdown (only for true app exit) ---
-            _isShuttingDown = true;
-            e.Cancel = true;
+            this.Hide(); // Hide the window while cleanup happens
+            Console.WriteLine("[MainWindow] Window hidden. Starting graceful application shutdown...");
 
-            this.Hide();
-            Console.WriteLine("[MainWindow] Window hidden. Starting graceful shutdown...");
-
-            // Perform the asynchronous cleanup
+            // Perform asynchronous cleanup tasks
             if (_onlineCountService != null)
             {
                 try
                 {
                     Console.WriteLine("[MainWindow] Attempting to decrement online count before shutdown...");
-                    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3)); // Give it 3 seconds
                     await _onlineCountService.UpdateCount(false, cts.Token);
                 }
                 catch (Exception ex)
@@ -4762,21 +4898,23 @@ namespace LeafClient.Views
                 }
             }
 
-            // Perform other synchronous cleanup
+            // Perform synchronous cleanup tasks
             StopRichPresence();
-            KillMinecraftProcess();
+            KillMinecraftProcess(); // Ensure any running game is terminated
+
             if (_trayIcon != null)
             {
                 _trayIcon.IsVisible = false;
                 _trayIcon.Dispose();
             }
 
-            // Close the log writer ONLY during true shutdown
+            // Close the log writer to flush any pending messages
             if (_logStreamWriter != null)
             {
                 try
                 {
                     Console.WriteLine("[MainWindow] Closing log writer...");
+                    // Restore original console outputs before closing the custom writer
                     Console.SetOut(_originalConsoleOut ?? new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
                     Console.SetError(_originalConsoleError ?? new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
                     _logStreamWriter.Close();
@@ -4789,12 +4927,14 @@ namespace LeafClient.Views
                 }
             }
 
+            // Finally, explicitly shut down the Avalonia application lifetime
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                _originalConsoleOut?.WriteLine("[MainWindow] Graceful shutdown complete. Terminating process.");
+                Console.WriteLine("[MainWindow] Graceful shutdown complete. Terminating process.");
                 desktop.Shutdown();
             }
         }
+
 
         // Add this helper in MainWindow
         private async Task<T> RunExclusiveInstall<T>(Func<Task<T>> installAction)
@@ -5867,6 +6007,7 @@ namespace LeafClient.Views
             try
             {
                 UpdateLaunchButton("PREPARING LAUNCH...", "DeepSkyBlue");
+                ClearModsFolder();
 
                 if (GetSelectedAddon(version).Equals("Fabric", StringComparison.OrdinalIgnoreCase))
                 {
@@ -5930,7 +6071,7 @@ namespace LeafClient.Views
 
                 if (isModernVersion)
                 {
-                    string leafClientModFileName = "leafclient-runtime-1.0.0.jar";
+                    string leafClientModFileName = "leafclient-runtime.jar";
                     if (!_currentSettings.InstalledMods.Any(m => m.ModId == "leafclient" && m.MinecraftVersion == version))
                     {
                         _currentSettings.InstalledMods.Add(new InstalledMod
@@ -6006,57 +6147,6 @@ namespace LeafClient.Views
 
                 var process = await _launcher.CreateProcessAsync(versionToLaunch, launchOption);
                 if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
-
-                // --- BOOTSTRAP INJECTION LOGIC ---
-
-                // 1. Define which versions your Runtime Mod actually supports
-                // Currently, it seems built for 1.20.1. Add others only if you have updated the jar to support them.
-                var supportedRuntimeVersions = new HashSet<string> { "1.20.1" };
-                bool isRuntimeCompatible = supportedRuntimeVersions.Contains(version);
-
-                if (isModernVersion)
-                {
-                    // Only download/update if compatible
-                    await DownloadLeafRuntimeDependencies(version, GetSelectedAddon(version) == "Fabric");
-
-                    string originalJavaPath = process.StartInfo.FileName;
-                    string originalArguments = process.StartInfo.Arguments ?? string.Empty;
-                    string originalWorkingDirectory = process.StartInfo.WorkingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-                    string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
-                    string bootstrapJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafBootstrap-1.0.0.jar");
-                    string runtimeJarPath = System.IO.Path.Combine(leafRuntimeDir, "LeafRuntime-1.0.0.jar");
-
-                    // CRITICAL FIX: Only inject if the version is explicitly supported
-                    if (isRuntimeCompatible && File.Exists(bootstrapJarPath) && File.Exists(runtimeJarPath))
-                    {
-                        Console.WriteLine($"[Leaf] Injecting Bootstrap for {version}...");
-
-                        process.StartInfo.FileName = originalJavaPath;
-                        process.StartInfo.Arguments = $"-jar \"{bootstrapJarPath}\" {originalArguments}";
-                        process.StartInfo.WorkingDirectory = leafRuntimeDir;
-
-                        try
-                        {
-                            process.StartInfo.EnvironmentVariables["LEAF_RUNTIME_PATH"] = runtimeJarPath;
-                            process.StartInfo.EnvironmentVariables["LEAF_BOOTSTRAP_DIR"] = leafRuntimeDir;
-                            process.StartInfo.EnvironmentVariables["LEAF_SPAWNER_WORKDIR"] = originalWorkingDirectory;
-                        }
-                        catch
-                        {
-                            Console.WriteLine("[Leaf] Warning: could not set process environment variables for bootstrap.");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[Leaf] Skipping Runtime injection for {version} (Not in supported list or files missing). Launching Vanilla/Fabric directly.");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[Leaf] Legacy version {version} detected. Skipping Bootstrap injection to prevent Java 8 crash.");
-                }
-                // --- END BOOTSTRAP INJECTION ---
 
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -9246,7 +9336,6 @@ namespace LeafClient.Views
             }
         }
 
-        // MainWindow.cs — make UpdateSkinPreviewsAsync robust to missing username (prefer uuid)
         private async Task UpdateSkinPreviewsAsync(string? username, string? uuid)
         {
             if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(uuid))
@@ -9262,7 +9351,7 @@ namespace LeafClient.Views
                 var id = username ?? uuid ?? "Player";
 
                 var smallBitmap = await _skinRenderService.LoadSkinImageAsync(id, smallPose, "bust", uuid);
-                var largeBitmap = await _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid);
+                var largeBitmap = await _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid); // Ensure "full" is used here
 
                 if (_playingAsImage != null && smallBitmap != null)
                     _playingAsImage.Source = smallBitmap;
@@ -9278,10 +9367,6 @@ namespace LeafClient.Views
             }
         }
 
-
-
-
-        // MainWindow.cs — make UpdateSkinPreviewsAsync calls robust
         private async Task LoadUserInfoAsync()
         {
             try
@@ -9325,7 +9410,11 @@ namespace LeafClient.Views
             {
                 Console.WriteLine("[MainWindow] Starting proper logout process...");
 
-                _isLoggingOut = true;
+                // Set the IsSwapToLogin flag in the App instance
+                if (Application.Current is App app)
+                {
+                    app.IsSwapToLogin = true;
+                }
 
                 // PROPERLY clear session data
                 _currentSettings.IsLoggedIn = false;
@@ -9376,7 +9465,7 @@ namespace LeafClient.Views
                                 loginWindow.Close();
 
                                 // Close the old (hidden) main window
-                                this.Close();
+                                this.Close(); // This will trigger OnWindowClosing for the OLD MainWindow
                             });
                         }
                     };
@@ -9413,7 +9502,8 @@ namespace LeafClient.Views
             }
             finally
             {
-                _isLoggingOut = false;
+                // The IsSwapToLogin flag in App instance now manages the global state.
+                // No need to reset _isLoggingOut here.
             }
         }
 
@@ -9949,6 +10039,12 @@ namespace LeafClient.Views
 
         private void PopulateAllVersionsData()
         {
+            _allVersions.Add(new VersionInfo("1.21.10", "1.21", "Latest Release", "Fabric", "December 26, 2025", "Further refinements and bug fixes for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.9", "1.21", "Release", "Fabric", "December 19, 2025", "More bug fixes and optimizations for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.8", "1.21", "Release", "Fabric", "December 12, 2025", "Additional bug fixes and performance improvements for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.7", "1.21", "Release", "Fabric", "December 5, 2025", "Minor bug fixes for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.6", "1.21", "Release", "Fabric", "November 28, 2025", "Performance and stability improvements for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.5", "1.21", "Release", "Fabric", "November 21, 2025", "Further bug fixes for the Tricky Trials Update."));
             _allVersions.Add(new VersionInfo("1.21.4", "1.21", "Latest Release", "Fabric", "December 3, 2024", "The Tricky Trials Update continues with further refinements and bug fixes."));
             _allVersions.Add(new VersionInfo("1.21.3", "1.21", "Release", "Fabric", "October 23, 2024", "Bug fixes and performance improvements for the Tricky Trials Update."));
             _allVersions.Add(new VersionInfo("1.21.2", "1.21", "Release", "Fabric", "October 22, 2024", "Additional bug fixes and optimizations for the Tricky Trials Update."));
@@ -9983,12 +10079,12 @@ namespace LeafClient.Views
             _allVersions.Add(new VersionInfo("1.8.9", "1.8", "Classic", "Vanilla", "December 9, 2015", "Most popular PvP version, widely used for Hypixel and competitive play."));
             _allVersions.Add(new VersionInfo("1.8.8", "1.8", "Legacy", "Vanilla", "September 28, 2015", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8.7", "1.8", "Legacy", "Vanilla", "July 1, 2015", "Bug fixes for 1.8."));
-            _allVersions.Add(new VersionInfo("1.8.6", "1.8", "Legacy", "Vanilla", "June 25, 2015", "Bug fixes for 1.8.")); // ADDED
-            _allVersions.Add(new VersionInfo("1.8.5", "1.8", "Legacy", "Vanilla", "June 23, 2015", "Bug fixes for 1.8.")); // ADDED
-            _allVersions.Add(new VersionInfo("1.8.4", "1.8", "Legacy", "Vanilla", "May 21, 2015", "Bug fixes for 1.8.")); // ADDED
-            _allVersions.Add(new VersionInfo("1.8.3", "1.8", "Legacy", "Vanilla", "February 20, 2015", "Bug fixes for 1.8.")); // ADDED
-            _allVersions.Add(new VersionInfo("1.8.2", "1.8", "Legacy", "Vanilla", "February 19, 2015", "Bug fixes for 1.8.")); // ADDED
-            _allVersions.Add(new VersionInfo("1.8.1", "1.8", "Legacy", "Vanilla", "November 24, 2014", "Bug fixes for 1.8.")); // ADDED
+            _allVersions.Add(new VersionInfo("1.8.6", "1.8", "Legacy", "Vanilla", "June 25, 2015", "Bug fixes for 1.8."));
+            _allVersions.Add(new VersionInfo("1.8.5", "1.8", "Legacy", "Vanilla", "June 23, 2015", "Bug fixes for 1.8."));
+            _allVersions.Add(new VersionInfo("1.8.4", "1.8", "Legacy", "Vanilla", "May 21, 2015", "Bug fixes for 1.8."));
+            _allVersions.Add(new VersionInfo("1.8.3", "1.8", "Legacy", "Vanilla", "February 20, 2015", "Bug fixes for 1.8."));
+            _allVersions.Add(new VersionInfo("1.8.2", "1.8", "Legacy", "Vanilla", "February 19, 2015", "Bug fixes for 1.8."));
+            _allVersions.Add(new VersionInfo("1.8.1", "1.8", "Legacy", "Vanilla", "November 24, 2014", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8", "1.8", "Release", "Vanilla", "September 2, 2014", "The Bountiful Update."));
             _allVersions.Add(new VersionInfo("1.7.10", "1.7", "Classic", "Vanilla", "June 26, 2014", "Classic modded version, widely used for legacy modpacks."));
             _allVersions.Add(new VersionInfo("1.7.9", "1.7", "Legacy", "Vanilla", "April 14, 2014", "Bug fixes for 1.7."));
@@ -10079,7 +10175,7 @@ namespace LeafClient.Views
             // Only kill Minecraft process and dispose tray icon
             // Do NOT dispose the log writer here - it's handled in OnWindowClosing for true shutdown
             KillMinecraftProcess();
-            if (_trayIcon != null && !_isLoggingOut)
+            if (_trayIcon != null) // Removed _isLoggingOut check
             {
                 _trayIcon.IsVisible = false;
                 _trayIcon.Dispose();
