@@ -18,7 +18,7 @@ using System.Reflection;
     "ent, offering advanced version management, mod support, and exclusive features t" +
     "o enhance your gameplay experience.")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.3.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.3+67577bbd7fb8c58e54d4d03320451120401c2b40")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.3+4acd96e2109096d8749d961ce9f2837511e231e7")]
 [assembly: System.Reflection.AssemblyProductAttribute("LeafClient")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LeafClient")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.3.0.0")]
