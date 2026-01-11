@@ -14,6 +14,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO.Compression;
 
 namespace LeafClientUpdater.Views
 {
@@ -229,32 +230,41 @@ namespace LeafClientUpdater.Views
                 }
                 catch (ArgumentException)
                 {
+                    // Process already exited
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Wait error: {ex.Message}");
                 }
 
+                // Give extra time for file locks to release on DLLs
                 await Task.Delay(1000);
 
                 string appDir = System.IO.Path.GetDirectoryName(targetExePath)!;
-                string tempFilePath = System.IO.Path.Combine(appDir, "LeafClient.new");
-                string backupPath = targetExePath + ".bak";
+                string zipFilePath = System.IO.Path.Combine(appDir, "update.zip");
 
-                UpdateStatus("Downloading latest version...");
+                UpdateStatus("Downloading update package...");
                 using (var client = new HttpClient())
                 {
                     var data = await client.GetByteArrayAsync(downloadUrl);
-                    await File.WriteAllBytesAsync(tempFilePath, data);
+                    await File.WriteAllBytesAsync(zipFilePath, data);
                 }
 
-                UpdateStatus("Installing update...");
+                UpdateStatus("Extracting files...");
 
-                if (File.Exists(backupPath)) File.Delete(backupPath);
+                try
+                {
+                    // Extract ZIP and overwrite all files (EXE + DLLs)
+                    // This ensures SkiaSharp.dll and others are synced with the new EXE
+                    ZipFile.ExtractToDirectory(zipFilePath, appDir, overwriteFiles: true);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Extraction failed: {ex.Message}");
+                }
 
-                if (File.Exists(targetExePath)) File.Move(targetExePath, backupPath);
-
-                File.Move(tempFilePath, targetExePath);
+                // Clean up the zip file
+                if (File.Exists(zipFilePath)) File.Delete(zipFilePath);
 
                 UpdateStatus("Update Complete! Launching...");
                 await Task.Delay(1000);
@@ -262,7 +272,8 @@ namespace LeafClientUpdater.Views
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = targetExePath,
-                    UseShellExecute = true
+                    UseShellExecute = true,
+                    WorkingDirectory = appDir
                 });
 
                 Environment.Exit(0);
