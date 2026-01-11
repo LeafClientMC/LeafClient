@@ -7,9 +7,9 @@ A ___Minecraft: Java Edition client (no cheats)___.
 
 BEFORE USE OR MODIFICATION OF LEAF CLIENT, PLEASE VIEW AND READ OUR [LICENSE](https://github.com/LeafClientMC/LeafClient/blob/main/LICENSE.md).
 
-# V1.1 BETA RELEASED
+# BETA RELEASED
 
-We've released V1.1 BETA!
+We've released BETA!
 PLEASE EXPECT BUGS! AND REPORT THEM IF FOUND USING THE FEEDBACK SYSTEM ON THE LAUNCHER.
 
 **Currently featuring 20+ client features:**
