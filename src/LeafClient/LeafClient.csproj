@@ -17,7 +17,7 @@
 		<PackageProjectUrl>https://github.com/LeafClientMC/LeafClient</PackageProjectUrl>
 		<PackageIcon>LeafRebrandedTransparent.png</PackageIcon>
 		<RepositoryUrl>https://github.com/LeafClientMC/LeafClient</RepositoryUrl>
-		<Version>1.0</Version>
+		<Version>1.3</Version>
 		<PublishAot>true</PublishAot>
 		<IsAotCompatible>true</IsAotCompatible>
 		<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
@@ -84,5 +84,18 @@
 		  <Pack>True</Pack>
 		  <PackagePath>\</PackagePath>
 		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<!-- Prevent AOT from stripping native interop code which causes stack overruns -->
+		<TrimmerRootAssembly Include="Avalonia" />
+		<TrimmerRootAssembly Include="Avalonia.Base" />
+		<TrimmerRootAssembly Include="Avalonia.Controls" />
+		<TrimmerRootAssembly Include="Avalonia.Desktop" />
+		<TrimmerRootAssembly Include="Avalonia.Win32" />
+		<TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
+		<TrimmerRootAssembly Include="Avalonia.Fonts.Inter" />
+		<TrimmerRootAssembly Include="SkiaSharp" />
+		<TrimmerRootAssembly Include="HarfBuzzSharp" />
+		<TrimmerRootAssembly Include="LeafClient" />
 	</ItemGroup>
 </Project>

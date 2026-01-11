@@ -999,18 +999,17 @@ namespace LeafClient.Views
                 string latestVersionString = await _httpClient.GetStringAsync(versionFileUrl);
                 var latestVersion = Version.Parse(latestVersionString.Trim());
 
+                // Force update logic: If a new version is found, update immediately without asking.
                 if (latestVersion > currentVersion)
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        if (_currentSettings.EnableUpdateNotifications || isManualCheck)
-                        {
-                            bool updateConfirmed = await ShowUpdateAvailableDialog(latestVersion.ToString());
-                            if (updateConfirmed) await InitiateSelfUpdate(newExeDownloadUrl);
-                        }
+                        // FORCE UPDATE: Directly initiate update, skipping the user confirmation dialog ("Not Now" / "Update Now")
+                        await InitiateSelfUpdate(newExeDownloadUrl);
                     }
                     else
                     {
+                        // Non-Windows platforms (Linux/Mac) still need manual intervention
                         if (_currentSettings.EnableUpdateNotifications || isManualCheck)
                         {
                             await ShowManualUpdateDialog(latestVersion.ToString());
@@ -1097,24 +1096,11 @@ namespace LeafClient.Views
 
             try
             {
-                // FIX: Use Process.MainModule.FileName to get the path in single-file/AOT builds
-                string? currentExePath = null;
-                try
-                {
-                    currentExePath = Process.GetCurrentProcess().MainModule?.FileName;
-                }
-                catch { /* Ignore permission errors */ }
-
-                // Fallback if MainModule fails
+                // 1. Get the current executable path reliably
+                string currentExePath = Environment.ProcessPath;
                 if (string.IsNullOrEmpty(currentExePath))
                 {
-                    currentExePath = Environment.ProcessPath;
-                }
-
-                // Final fallback
-                if (string.IsNullOrEmpty(currentExePath))
-                {
-                    currentExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                    currentExePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
                 }
 
                 if (string.IsNullOrEmpty(currentExePath))
@@ -1123,13 +1109,13 @@ namespace LeafClient.Views
                 }
 
                 string appDirectory = System.IO.Path.GetDirectoryName(currentExePath)!;
-
                 string updaterDir = System.IO.Path.Combine(appDirectory, "Updater");
                 System.IO.Directory.CreateDirectory(updaterDir);
 
                 string updaterExeName = "LeafClientUpdater.exe";
                 string updaterLocalPath = System.IO.Path.Combine(updaterDir, updaterExeName);
 
+                // 2. Download the Updater
                 Console.WriteLine($"[Updater] Downloading updater from {updaterDownloadUrl} to {updaterLocalPath}");
                 using (var client = new HttpClient())
                 {
@@ -1138,18 +1124,35 @@ namespace LeafClient.Views
                 }
                 Console.WriteLine("[Updater] Updater downloaded successfully.");
 
-                Process.Start(new ProcessStartInfo
+                // 3. Get current Process ID (PID) to pass to updater
+                int currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
+
+                // 4. Launch Updater with arguments: [PID] [ExePath] [DownloadUrl]
+                // We base64 encode strings to prevent quote/space path errors entirely
+                string pathBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(currentExePath));
+                string urlBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(newExeDownloadUrl));
+
+                var startInfo = new ProcessStartInfo
                 {
                     FileName = updaterLocalPath,
-                    Arguments = $"\"{currentExePath}\" \"{newExeDownloadUrl}\"",
-                    UseShellExecute = false
-                });
+                    WorkingDirectory = updaterDir, // <--- ADDED: Ensures updater finds its own dependencies if they exist
+                    Arguments = $"{currentPid} {pathBytes} {urlBytes}",
+                    UseShellExecute = false,
+                    CreateNoWindow = false // Let the insane UI show
+                };
 
-                Console.WriteLine("[Updater] Launched updater and exiting main application.");
+                Process.Start(startInfo);
 
+                Console.WriteLine("[Updater] Launched updater. Exiting...");
+
+                // 5. Shutdown gracefully
                 if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
                 {
                     desktop.Shutdown();
+                }
+                else
+                {
+                    Environment.Exit(0);
                 }
             }
             catch (Exception ex)
@@ -1158,10 +1161,6 @@ namespace LeafClient.Views
                 await ShowUpdateErrorDialog($"Failed to start update: {ex.Message}");
             }
         }
-
-
-
-        // --- Helper Dialogs for Update Feature ---
 
         private async Task<bool> ShowUpdateAvailableDialog(string newVersion)
         {
@@ -6019,56 +6018,90 @@ namespace LeafClient.Views
                 UpdateLaunchButton("PREPARING LAUNCH...", "DeepSkyBlue");
                 ClearModsFolder();
 
-                // --- Start Leaf Client Mod Registration ---
-                // MOVED UP: Register/Update the mod settings BEFORE InstallUserModsAsync runs
+                // ====================================================================================
+                // FIX: Explicitly handle Leaf Client Mod Registration AND Download here.
+                // We now use a VERSIONED filename (leafclient-1.21.4.jar) locally.
+                // This prevents SyncLauncherManagedMods from deleting the file when it cleans up
+                // entries from other versions that might have shared the generic "leafclient.jar" name.
+                // ====================================================================================
+
                 bool isModernVersion = false;
                 if (Version.TryParse(version, out Version? semVer))
                 {
                     isModernVersion = semVer >= new Version(1, 17);
                 }
 
-                string leafClientModFileName = "leafclient.jar";
                 string leafClientModId = "leafclient";
                 string leafClientModName = "Leaf Client";
-                string leafClientJarFileName = "leafclient.jar";
-                string leafClientDownloadUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/{leafClientJarFileName}";
+
+                // IMPORTANT: Append version to filename to ensure uniqueness in the mods folder
+                string leafClientJarFileName = $"leafclient-{version}.jar";
+
+                // Source URL still points to the generic name on GitHub
+                string leafClientDownloadUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
+
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                Directory.CreateDirectory(modsFolder);
+                string targetJarPath = System.IO.Path.Combine(modsFolder, leafClientJarFileName);
 
                 if (isModernVersion)
                 {
-                    // Check if the Leaf Client mod is already tracked for this Minecraft version
+                    // 1. Update Settings to ensure the launcher knows about the mod
                     var existingLeafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
 
                     if (existingLeafClientMod == null)
                     {
-                        _currentSettings.InstalledMods.Add(new InstalledMod
+                        var newMod = new InstalledMod
                         {
                             ModId = leafClientModId,
                             Name = leafClientModName,
                             Description = "Core Leaf Client mod.",
-                            Version = GetCurrentAppVersion().ToString(), // Use launcher version
-                            MinecraftVersion = version, // Use base Minecraft version
-                            FileName = leafClientJarFileName,
-                            DownloadUrl = leafClientDownloadUrl, // Now points to GitHub
+                            Version = GetCurrentAppVersion().ToString(),
+                            MinecraftVersion = version,
+                            FileName = leafClientJarFileName, // Save with versioned name
+                            DownloadUrl = leafClientDownloadUrl,
                             Enabled = true,
                             InstallDate = DateTime.Now,
                             IconUrl = ""
-                        });
-                        await _settingsService.SaveSettingsAsync(_currentSettings);
-                        Console.WriteLine($"[Leaf Client Mod] Registered new internal mod entry for MC {version} with GitHub URL.");
+                        };
+                        _currentSettings.InstalledMods.Add(newMod);
+                        Console.WriteLine($"[Leaf Client Mod] Registered new entry for MC {version} as {leafClientJarFileName}.");
                     }
                     else
                     {
-                        // Update existing mod details to ensure consistency and correct download URL
                         existingLeafClientMod.Enabled = true;
-                        existingLeafClientMod.FileName = leafClientJarFileName;
-                        existingLeafClientMod.DownloadUrl = leafClientDownloadUrl; // Ensure URL is updated
+                        existingLeafClientMod.FileName = leafClientJarFileName; // Update to versioned name
+                        existingLeafClientMod.DownloadUrl = leafClientDownloadUrl;
                         existingLeafClientMod.Version = GetCurrentAppVersion().ToString();
-                        await _settingsService.SaveSettingsAsync(_currentSettings);
-                        Console.WriteLine($"[Leaf Client Mod] Updated existing internal mod entry for MC {version} with GitHub URL.");
+                        Console.WriteLine($"[Leaf Client Mod] Updated entry for MC {version} to {leafClientJarFileName}.");
+                    }
+
+                    // Save immediately
+                    await _settingsService.SaveSettingsAsync(_currentSettings);
+
+                    // 2. EXPLICIT DOWNLOAD
+                    // Since ClearModsFolder() ran above, we must download it now.
+                    Console.WriteLine($"[Leaf Client Mod] Downloading core mod from GitHub: {leafClientDownloadUrl}");
+                    try
+                    {
+                        using (var client = new HttpClient())
+                        {
+                            client.DefaultRequestHeaders.Add("User-Agent", "LeafClient-Launcher");
+
+                            var data = await client.GetByteArrayAsync(leafClientDownloadUrl);
+                            await File.WriteAllBytesAsync(targetJarPath, data);
+                            Console.WriteLine($"[Leaf Client Mod] Downloaded successfully to: {targetJarPath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[Leaf Client Mod] Failed to download core mod: {ex.Message}");
+                        ShowLaunchErrorBanner("Failed to download Leaf Client core mod. Check internet connection.");
                     }
                 }
-                else // If not a modern version, ensure the Leaf Client mod is NOT tracked for it
+                else
                 {
+                    // Legacy version cleanup
                     var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
                     if (leafClientMod != null)
                     {
@@ -6077,7 +6110,7 @@ namespace LeafClient.Views
                         Console.WriteLine($"[Leaf Client Mod] Removed internal mod entry for legacy version {version}.");
                     }
                 }
-                // --- End Leaf Client Mod Registration ---
+                // ====================================================================================
 
                 if (GetSelectedAddon(version).Equals("Fabric", StringComparison.OrdinalIgnoreCase))
                 {
@@ -6110,6 +6143,7 @@ namespace LeafClient.Views
                         await InstallLithiumIfNeededAsync(version);
                     if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
 
+                    // InstallUserModsAsync will see the file we just downloaded and skip re-downloading it.
                     await InstallUserModsAsync(version);
                     if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
                 }
@@ -6131,9 +6165,6 @@ namespace LeafClient.Views
                 // FIX: Pass the base 'version' (e.g. "1.20.5"), NOT 'versionToLaunch' (e.g. "fabric-loader...").
                 // The mods are tracked by the base Minecraft version.
                 SyncLauncherManagedMods(version);
-
-                // Only add Leaf Runtime Mod for modern versions (1.17+) to avoid crashes on old versions
-                // [DELETED OLD REGISTRATION BLOCK FROM HERE]
 
                 var jvmArguments = new List<MArgument>
         {

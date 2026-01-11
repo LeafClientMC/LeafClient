@@ -304,6 +304,16 @@ obj\Release\net8.0\win-x64\LeafClient.dll
 --win32resourcemodule:LeafClient
 --nowarn:"1701;1702;IL2121;1701;1702"
 --singlewarn
+--root:Avalonia
+--root:Avalonia.Base
+--root:Avalonia.Controls
+--root:Avalonia.Desktop
+--root:Avalonia.Win32
+--root:Avalonia.Themes.Fluent
+--root:Avalonia.Fonts.Inter
+--root:SkiaSharp
+--root:HarfBuzzSharp
+--root:LeafClient
 --nosinglewarnassembly:CmlLib.Core.Auth
 --nosinglewarnassembly:CmlLib.Core.Bedrock
 --nosinglewarnassembly:CmlLib.Core
