@@ -97,7 +97,7 @@
 
 	</Window.Styles>
 
-	<Grid ClipToBounds="False">
+	<Grid x:Name="MainRootGrid" ClipToBounds="False">
 		<!-- Left Sidebar -->
 		<Border Width="90" HorizontalAlignment="Left" Background="{DynamicResource SecondaryBackgroundBrush}" BorderBrush="{DynamicResource PrimaryBorderBrush}" BorderThickness="0,0,1,0">
 			<Grid>
@@ -3255,6 +3255,42 @@
 					</Image.Effect>
 				</Image>
 			</Panel>
+		</Grid>
+			<!-- Update Checking Overlay -->
+		<Grid x:Name="UpdateCheckOverlay" IsVisible="False" ZIndex="99999">
+			<!-- Semi-transparent background to dim/blur the app -->
+			<Border Background="#101010" Opacity="0.95"/>
+
+			<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="30">
+				<!-- Animated Spinner -->
+				<Grid Width="100" Height="100">
+					<!-- Track -->
+					<Ellipse Width="100" Height="100" Stroke="#222" StrokeThickness="8"/>
+
+					<!-- Spinning Gradient -->
+					<Border x:Name="UpdateSpinner" Width="100" Height="100" CornerRadius="50">
+						<Border.BorderBrush>
+							<ConicGradientBrush>
+								<GradientStop Color="#32CD32" Offset="0"/>
+								<GradientStop Color="#006400" Offset="0.2"/>
+								<GradientStop Color="Transparent" Offset="0.45"/>
+								<GradientStop Color="Transparent" Offset="1"/>
+							</ConicGradientBrush>
+						</Border.BorderBrush>
+						<Border.BorderThickness>8</Border.BorderThickness>
+						<Border.RenderTransform>
+							<RotateTransform Angle="0"/>
+						</Border.RenderTransform>
+					</Border>
+				</Grid>
+
+				<TextBlock Text="CHECKING FOR UPDATES"
+                           Foreground="White"
+                           FontWeight="ExtraBold"
+                           FontSize="18"
+                           LetterSpacing="3"
+                           HorizontalAlignment="Center"/>
+			</StackPanel>
 		</Grid>
 	</Grid>
 	<!-- This closes the MAIN Grid -->

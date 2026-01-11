@@ -60,8 +60,8 @@
 						<Border x:Name="SpinnerBorder" Width="150" Height="150" CornerRadius="75">
 							<Border.BorderBrush>
 								<ConicGradientBrush>
-									<GradientStop Color="#00FFFF" Offset="0"/>
-									<GradientStop Color="#FF00FF" Offset="0.15"/>
+									<GradientStop Color="#32CD32" Offset="0"/>
+									<GradientStop Color="#006400" Offset="0.15"/>
 									<GradientStop Color="Transparent" Offset="0.25"/>
 									<GradientStop Color="Transparent" Offset="1"/>
 								</ConicGradientBrush>

@@ -49,6 +49,7 @@ using System.Threading.Tasks;
 using XboxAuthNet.Game.Msal;
 using static LeafClient.Models.LauncherSettings;
 
+
 namespace LeafClient.Views
 {
     public partial class MainWindow : Window
@@ -456,6 +457,10 @@ namespace LeafClient.Views
         private Image? _startupLogo;
         private Image? _startupLogoText;
 
+        private Grid? _updateCheckOverlay;
+        private Border? _updateSpinner;
+        private CancellationTokenSource? _updateSpinnerCts;
+
 
         #endregion
 
@@ -508,14 +513,19 @@ namespace LeafClient.Views
 
             InitializeComponent();
             InitializeStartupControls();
+
+            // Initialize Update UI Controls
+            _updateCheckOverlay = this.FindControl<Grid>("UpdateCheckOverlay");
+            _updateSpinner = this.FindControl<Border>("UpdateSpinner");
+
             DataContext = new MainWindowViewModel();
 
             _skinRenderService = new SkinRenderService();
             _mojangApiService = new MojangApiService(_httpClient);
-            _settingsService = new SettingsService(); // Ensure this line exists and is before SuggestionsService init
+            _settingsService = new SettingsService();
             _suggestionsService = new SuggestionsService(_settingsService);
 
-            _modCleanupService = new ModCleanupService(_minecraftFolder); // This line is new
+            _modCleanupService = new ModCleanupService(_minecraftFolder);
 
             var topBorder = this.FindControl<Border>("TopHeaderBorder");
             if (topBorder != null)
@@ -527,7 +537,7 @@ namespace LeafClient.Views
                 };
             }
             InitializeTrayIcon();
-            InitializeControls(); // Ensure _quickPlayServersContainer is initialized here
+            InitializeControls();
             InitializeLauncher();
             PopulateAllVersionsData();
             LoadFriendsAsync();
@@ -545,12 +555,9 @@ namespace LeafClient.Views
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[MainWindow ERROR] Failed to initialize OnlineCountService: {ex.Message}");
-                // Ensure _onlineCountService is explicitly null if its constructor fails.
-                // The functionality relying on it will be skipped due to subsequent null checks.
                 _onlineCountService = null;
             }
 
-            // Update your Opened handler in the constructor
             this.Opened += async (_, __) =>
             {
                 try
@@ -583,8 +590,8 @@ namespace LeafClient.Views
                         await _settingsService.SaveSettingsAsync(_currentSettings);
                     }
 
-                    // Explicitly wrap these in try-catch as they are async void and can crash the app
-                    try { CheckForUpdates(null, new RoutedEventArgs()); } catch (Exception ex) { Console.WriteLine($"[CheckForUpdates Error] {ex.Message}"); }
+                    // Perform the update check safely
+                    await CheckForUpdatesAsync();
 
                     if (_onlineCountService != null)
                     {
@@ -597,9 +604,11 @@ namespace LeafClient.Views
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[MainWindow.Opened Critical Error] An unhandled exception occurred during startup tasks: {ex.Message}");
-                    // Potentially show an error to the user if the app is in a bad state
+                    // Ensure overlay is hidden if critical error occurs
+                    FadeOutUpdateOverlay();
                 }
             };
+
 
             this.Closing += OnWindowClosing;
 
@@ -608,7 +617,6 @@ namespace LeafClient.Views
                 if (e.Exception is JsonException jsonEx)
                 {
                     Console.WriteLine($"[JSON ERROR] {jsonEx.Message}");
-                    // Don't access StackTrace here as it can cause issues
                 }
             };
 
@@ -619,6 +627,132 @@ namespace LeafClient.Views
             _networkMonitorTimer.Tick += (_, __) => CheckNetworkConnectivity();
             _networkMonitorTimer.Start();
         }
+
+        // NEW: Spinner Animation Logic
+        private void StartUpdateSpinner()
+        {
+            if (_updateSpinner == null) return;
+
+            _updateSpinnerCts?.Cancel();
+            _updateSpinnerCts = new CancellationTokenSource();
+            var token = _updateSpinnerCts.Token;
+
+            Task.Run(async () =>
+            {
+                double angle = 0;
+                while (!token.IsCancellationRequested)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_updateSpinner.RenderTransform is RotateTransform rt)
+                        {
+                            angle += 15; // Speed
+                            if (angle >= 360) angle = 0;
+                            rt.Angle = angle;
+                        }
+                    });
+                    await Task.Delay(16, token);
+                }
+            }, token);
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            // Show the overlay and start animation
+            if (_updateCheckOverlay != null)
+            {
+                _updateCheckOverlay.Opacity = 1;
+                _updateCheckOverlay.IsVisible = true;
+            }
+            StartUpdateSpinner();
+
+            Console.WriteLine("[Updater] Checking for updates...");
+
+            if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+            {
+                Console.WriteLine("[Updater] No network. Skipping check.");
+                await Task.Delay(1000); // Show logo for a second before fading
+                FadeOutUpdateOverlay();
+                return;
+            }
+
+            var currentVersion = GetCurrentAppVersion();
+
+            try
+            {
+                // Use a timeout to prevent hanging if GitHub is slow
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+                // Add a small artificial delay so the user actually sees the "Checking" screen
+                // instead of a flicker if the internet is super fast.
+                var delayTask = Task.Delay(1500);
+
+                var versionTask = _httpClient.GetStringAsync(versionFileUrl, cts.Token);
+
+                await Task.WhenAll(delayTask, versionTask);
+
+                string latestVersionString = await versionTask;
+                var latestVersion = Version.Parse(latestVersionString.Trim());
+
+                if (latestVersion > currentVersion)
+                {
+                    Console.WriteLine($"[Updater] Update found: {latestVersion}");
+
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        // Proceed to update
+                        await InitiateSelfUpdate(newExeDownloadUrl);
+                    }
+                    else
+                    {
+                        // Non-Windows: Fade out overlay, show dialog
+                        FadeOutUpdateOverlay();
+                        await ShowManualUpdateDialog(latestVersion.ToString());
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("[Updater] No updates found.");
+                    FadeOutUpdateOverlay();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Updater ERROR] Failed to check for updates: {ex.Message}");
+                // On error (503, timeout, etc.), just let the user play.
+                FadeOutUpdateOverlay();
+            }
+        }
+
+        private void StopUpdateSpinner()
+        {
+            _updateSpinnerCts?.Cancel();
+        }
+
+        private async void FadeOutUpdateOverlay()
+        {
+            StopUpdateSpinner();
+
+            if (_updateCheckOverlay == null) return;
+
+            if (!AreAnimationsEnabled())
+            {
+                _updateCheckOverlay.IsVisible = false;
+                return;
+            }
+
+            // Simple fade out
+            for (double i = 1.0; i >= 0; i -= 0.1)
+            {
+                _updateCheckOverlay.Opacity = i;
+                await Task.Delay(20);
+            }
+            _updateCheckOverlay.IsVisible = false;
+            _updateCheckOverlay.Opacity = 1; // Reset for next time
+        }
+
+
+
         private void InitializeSignalWatcher()
         {
             try
@@ -936,7 +1070,7 @@ namespace LeafClient.Views
         #region Updater Important Variables
 
         string updaterDownloadUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClientUpdater.exe";
-        string newExeDownloadUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClient.exe";
+        string newExeDownloadUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClient.zip";
         string versionFileUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestversion.txt";
 
         #endregion
@@ -978,53 +1112,6 @@ namespace LeafClient.Views
             finally
             {
                 ShowProgress(false);
-            }
-        }
-
-        private async void CheckForUpdates(object? sender, RoutedEventArgs e, bool isManualCheck = false)
-        {
-            Console.WriteLine("[Updater] Checking for updates...");
-
-            if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
-            {
-                if (_currentSettings.EnableUpdateNotifications || isManualCheck)
-                    await ShowUpdateErrorDialog("No internet connection.");
-                return;
-            }
-
-            var currentVersion = GetCurrentAppVersion();
-
-            try
-            {
-                string latestVersionString = await _httpClient.GetStringAsync(versionFileUrl);
-                var latestVersion = Version.Parse(latestVersionString.Trim());
-
-                // Force update logic: If a new version is found, update immediately without asking.
-                if (latestVersion > currentVersion)
-                {
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        // FORCE UPDATE: Directly initiate update, skipping the user confirmation dialog ("Not Now" / "Update Now")
-                        await InitiateSelfUpdate(newExeDownloadUrl);
-                    }
-                    else
-                    {
-                        // Non-Windows platforms (Linux/Mac) still need manual intervention
-                        if (_currentSettings.EnableUpdateNotifications || isManualCheck)
-                        {
-                            await ShowManualUpdateDialog(latestVersion.ToString());
-                        }
-                    }
-                }
-                else if (isManualCheck)
-                {
-                    await ShowNoUpdateAvailableDialog();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Updater ERROR] {ex.Message}");
-                if (isManualCheck) await ShowUpdateErrorDialog(ex.Message);
             }
         }
 
@@ -1085,10 +1172,19 @@ namespace LeafClient.Views
 
 
 
-        private void CheckForUpdatesManual(object? sender, RoutedEventArgs e)
+        private async void CheckForUpdatesManual(object? sender, RoutedEventArgs e)
         {
-            CheckForUpdates(sender, e, true); // Call the main method with isManualCheck = true
+            // Re-show the overlay for manual check
+            if (_updateCheckOverlay != null)
+            {
+                _updateCheckOverlay.Opacity = 1;
+                _updateCheckOverlay.IsVisible = true;
+                StartUpdateSpinner();
+            }
+
+            await CheckForUpdatesAsync();
         }
+
 
         private async Task InitiateSelfUpdate(string newExeDownloadUrl)
         {

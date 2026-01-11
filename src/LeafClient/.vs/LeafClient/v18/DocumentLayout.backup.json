@@ -3,6 +3,20 @@
   "WorkspaceRootPath": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{6A637A71-4BED-46FB-9762-C5C12EF5934A}|..\\LeafClientUpdater\\LeafClientUpdater.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclientupdater\\updaterwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\mainwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\mainwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6A637A71-4BED-46FB-9762-C5C12EF5934A}|..\\LeafClientUpdater\\LeafClientUpdater.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclientupdater\\updaterwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\leafclient.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:leafclient.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
     },
@@ -11,21 +25,7 @@
       "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:leafclient.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\mainwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{6A637A71-4BED-46FB-9762-C5C12EF5934A}|..\\LeafClientUpdater\\LeafClientUpdater.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclientupdater\\updaterwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{6A637A71-4BED-46FB-9762-C5C12EF5934A}|..\\LeafClientUpdater\\LeafClientUpdater.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclientupdater\\updaterwindow.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{6A637A71-4BED-46FB-9762-C5C12EF5934A}|..\\LeafClientUpdater\\LeafClientUpdater.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclientupdater\\app.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\views\\mainwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
-      "RelativeMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|solutionrelative:views\\mainwindow.axaml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{4F709E2F-63BF-4DFB-9069-C0FA59E9BBAE}|LeafClient.csproj|c:\\users\\ziadf\\onedrive\\documents\\github\\leafclient\\src\\leafclient\\app.axaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -84,11 +84,11 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 15,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 4,
               "Title": "LeafClient",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
               "RelativeDocumentMoniker": "LeafClient.csproj",
@@ -105,13 +105,13 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 5,
               "Title": "LeafClient",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
               "RelativeDocumentMoniker": "LeafClient.csproj",
               "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
               "RelativeToolTip": "LeafClient.csproj",
-              "ViewState": "AgIAADcAAAAAAAAAAAAowEwAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAEkAAAAAAAAAAAAowFIAAAA1AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
               "WhenOpened": "2026-01-11T13:16:19.553Z",
               "EditorCaption": ""
@@ -191,33 +191,33 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 2,
               "Title": "MainWindow.axaml",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml",
               "RelativeDocumentMoniker": "Views\\MainWindow.axaml",
               "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml",
               "RelativeToolTip": "Views\\MainWindow.axaml",
-              "ViewState": "AgIAAJsMAAAAAAAAAAAIwKUMAAAUAAAAAAAAAA==",
+              "ViewState": "AgIAAL8MAAAAAAAAAAAowN0MAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
               "WhenOpened": "2025-12-25T22:10:10.461Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 1,
               "Title": "MainWindow.axaml.cs",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml.cs",
               "RelativeDocumentMoniker": "Views\\MainWindow.axaml.cs",
               "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\Views\\MainWindow.axaml.cs",
               "RelativeToolTip": "Views\\MainWindow.axaml.cs",
-              "ViewState": "AgIAAHYEAAAAAAAAAAAkwIcEAABVAAAAAAAAAA==",
+              "ViewState": "AgIAAIcCAAAAAAAAAAAAAJECAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-12-08T20:44:34.376Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 6,
               "Title": "App.axaml",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\App.axaml",
               "RelativeDocumentMoniker": "..\\LeafClientUpdater\\App.axaml",
@@ -264,26 +264,26 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 0,
               "Title": "UpdaterWindow.axaml",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\UpdaterWindow.axaml",
               "RelativeDocumentMoniker": "..\\LeafClientUpdater\\UpdaterWindow.axaml",
               "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\UpdaterWindow.axaml",
               "RelativeToolTip": "..\\LeafClientUpdater\\UpdaterWindow.axaml",
-              "ViewState": "AgIAAFgAAAAAAAAAAAAIwGUAAABSAAAAAAAAAA==",
+              "ViewState": "AgIAADMAAAAAAAAAAAAtwEgAAAAPAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
               "WhenOpened": "2026-01-09T19:57:31.373Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 3,
               "Title": "UpdaterWindow.axaml.cs",
               "DocumentMoniker": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\UpdaterWindow.axaml.cs",
               "RelativeDocumentMoniker": "..\\LeafClientUpdater\\UpdaterWindow.axaml.cs",
               "ToolTip": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClientUpdater\\UpdaterWindow.axaml.cs",
               "RelativeToolTip": "..\\LeafClientUpdater\\UpdaterWindow.axaml.cs",
-              "ViewState": "AgIAABIBAAAAAAAAAAAcwBkBAAAJAAAAAAAAAA==",
+              "ViewState": "AgIAAAQBAAAAAAAAAAAAwAcBAAARAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-09T20:40:26.598Z",
               "EditorCaption": ""
