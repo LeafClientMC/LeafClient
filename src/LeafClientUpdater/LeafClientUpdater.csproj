@@ -9,6 +9,59 @@
 		<PublishAot>true</PublishAot>
 		<StripSymbols>true</StripSymbols>
 	</PropertyGroup>
+	<PropertyGroup>
+		<!-- Disable AOT to ensure standard SingleFile bundling works for native libs -->
+		<PublishAot>false</PublishAot>
+		<!-- Merge all DLLs into the EXE -->
+		<PublishSingleFile>true</PublishSingleFile>
+		<!-- Extract native libs (Skia/HarfBuzz) to disk so they load correctly -->
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<!-- Target specific runtime (Required for SingleFile) -->
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<SelfContained>true</SelfContained>
+	</PropertyGroup>
+	<ItemGroup>
+	  <AvaloniaResource Include="Assets\2b2t.png" />
+	  <AvaloniaResource Include="Assets\32discord.png" />
+	  <AvaloniaResource Include="Assets\32website.png" />
+	  <AvaloniaResource Include="Assets\avalonia-logo.ico" />
+	  <AvaloniaResource Include="Assets\betatesters_banner.jpg" />
+	  <AvaloniaResource Include="Assets\bg.png" />
+	  <AvaloniaResource Include="Assets\bg2.png" />
+	  <AvaloniaResource Include="Assets\hypixel.png" />
+	  <AvaloniaResource Include="Assets\icon-about.png" />
+	  <AvaloniaResource Include="Assets\icon-folder.png" />
+	  <AvaloniaResource Include="Assets\icon-game.png" />
+	  <AvaloniaResource Include="Assets\icon-licenses.png" />
+	  <AvaloniaResource Include="Assets\icon-mods.png" />
+	  <AvaloniaResource Include="Assets\icon-planned-updates.png" />
+	  <AvaloniaResource Include="Assets\icon-privacy.png" />
+	  <AvaloniaResource Include="Assets\icon-questions.png" />
+	  <AvaloniaResource Include="Assets\icon-servers.png" />
+	  <AvaloniaResource Include="Assets\icon-settings.png" />
+	  <AvaloniaResource Include="Assets\icon-settings2.png" />
+	  <AvaloniaResource Include="Assets\icon-suggest.png" />
+	  <AvaloniaResource Include="Assets\icon-support.png" />
+	  <AvaloniaResource Include="Assets\icon-terms.png" />
+	  <AvaloniaResource Include="Assets\icon-update.png" />
+	  <AvaloniaResource Include="Assets\icon-versions.png" />
+	  <AvaloniaResource Include="Assets\icons8-instagram-32.png" />
+	  <AvaloniaResource Include="Assets\icons8-microsoft-32.png" />
+	  <AvaloniaResource Include="Assets\Leaf.png" />
+	  <AvaloniaResource Include="Assets\LeafClientBanner.jpg" />
+	  <AvaloniaResource Include="Assets\LeafClientOfficialBetaRelease.jpg" />
+	  <AvaloniaResource Include="Assets\LeafRebrandedTransparent.png" />
+	  <AvaloniaResource Include="Assets\LeafRebrandedTransparent.svg" />
+	  <AvaloniaResource Include="Assets\loader.gif" />
+	  <AvaloniaResource Include="Assets\logo_icon.png" />
+	  <AvaloniaResource Include="Assets\logo_text.png" />
+	  <AvaloniaResource Include="Assets\mcversionsbanner.jpg" />
+	  <AvaloniaResource Include="Assets\minecraft.png" />
+	  <AvaloniaResource Include="Assets\pvplegacy.png" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Content Include="Assets\leaf_client_icon.ico" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Avalonia" Version="11.3.8" />

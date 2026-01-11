@@ -16,7 +16,6 @@ namespace LeafClientUpdater
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // FIX: Point to the updater's own window
                 desktop.MainWindow = new UpdaterWindow();
             }
 

@@ -2,43 +2,124 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="500"
         x:Class="LeafClientUpdater.Views.UpdaterWindow"
         Title="Leaf Client Updater"
-        Width="400" Height="200"
-        CanResize="False"
+        Width="400" Height="500"
+        SystemDecorations="None"
         WindowStartupLocation="CenterScreen"
-        Background="#1E1E1E">
-	<!-- Dark background for consistency -->
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        ExtendClientAreaToDecorationsHint="False"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="0"
+        CanResize="False">
 
-	<Grid RowDefinitions="*,Auto" Margin="20">
-		<StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
-			<TextBlock x:Name="StatusText"
-                       Text="Starting update..."
-                       Foreground="White"
-                       FontSize="16"
-                       FontWeight="Bold"
-                       HorizontalAlignment="Center"
-                       TextWrapping="Wrap"
-                       TextAlignment="Center"/>
-			<ProgressBar x:Name="UpdateProgressBar"
-                         IsIndeterminate="True"
-                         Width="250"
-                         Height="10"
-                         Foreground="#007ACC"/>
-			<!-- A blueish color -->
-		</StackPanel>
+	<!-- Removed Window.Styles for Glow -->
 
-		<Button Grid.Row="1"
-                x:Name="CloseButton"
-                Content="Close"
-                IsVisible="False"
-                HorizontalAlignment="Right"
-                Margin="0,15,0,0"
-                Padding="15,8"
-                Background="#333333"
-                Foreground="White"
-                BorderThickness="0"
-                CornerRadius="5"/>
-	</Grid>
+	<!-- Main Container: Deep Black Background with Rounded Corners -->
+	<!-- OUTER BORDER: Handles Shadow and Margin only. ClipToBounds=False to let shadow show. -->
+	<Border CornerRadius="25"
+            ClipToBounds="False"
+            BorderThickness="0"
+            Margin="30"
+            BoxShadow="0 10 40 5 #80000000">
+
+		<!-- INNER BORDER: Handles Background and Clipping. -->
+		<!-- Added x:Name and Gradient Background -->
+		<Border x:Name="BackgroundBorder"
+				CornerRadius="25"
+				ClipToBounds="True">
+			<Border.Background>
+				<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+					<GradientStop Offset="0.0" Color="#050505"/>
+					<GradientStop Offset="0.5" Color="#050505"/>
+					<!-- This color will be animated in code-behind -->
+					<GradientStop Offset="1.0" Color="#101010"/>
+				</LinearGradientBrush>
+			</Border.Background>
+
+			<Grid>
+				<!-- Removed BackgroundBlobsCanvas -->
+
+				<!-- Layer 2: Sharp Particles -->
+				<Canvas x:Name="ParticleCanvas"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        IsHitTestVisible="False"/>
+
+				<!-- Layer 3: Main Content -->
+				<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="30">
+
+					<!-- Fast Circular Progress Bar -->
+					<Grid Width="150" Height="150">
+						<!-- Track -->
+						<Ellipse Width="150" Height="150" Stroke="#222" StrokeThickness="8"/>
+
+						<!-- Rotating Gradient Ring -->
+						<Border x:Name="SpinnerBorder" Width="150" Height="150" CornerRadius="75">
+							<Border.BorderBrush>
+								<ConicGradientBrush>
+									<GradientStop Color="#00FFFF" Offset="0"/>
+									<GradientStop Color="#FF00FF" Offset="0.15"/>
+									<GradientStop Color="Transparent" Offset="0.25"/>
+									<GradientStop Color="Transparent" Offset="1"/>
+								</ConicGradientBrush>
+							</Border.BorderBrush>
+							<Border.BorderThickness>8</Border.BorderThickness>
+							<Border.RenderTransform>
+								<RotateTransform Angle="0"/>
+							</Border.RenderTransform>
+						</Border>
+
+						<!-- Center Logo -->
+						<Image Source="/Assets/LeafRebrandedTransparent.png" Width="64" Height="64" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.9"/>
+					</Grid>
+
+					<!-- Text Info -->
+					<StackPanel Spacing="8">
+						<!-- Removed Classes="Glow" -->
+						<TextBlock Text="UPDATING"
+                                   Foreground="White"
+                                   FontSize="26"
+                                   FontWeight="Heavy"
+                                   HorizontalAlignment="Center"
+                                   LetterSpacing="3"/>
+
+						<TextBlock x:Name="StatusText"
+                                   Text="Initializing..."
+                                   Foreground="#DDA0DD"
+                                   FontSize="14"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="300"/>
+					</StackPanel>
+
+				</StackPanel>
+
+				<!-- Drag Handle -->
+				<Border Background="Transparent" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" PointerPressed="OnDragWindow"/>
+
+				<!-- Close Button -->
+				<Button x:Name="CloseButton"
+                        Content="✕"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Margin="20"
+                        FontSize="18"
+                        Background="Transparent"
+                        Foreground="#FF69B4"
+                        IsVisible="False"
+                        Cursor="Hand">
+					<Button.Styles>
+						<Style Selector="Button:pointerover /template/ ContentPresenter">
+							<Setter Property="Foreground" Value="White"/>
+							<Setter Property="Background" Value="Transparent"/>
+						</Style>
+					</Button.Styles>
+				</Button>
+			</Grid>
+		</Border>
+	</Border>
 </Window>

@@ -14,7 +14,6 @@
           "Avalonia.Diagnostics": "11.3.8",
           "Avalonia.Fonts.Inter": "11.3.8",
           "Avalonia.Themes.Fluent": "11.3.8",
-          "Microsoft.DotNet.ILCompiler": "8.0.22",
           "Microsoft.NET.ILLink.Tasks": "8.0.22",
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "8.0.22"
         },
@@ -965,13 +964,7 @@
           }
         }
       },
-      "Microsoft.DotNet.ILCompiler/8.0.22": {
-        "dependencies": {
-          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "8.0.22"
-        }
-      },
       "Microsoft.NET.ILLink.Tasks/8.0.22": {},
-      "runtime.win-x64.Microsoft.DotNet.ILCompiler/8.0.22": {},
       "SkiaSharp/2.88.9": {
         "dependencies": {
           "SkiaSharp.NativeAssets.Win32": "2.88.9",
@@ -1177,26 +1170,12 @@
       "path": "microcom.runtime/0.11.0",
       "hashPath": "microcom.runtime.0.11.0.nupkg.sha512"
     },
-    "Microsoft.DotNet.ILCompiler/8.0.22": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-4SDEQzYp3d9yVu0iQRFMV4HJCTjDvCt2AclSxMGXZSva5VrdoatwDg5nQVSD42ZuzBY5Y+BzgaexNbwb0/3gHw==",
-      "path": "microsoft.dotnet.ilcompiler/8.0.22",
-      "hashPath": "microsoft.dotnet.ilcompiler.8.0.22.nupkg.sha512"
-    },
     "Microsoft.NET.ILLink.Tasks/8.0.22": {
       "type": "package",
       "serviceable": true,
       "sha512": "sha512-MhcMithKEiyyNkD2ZfbDZPmcOdi0GheGfg8saEIIEfD/fol3iHmcV8TsZkD4ZYz5gdUuoX4YtlVySUU7Sxl9SQ==",
       "path": "microsoft.net.illink.tasks/8.0.22",
       "hashPath": "microsoft.net.illink.tasks.8.0.22.nupkg.sha512"
-    },
-    "runtime.win-x64.Microsoft.DotNet.ILCompiler/8.0.22": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-SJwosgfl5Px/3GNsFOOJ7EBykMprLv00ghH/miyGse/88nHVBezJujBreHE+Lo2mbybhI6TspLYwJ/FkP5cl6w==",
-      "path": "runtime.win-x64.microsoft.dotnet.ilcompiler/8.0.22",
-      "hashPath": "runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.22.nupkg.sha512"
     },
     "SkiaSharp/2.88.9": {
       "type": "package",
