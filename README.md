@@ -1,4 +1,4 @@
-# <img src="https://github.com/LeafClientMC/LeafClient/assets/84229419/ecda377f-4666-4b94-a017-64cf80f11988" width="32"> LeafClient
+# <img src="https://github.com/user-attachments/assets/c3bd2cef-3249-48af-a1fb-37aa981a3095" width="32"> LeafClient
 
 A ___Minecraft: Java Edition client (no cheats)___.
 (and possibly supporting Bedrock Edition soon)
