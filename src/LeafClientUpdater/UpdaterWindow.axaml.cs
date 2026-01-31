@@ -66,7 +66,6 @@ namespace LeafClientUpdater.Views
             _particleCanvas?.Children.Clear();
             for (int i = 0; i < 60; i++) SpawnParticle();
 
-            // Run animation loop on background thread to prevent pausing during window drag
             Task.Run(async () =>
             {
                 while (!token.IsCancellationRequested)
@@ -230,14 +229,12 @@ namespace LeafClientUpdater.Views
                 }
                 catch (ArgumentException)
                 {
-                    // Process already exited
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Wait error: {ex.Message}");
                 }
 
-                // Give extra time for file locks to release on DLLs
                 await Task.Delay(1000);
 
                 string appDir = System.IO.Path.GetDirectoryName(targetExePath)!;
@@ -254,8 +251,6 @@ namespace LeafClientUpdater.Views
 
                 try
                 {
-                    // Extract ZIP and overwrite all files (EXE + DLLs)
-                    // This ensures SkiaSharp.dll and others are synced with the new EXE
                     ZipFile.ExtractToDirectory(zipFilePath, appDir, overwriteFiles: true);
                 }
                 catch (Exception ex)
@@ -263,7 +258,6 @@ namespace LeafClientUpdater.Views
                     throw new Exception($"Extraction failed: {ex.Message}");
                 }
 
-                // Clean up the zip file
                 if (File.Exists(zipFilePath)) File.Delete(zipFilePath);
 
                 UpdateStatus("Update Complete! Launching...");
