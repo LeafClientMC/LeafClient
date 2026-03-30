@@ -38,33 +38,24 @@ PLEASE EXPECT BUGS! AND REPORT THEM IF FOUND USING THE FEEDBACK SYSTEM ON THE LA
 
 ### Client Preview
 
-<img width="1461" height="722" alt="image" src="https://github.com/user-attachments/assets/a0b216a3-cd44-48ac-98df-d68ba387362e" />
+<img width="1919" height="1079" alt="client-preview" src="https://github.com/user-attachments/assets/7a6ccc5d-05c6-408b-bcf2-db9fa77fdcd6" />
+<img width="1413" height="652" alt="freelook-preview" src="https://github.com/user-attachments/assets/489cc80b-14d0-4ba8-9fb8-cef5fd595028" />
+<img width="1919" height="1079" alt="client-ui" src="https://github.com/user-attachments/assets/e516ed98-1240-4913-af70-4e620673a911" />
 
-<img width="1415" height="655" alt="image" src="https://github.com/user-attachments/assets/7d10035f-78d3-4f7e-afd6-613a508e751f" />
-
-**FREELOOK EARLY PREVIEW**
-
-<img width="1413" height="652" alt="image" src="https://github.com/user-attachments/assets/b37a528a-6c7d-4acf-b670-1deaf9a58ffc" />
 
 ### Launcher Preview
 
-<img width="1749" height="936" alt="image" src="https://github.com/user-attachments/assets/f2fe5c9a-1da8-495f-8109-5ef14507fbff" />
+<img width="1745" height="931" alt="launcher-preview" src="https://github.com/user-attachments/assets/a237ceb4-748c-4353-866b-fab75d65bed6" />
+<img width="1741" height="936" alt="cosmetics-editor" src="https://github.com/user-attachments/assets/daf91e64-1cfa-4687-833a-f28c057b9a5a" />
+<img width="1747" height="935" alt="server-list" src="https://github.com/user-attachments/assets/45a4f7cd-3f7a-4e3e-9338-1caf5209187f" />
+<img width="1744" height="931" alt="mods-list" src="https://github.com/user-attachments/assets/11778dba-3c7a-4750-abee-8bbc6fd7cc62" />
+<img width="1746" height="933" alt="launcher-versions" src="https://github.com/user-attachments/assets/b2a91ec4-ac3f-4091-9b32-a5ce41fe256f" />
+<img width="616" height="380" alt="accounts-preview" src="https://github.com/user-attachments/assets/21b3feaa-5bc7-42e5-a5e8-57ef44150615" />
 
-<img width="1135" height="670" alt="image" src="https://github.com/user-attachments/assets/44153643-8b6c-4e4a-8553-117e39f13b9f" />
-
-<img width="1120" height="639" alt="image" src="https://github.com/user-attachments/assets/7f8a4c49-344a-4d36-8d0a-0f1f1984eb61" />
-
-<img width="1081" height="642" alt="image" src="https://github.com/user-attachments/assets/989619a3-9a03-483c-a8f4-ed4d37f409c2" />
-
-<img width="1116" height="665" alt="image" src="https://github.com/user-attachments/assets/0149dcb2-ed7a-4e53-a09b-d06d770788b1" />
-
-<img width="379" height="193" alt="image" src="https://github.com/user-attachments/assets/3d790590-3268-4738-949d-ad1ecd680473" />
-
-This client will feature relatively smooth UI, way more performance and FPS within the launcher and possibly the game depending on the performance mods you select.
 
 ## 🤔 Open Source?
 
-Yes, this will be an **open source project**. Parts of the project that include sensitive information (for when we add Cosmetics, etc) will be left out of the source code for safety. The same applies for our in-game client with features. This may be the first open source professional launcher that also features an in-game client. I'm open to possible contributions as well.
+Yes, this is an **open source project**. Parts of the project that include sensitive information (for when we add Cosmetics, etc) will be left out of the source code for safety. The same applies for our in-game client with features. This may be the first open source professional launcher that also features an in-game client. I'm open to possible contributions as well.
 
 ## 🛠️ Contributors
 
