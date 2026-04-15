@@ -649,6 +649,8 @@ namespace LeafClient.Views
 
         bool Services.IMainWindowHost.IsCosmeticEquipped(string cosmeticId, string category) => IsCosmeticEquipped(cosmeticId, category);
 
+        string? Services.IMainWindowHost.LeafIdentifier => DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
+
         void Services.IMainWindowHost.OpenCheckout(string url) => OpenCheckout(url);
 
         bool Services.IMainWindowHost.IsOwned(string cosmeticId) => _ownedCosmeticIds.Contains(cosmeticId);
@@ -17656,6 +17658,24 @@ namespace LeafClient.Views
         // ─────────────────────────────────────────────────────────────────────
         // STORE PAGE  (extracted to Views/Pages/StorePageView)
         // ─────────────────────────────────────────────────────────────────────
+
+        private static string? DecodeJwtMinecraftUsername(string? jwt)
+        {
+            if (string.IsNullOrWhiteSpace(jwt)) return null;
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("minecraft_username", out var el))
+                    return el.GetString();
+            }
+            catch { }
+            return null;
+        }
 
         private async Task<byte[]?> FetchSkinBytesAsync()
         {

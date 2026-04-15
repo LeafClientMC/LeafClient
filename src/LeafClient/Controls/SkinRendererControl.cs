@@ -22,6 +22,7 @@ public class SkinRendererControl : UserControl
     private float _rotationY = 25f;
     private float _rotationX = -10f;
     private bool _isDragging;
+    private DateTime _dragStartTime = DateTime.MinValue;
     private AvaloniaPoint _lastMouse;
     private float _autoRotation;
     private bool _hasSkin;
@@ -52,6 +53,9 @@ public class SkinRendererControl : UserControl
         _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _animTimer.Tick += (_, _) =>
         {
+            if (_isDragging && (DateTime.UtcNow - _dragStartTime).TotalSeconds > 2)
+                _isDragging = false;
+
             if (!_isDragging)
             {
                 _autoRotation += 0.8f;
@@ -215,6 +219,7 @@ public class SkinRendererControl : UserControl
     private void OnPointerPress(object? s, PointerPressedEventArgs e)
     {
         _isDragging = true;
+        _dragStartTime = DateTime.UtcNow;
         _lastMouse = e.GetPosition(this);
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -228,6 +233,7 @@ public class SkinRendererControl : UserControl
             _isDragging = false;
             return;
         }
+        _dragStartTime = DateTime.UtcNow;
         var pos = e.GetPosition(this);
         float dx = (float)(pos.X - _lastMouse.X);
         float dy = (float)(pos.Y - _lastMouse.Y);
