@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.Templates;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Transformation;
 using Avalonia.Platform;
 using Avalonia.Styling;
@@ -30,17 +31,19 @@ using LeafClient.ViewModels;
 using Microsoft.Extensions.Logging;
 using Mojang;
 using MojangAPI;
+using AvaloniaWebView;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO; // Explicitly use System.IO for Path, Directory, File, etc.
+using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Sockets;
-using System.Runtime.InteropServices; // Required for DataTemplate
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -52,7 +55,7 @@ using static LeafClient.Models.LauncherSettings;
 
 namespace LeafClient.Views
 {
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, LeafClient.Services.IMainWindowHost
     {
 
         #region Defs/Vars
@@ -60,40 +63,49 @@ namespace LeafClient.Views
         private Border? _selectionIndicator;
         private Border? _settingsIndicator;
         private int _currentSelectedIndex = 0;
-        // Launch background zoom
         private Image? _launchBgImage;
         private ScaleTransform? _launchBgScale;
+        private TranslateTransform? _launchBgTranslate;
+        private double _parallaxTargetX = 0;
+        private double _parallaxTargetY = 0;
+        private double _parallaxCurrentX = 0;
+        private double _parallaxCurrentY = 0;
+        private CancellationTokenSource? _parallaxCts;
         private CancellationTokenSource? _launchBgCts;
         private CancellationTokenSource? _newsItem1Cts;
         private CancellationTokenSource? _newsItem2Cts;
         private CancellationTokenSource? _zoomCts;
-        // Particle layer
         private Canvas? _particleLayer;
         private Border? _launchSection;
         private CancellationTokenSource? _particleCts;
+        private DateTime _lastPoseUpdateTime = DateTime.MinValue;
+        private CancellationTokenSource? _accountPanelCloseCts;
         private readonly Random _rand = new();
         private readonly List<Particle> _particles = new();
-        // Account panel
         private Grid? _accountPanelOverlay;
+        private StackPanel? _accountsListPanel;
+        private TextBlock? _accountTypeLabel;
+        private Avalonia.Controls.Shapes.Ellipse? _accountOnlineDot;
         private Border? _accountPanel;
+        // Cache of player-head bitmaps keyed by UUID (null = failed/offline)
+        private readonly Dictionary<string, Bitmap?> _skinHeadCache = new();
         private TextBlock? _accountUsernameDisplay;
         private TextBlock? _accountUuidDisplay;
         private TextBlock? _playingAsUsername;
-        // Friends
-        private StackPanel? _friendsLoadingPanel;
-        private TextBlock? _noFriendsMessage;
-        // News banners
         private Image? _newsItem1Image;
         private ScaleTransform? _newsItem1Scale;
         private Image? _newsItem2Image;
         private ScaleTransform? _newsItem2Scale;
-        // Navigation pages
+
+        // MAJOR UPDATE badge on NewsItem1 — holds an animated purple gradient
+        // whose stop colors are rewritten each frame by StartMajorUpdateBadgeAnimation.
+        private Border? _majorUpdateBadge;
+        private CancellationTokenSource? _majorUpdateBadgeCts;
         private Grid? _gamePage;
         private Grid? _versionsPage;
         private Grid? _serversPage;
         private Grid? _modsPage;
         private Grid? _settingsPage;
-        // Version details
         private Border? _versionDetailsSidebar;
         private TextBlock? _versionTitle;
         private TextBlock? _versionType;
@@ -104,18 +116,18 @@ namespace LeafClient.Views
         private Border? _versionBannerContainer;
         private StackPanel? _majorVersionsStackPanel;
         private TextBlock? _launchVersionText;
-        // Services and Data
         private SettingsService _settingsService = new SettingsService();
         private SessionService _sessionService = new SessionService();
         private SuggestionsService? _suggestionsService;
         private LauncherSettings _currentSettings = new LauncherSettings();
         private List<VersionInfo> _allVersions = new List<VersionInfo>();
-        // Settings Controls
         private ToggleSwitch? _launchOnStartupToggle;
         private ToggleSwitch? _minimizeToTrayToggle;
         private ToggleSwitch? _discordRichPresenceToggle;
-        private TextBox? _minRamAllocationTextBox;
-        private ComboBox? _maxRamAllocationComboBox;
+        private Slider? _minRamSlider;
+        private TextBlock? _minRamValueText;
+        private Slider? _maxRamSlider;
+        private TextBlock? _maxRamValueText;
         private TextBox? _quickJoinServerAddressTextBox;
         private TextBox? _quickJoinServerPortTextBox;
         private ToggleSwitch? _quickLaunchEnabledToggle;
@@ -151,13 +163,8 @@ namespace LeafClient.Views
         private ComboBox? _playerMainHandComboBox;
         private ComboBox? _themeComboBox;
         private ToggleSwitch? _animationsEnabledToggle;
-        // Logout flag
-        //private bool _isLoggingOut = false;
-        // Skin render
         private readonly SkinRenderService? _skinRenderService;
-        // Game Options
         private GameOptionsService _optionsService = new GameOptionsService();
-        // Character preview images
         private Image? _playingAsImage;
         private Image? _accountCharacterImage;
         private readonly DiscordRichPresenceService _drp = new DiscordRichPresenceService();
@@ -170,7 +177,13 @@ namespace LeafClient.Views
         private MSession? _session;
         private MinecraftLauncher? _launcher;
         private Process? _gameProcess;
+        private DateTime? _sessionStartUtc; // set when game launches, consumed on exit for playtime tracking
         private bool _isLaunching = false;
+        private bool _leafModExpected = false;   // true when launching a version with IsLeafClientModSupported
+        private bool _leafModLoaded = false;     // set true when we detect the mod initialized in game output
+        private bool _autoRestartAttempted = false; // prevent infinite restart loops
+        private bool _userTerminatedGame = false;   // set true when user intentionally kills the game
+        private string? _lastLaunchVersion = null;
         private readonly string _minecraftFolder = GetMinecraftPath();
 
         private static string GetMinecraftPath()
@@ -189,18 +202,24 @@ namespace LeafClient.Views
             }
         }
 
+        private static string GetLeafOfflineJarPath(string mcVersion)
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                ".leafclient", "offline", mcVersion);
+            Directory.CreateDirectory(dir);
+            return System.IO.Path.Combine(dir, "leaf.jar");
+        }
 
-        // Progress bar for launch operations
+
         private StackPanel? _launchProgressPanel;
         private ProgressBar? _launchProgressBar;
         private TextBlock? _launchProgressText;
 
-        // Versions Addon Buttons
         private Button? _addonFabricButton;
         private Button? _addonVanillaButton;
         private TextBlock? _versionOptiFineSupport;
 
-        // Sidebar Tooltip Controls
         private Border? _sidebarHoverTooltip;
         private TextBlock? _sidebarHoverTooltipText;
         private CancellationTokenSource? _tooltipHideCts;
@@ -208,12 +227,19 @@ namespace LeafClient.Views
         private bool _tooltipHasShown = false;
         private int? _currentHoverIndex;
         private const double TooltipLeft = 86;
-        private const double GapRightOfSidebar = 6;    // small gap between sidebar and tooltip
+        private const double GapRightOfSidebar = 6;    
         private const double TooltipHeight = 26;
         private const double SidebarWidth = 90;
 
-        // Skins Page
         private Grid? _skinsPage;
+        private LeafClient.Views.Pages.CosmeticsPageView? _cosmeticsPage;
+        private LeafClient.Views.Pages.ScreenshotsPageView? _screenshotsPage;
+        private LeafClient.Views.Pages.ResourcePacksPageView? _resourcePacksPage;
+        private LeafClient.Controls.SkinRendererControl? _skinRenderer;
+
+        private System.Collections.Generic.HashSet<string> _ownedCosmeticIds = new();
+        private static readonly string OwnedJsonPath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient", "owned.json");
         private WrapPanel? _skinsWrapPanel;
         private Border? _noSkinsMessage;
         private Border? _currentlySelectedSkinCard;
@@ -223,18 +249,15 @@ namespace LeafClient.Views
         private Button? _skinStatusBannerButton;
         private bool _isProgrammaticallySelectingSkin = false;
 
-        // Exit Handler
         private TrayIcon? _trayIcon;
         private bool _isExitingApp = false;
 
-        // Mods Page
         private TextBlock? _modsInfoText;
 
-        // Installs check
         private readonly SemaphoreSlim _installGate = new(1, 1);
         private volatile bool _isInstalling = false;
-        private string _currentOperationText = "LAUNCH GAME"; // New field to track current state for button text
-        private string _currentOperationColor = "SeaGreen"; // New field to track current state for button color
+        private string _currentOperationText = "LAUNCH GAME"; 
+        private string _currentOperationColor = "SeaGreen"; 
         private CancellationTokenSource? _launchCancellationTokenSource;
 
         private Border? _launchErrorBanner;
@@ -243,24 +266,105 @@ namespace LeafClient.Views
 
         private Border? _settingsSaveBanner;
         private Button? _settingsSaveBannerSaveButton;
+        private Button? _settingsSaveBannerCancelButton;
         private bool _isApplyingSettings = false;
         private bool _settingsDirty = false;
+        private string? _settingsSnapshotJson = null; // JSON snapshot for Cancel revert
 
-        // Quick Play Tooltip Controls
         private Border? _quickPlayTooltip;
         private TextBlock? _quickPlayTooltipText;
         private CancellationTokenSource? _quickPlayTooltipHideCts;
         private IList<ITransition>? _savedQuickPlayTooltipTransitions;
         private bool _quickPlayTooltipHasShown = false;
 
-        // Server Status and Quick Play
         private MinecraftServerChecker _serverChecker = new MinecraftServerChecker();
         private DispatcherTimer? _serverStatusRefreshTimer;
+        private bool _serversLoaded = false;
 
-        // UI elements for Servers Page
         private StackPanel? _serversWrapPanel;
+        private StackPanel? _featuredServersPanel;
         private Border? _noServersMessage;
         private StackPanel? _quickPlayServersContainer;
+
+        private static readonly List<ServerInfo> _featuredServers = new()
+        {
+            new ServerInfo { Id = "featured_hypixel",   Name = "Hypixel",   Address = "mc.hypixel.net",     Port = 25565 },
+            new ServerInfo { Id = "featured_2b2t",      Name = "2b2t",      Address = "2b2t.org",           Port = 25565 },
+            new ServerInfo { Id = "featured_pvplegacy", Name = "PvPLegacy", Address = "play.pvplegacy.net", Port = 25565 }
+        };
+
+        // Profiles page
+        private StackPanel? _profilesListPanel;
+        private Border? _noProfilesMessage;
+
+        // Profile Editor Overlay controls
+        private Grid? _profileEditorOverlay;
+        private Grid? _mainContentGrid;
+        private TextBlock? _po_TitleText;
+        private TextBlock? _po_AvatarLetter;
+        private Button? _po_NavBtnGeneral;
+        private Button? _po_NavBtnPerformance;
+        private Button? _po_NavBtnMods;
+        private Button? _po_NavBtnAdvanced;
+        private Border? _po_NavIndicator;
+        private Border? _po_NavActiveBar;
+        private StackPanel? _po_TabIdentity;
+        private StackPanel? _po_TabPerformance;
+        private StackPanel? _po_TabMods;
+        private StackPanel? _po_TabAdvanced;
+
+        // Advanced-tab controls (profile override fields)
+        private TextBox? _po_DescriptionBox;
+        private TextBox? _po_IconEmojiBox;
+        private TextBox? _po_JvmArgsBox;
+        private ToggleSwitch? _po_UseCustomResolutionToggle;
+        private TextBox? _po_ResWidthBox;
+        private TextBox? _po_ResHeightBox;
+        private TextBox? _po_QuickJoinAddressBox;
+        private TextBox? _po_QuickJoinPortBox;
+        private TextBlock? _po_StatLaunches;
+        private TextBlock? _po_StatPlaytime;
+        private TextBlock? _po_StatLastUsed;
+        private TextBox? _po_NameBox;
+        private ComboBox? _po_AccountCombo;
+        private ComboBox? _po_VersionCombo;
+        private ComboBox? _po_JavaCombo;
+        private CheckBox? _po_ShowAllVersions;
+        private Border? _po_SupportBanner;
+        private Ellipse? _po_SupportDot;
+        private TextBlock? _po_SupportTitle;
+        private TextBlock? _po_SupportSub;
+        private TextBlock? _po_JavaBannerText;
+        private Slider? _po_MemSlider;
+        private TextBlock? _po_MemLabel;
+        private Border? _po_ModsSupportBanner;
+        private TextBlock? _po_ModsSupportText;
+        private Border? _po_PresetBalanced;
+        private Border? _po_PresetEnhanced;
+        private Border? _po_PresetLite;
+        private WrapPanel? _po_BadgesBalanced;
+        private WrapPanel? _po_BadgesEnhanced;
+        private WrapPanel? _po_BadgesLite;
+
+        private int _po_ActiveTab = 0;
+        private string _po_SelectedPreset = "balanced";
+        private string _po_SelectedVersion = "1.21.4";
+        private bool _po_ShowAllVersionsFlag = false;
+        private LauncherProfile? _po_EditingProfile;
+
+        private static readonly string[] _po_RecommendedVersions =
+        {
+            "1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4",
+            "1.21.3", "1.21.2", "1.21.1", "1.20.2", "1.20.1"
+        };
+        // Side nav: 54px height + 8px spacing = 62px per nav item
+
+        private static readonly Dictionary<string, string[]> _po_PresetMods = new()
+        {
+            ["balanced"] = new[] { "Fabric API", "Sodium", "Lithium", "Phosphor" },
+            ["enhanced"] = new[] { "Fabric API", "Sodium", "Lithium", "Iris Shaders", "Dynamic Lights", "Better Fps" },
+            ["lite"]     = new[] { "Fabric API", "Sodium", "Lithium" }
+        };
 
         private Border? _promoBanner;
         private Grid? _newsSectionGrid;
@@ -274,7 +378,6 @@ namespace LeafClient.Views
         private IList<ITransition>? _savedSettingsSaveBannerTransitions;
         private IList<ITransition>? _savedAccountPanelTransitions;
 
-        // For sidebar buttons (Border.SidebarIcon style)
         private Border? _gameButton;
         private Border? _versionsButton;
         private Border? _serversButton;
@@ -291,11 +394,16 @@ namespace LeafClient.Views
         private Grid? _aboutLeafClientOverlay;
         private Border? _aboutLeafClientPanel;
 
+        private Grid? _checkoutOverlay;
+        private Border? _checkoutPanel;
+        private WebView? _checkoutWebView;
+        private bool _isCheckoutAnimating = false;
+
         private string _logFolderPath = "";
         private string _logFilePath = "";
         private static StreamWriter? _logStreamWriter;
-        private static TextWriter? _originalConsoleOut; // To store the original Console.Out
-        private static TextWriter? _originalConsoleError; // To store the original Console.Error
+        private static TextWriter? _originalConsoleOut; 
+        private static TextWriter? _originalConsoleError; 
 
         private Grid? _commonQuestionsOverlay;
         private Border? _commonQuestionsPanel;
@@ -309,13 +417,15 @@ namespace LeafClient.Views
 
         private MojangApiService? _mojangApiService;
 
-        private ToggleSwitch? _lithiumToggle;
         private ToggleSwitch? _optiFineToggle;
-        private ToggleSwitch? _sodiumToggle;
+        private ToggleSwitch? _testModeToggle;
+        private TextBox? _testModePathBox;
+        private Border? _testModePathPanel;
 
 
         private Grid? _modBrowserOverlay;
         private Border? _modBrowserPanel;
+        private Border? _modBrowserBackdrop;
         private WrapPanel? _modsResultsPanel;
         private StackPanel? _modsLoadingPanel;
         private StackPanel? _modsEmptyPanel;
@@ -335,9 +445,13 @@ namespace LeafClient.Views
         private OnlineCountService? _onlineCountService;
         private TextBlock? _onlineCountTextBlock;
         private Ellipse? _onlineStatusDot;
+        private TextBlock? _motdTextBlock;
+        private Border? _motdBanner;
+        private TextBlock? _leafsBalanceText;
+        private Border? _leafsCurrencyWidget;
 
         private DispatcherTimer? _networkMonitorTimer;
-
+        private Button? _cancelLaunchButton;
         private Border? _gameStartingBanner;
         private TextBlock? _gameStartingBannerText;
         private Button? _gameStartingBannerCloseButton;
@@ -351,11 +465,53 @@ namespace LeafClient.Views
         private CancellationTokenSource? _launchFailureBannerCts;
         private bool _launchFailureBannerShownForCurrentLaunch = false;
 
-        // Add these fields near your other banner/overlay CTS fields
         private bool _isAboutLeafClientAnimating = false;
         private bool _isCommonQuestionsAnimating = false;
 
-        // Game Resolution
+        // Launch animation overlay (portal / energy-ring animation)
+        private Border? _launchAnimOverlay;
+        private TextBlock? _launchAnimText;
+        private TextBlock? _launchAnimSubText;
+        private DispatcherTimer? _launchAnimTimer;
+        private DispatcherTimer? _launchAnimTextTimer;
+        private Canvas? _blockCanvas;
+        private Ellipse? _centerOrb;
+        private double _animTime      = 0;
+        private bool   _animFadingOut = false;
+        private double _animFadeTime  = 0;
+
+        // Launch animation — block assembly scene
+        private struct BlockState
+        {
+            public double X, Y, TargetX, TargetY, StartX, StartY;
+            public double Progress, Speed, Delay;        // Progress 0→1, eased
+            public double BobPhase, BobSpeed, BobAmp;   // idle bob after arrival
+            public double Size;                          // isometric half-size
+            public string BlockType;                     // "grass"|"dirt"|"wood"|"stone"
+            public bool Arrived;
+        }
+        private struct SparkleState
+        {
+            public double X, Y, Vx, Vy, Life, MaxLife, Size, Angle, AngularV;
+        }
+        private readonly List<BlockState>   _blockStates   = new();
+        private readonly List<(Polygon Top, Polygon Left, Polygon Right)> _blockControls = new();
+        private readonly List<SparkleState> _sparkleStates = new();
+        private readonly List<Rectangle>    _sparkleControls = new();
+        // Legacy ring/particle lists kept to satisfy any lingering references (empty at runtime)
+        private readonly List<Ellipse>      _ringEllipses     = new();
+        private readonly List<Control>      _particleControls = new();
+
+        // Leaf Vortex animation — orbiting particles
+        private struct OrbiterState
+        {
+            public double Angle, Speed, Rx, Ry;
+            public double GlowPhase, GlowSpeed;
+        }
+        private readonly List<OrbiterState> _orbiterStates   = new();
+        private readonly List<Ellipse>      _orbiterControls = new();
+        private readonly List<Ellipse>      _orbitPathRings  = new();
+
         private TextBox? _gameResolutionWidthTextBox;
         private TextBox? _gameResolutionHeightTextBox;
         private Button? _selectResolutionPresetButton;
@@ -363,26 +519,21 @@ namespace LeafClient.Views
         private ToggleSwitch? _useCustomGameResolutionToggle;
         private ToggleSwitch? _lockGameAspectRatioToggle;
 
-        // Launcher Visibility on Game Launch
         private RadioButton? _launcherVisibilityKeepOpenRadio;
         private RadioButton? _launcherVisibilityHideRadio;
 
-        // Game Update Delivery
         private RadioButton? _updateDeliveryNormalRadio;
         private RadioButton? _updateDeliveryEarlyRadio;
         private RadioButton? _updateDeliveryLateRadio;
 
-        // Discord Rich Presence Username Visibility
         private ToggleSwitch? _showUsernameInDiscordRichPresenceToggle;
 
-        // Closing Notifications, Update Notifications, New Content Indicators
         private RadioButton? _closingNotificationsAlwaysRadio;
         private RadioButton? _closingNotificationsJustOnceRadio;
         private RadioButton? _closingNotificationsNeverRadio;
         private ToggleSwitch? _enableUpdateNotificationsToggle;
         private ToggleSwitch? _enableNewContentIndicatorsToggle;
 
-        // Directory Overview, Logs, Clear Cache
         private Border? _logsUsageBar;
         private Border? _profilesUsageBar;
         private Border? _assetsUsageBar;
@@ -397,7 +548,6 @@ namespace LeafClient.Views
         private Button? _clearLogsButton;
         private Button? _clearCacheButton;
 
-        // Resolution Preset & Visualizer overlays
         private Grid? _resolutionPresetOverlay;
         private Border? _resolutionPresetPanel;
 
@@ -421,46 +571,276 @@ namespace LeafClient.Views
         private TextBox? _osVersionTextBox;
         private TextBox? _leafClientVersionTextBox;
         private TextBlock? _statusMessageTextBlock;
-        private bool _isFeedbackAnimating = false; // Flag to prevent re-opening during animation
-        private string _feedbackLogFolderPath = ""; // To store the path for log attachment
+        private bool _isFeedbackAnimating = false;
+        private string _feedbackLogFolderPath = "";
         private string? _attachedLogFileContent;
 
-        // Planned updates
+        // Crash report overlay
+        private Grid? _crashReportOverlay;
+        private Border? _crashReportPanel;
+        private TextBlock? _crashScreenshotLine;
+        private TextBlock? _crashStatusLine;
+        private Button? _crashSendButton;
+        private Button? _crashDismissButton;
+        private bool _isCrashAnimating = false;
+        private Exception? _currentCrashException;
+        private byte[]? _currentScreenshotBytes;
+
         private Button? _plannedUpdatesButton;
         private Grid? _plannedUpdatesOverlay;
         private Border? _plannedUpdatesPanel;
         private CancellationTokenSource? _plannedUpdatesCts;
 
-        // Prayer Time Reminder
-        private ToggleSwitch? _enablePrayerTimeReminderToggle;
-        private ComboBox? _prayerTimeCountryComboBox;
-        private TextBox? _prayerTimeCityTextBox;
-        private ComboBox? _prayerCalculationMethodComboBox;
-        private Slider? _prayerReminderMinutesBeforeSlider;
-        private TextBlock? _prayerReminderMinutesBeforeValueText;
-
-        private DispatcherTimer? _prayerTimeCheckTimer;
-        private DateTime? _nextPrayerTimeReminder;
-        private string? _nextPrayerName;
-
-        private AladhanPrayerTimesResponse? _lastFetchedPrayerTimes;
-
-        // Mod Cleanup
         private ModCleanupService? _modCleanupService;
 
-        // Signals watcher
-        private FileSystemWatcher? _externalSignalWatcher;
-
-        // --- PROFESSIONAL STARTUP FIELDS ---
         private Grid? _startupOverlay;
         private Image? _startupBg;
         private Image? _startupLogo;
         private Image? _startupLogoText;
 
         private Grid? _updateCheckOverlay;
-        private Border? _updateSpinner;
+        private Canvas? _updateSpinner;
         private CancellationTokenSource? _updateSpinnerCts;
+        private double _progressBarMaxWidth;
 
+        private ToggleSwitch? _natureThemeToggle;
+        private TextBlock? _gameWindowPendingText;
+
+        private Button? _adButton;
+        private Image? _adImage;
+        private TextBlock? _adLoadingText;
+        private AAdsAdResponse? _currentAdData;
+
+        private const string AAdsAdUnitId = "2423964";
+        private const string AAdsApiBaseUrl = "https://a-ads.com/ads/json/";
+
+        private GameOutputWindow? _gameOutputWindow;
+
+        private readonly List<LeafParticle> _leaves = new();
+        private DispatcherTimer? _leafTimer;
+        private readonly Random _leafRand = new();
+        public class LeafParticle
+        {
+            public Avalonia.Controls.Shapes.Path Shape { get; set; } = new();
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double SpeedY { get; set; }
+            public double SwayAmplitude { get; set; }
+            public double SwayFrequency { get; set; }
+            public double SwayPhase { get; set; }
+            public double Rotation { get; set; }
+            public double RotationSpeed { get; set; }
+        }
+
+
+        #endregion
+
+        #region IMainWindowHost
+
+        CmlLib.Core.Auth.MSession? Services.IMainWindowHost.CurrentSession => _session;
+        CmlLib.Core.MinecraftLauncher? Services.IMainWindowHost.Launcher => _launcher;
+        string Services.IMainWindowHost.MinecraftFolder => _minecraftFolder;
+        Models.LauncherSettings Services.IMainWindowHost.CurrentSettings => _currentSettings;
+        Services.SettingsService Services.IMainWindowHost.SettingsService => _settingsService;
+
+        void Services.IMainWindowHost.SwitchToPage(int index) => SwitchToPage(index);
+
+        async Task<byte[]?> Services.IMainWindowHost.FetchSkinBytesAsync() => await FetchSkinBytesAsync();
+
+        bool Services.IMainWindowHost.IsCosmeticEquipped(string cosmeticId, string category) => IsCosmeticEquipped(cosmeticId, category);
+
+        void Services.IMainWindowHost.OpenCheckout(string url) => OpenCheckout(url);
+
+        bool Services.IMainWindowHost.IsOwned(string cosmeticId) => _ownedCosmeticIds.Contains(cosmeticId);
+
+        void Services.IMainWindowHost.AddOwnedCosmetic(string cosmeticId)
+        {
+            _ownedCosmeticIds.Add(cosmeticId);
+            SaveOwnedJson();
+            _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+        }
+
+        void Services.IMainWindowHost.ShowPurchaseCelebration(string id, string name, string preview, string rarity)
+            => ShowPurchaseCelebration(id, name, preview, rarity);
+
+        void Services.IMainWindowHost.ShowMonthlyPassPopup() => ShowMonthlyPassPopup();
+
+        void Services.IMainWindowHost.RefreshLeafPlusPrices() => RefreshLeafPlusPrices();
+
+        void Services.IMainWindowHost.UpdateCoinBalance(int newBalance)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                if (_leafsBalanceText != null)
+                    _leafsBalanceText.Text = newBalance.ToString("N0");
+            });
+        }
+
+        private void OnToastRequested(string message, ToastType type)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ShowToast(message, type));
+        }
+
+        private async void ShowToast(string message, ToastType type)
+        {
+            var container = this.FindControl<Avalonia.Controls.ItemsControl>("ToastContainer");
+            if (container == null) return;
+
+            // Pick accent colour
+            var bg = type switch
+            {
+                ToastType.Success => Avalonia.Media.Color.Parse("#166534"),
+                ToastType.Error   => Avalonia.Media.Color.Parse("#7F1D1D"),
+                _                 => Avalonia.Media.Color.Parse("#1C2A38"),
+            };
+            var border = type switch
+            {
+                ToastType.Success => Avalonia.Media.Color.Parse("#22C55E"),
+                ToastType.Error   => Avalonia.Media.Color.Parse("#EF4444"),
+                _                 => Avalonia.Media.Color.Parse("#3B82F6"),
+            };
+
+            var toast = new Avalonia.Controls.Border
+            {
+                Background       = new Avalonia.Media.SolidColorBrush(bg),
+                BorderBrush      = new Avalonia.Media.SolidColorBrush(border),
+                BorderThickness  = new Avalonia.Thickness(1),
+                CornerRadius     = new Avalonia.CornerRadius(10),
+                Padding          = new Avalonia.Thickness(16, 10),
+                MaxWidth         = 320,
+                Opacity          = 0,
+                Child = new Avalonia.Controls.TextBlock
+                {
+                    Text            = message,
+                    Foreground      = Avalonia.Media.Brushes.White,
+                    FontSize        = 13,
+                    TextWrapping    = Avalonia.Media.TextWrapping.Wrap,
+                }
+            };
+
+            // Add to container
+            var items = (container.ItemsSource as System.Collections.ObjectModel.ObservableCollection<Avalonia.Controls.Control>);
+            if (items == null)
+            {
+                items = new System.Collections.ObjectModel.ObservableCollection<Avalonia.Controls.Control>();
+                container.ItemsSource = items;
+            }
+            items.Add(toast);
+
+            // Fade in
+            var fadeIn = new Avalonia.Animation.Animation
+            {
+                Duration = TimeSpan.FromMilliseconds(200),
+                Children =
+                {
+                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 0d) } },
+                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 1d) } },
+                }
+            };
+            await fadeIn.RunAsync(toast);
+            toast.Opacity = 1;
+
+            // Hold
+            await Task.Delay(3000);
+
+            // Fade out
+            var fadeOut = new Avalonia.Animation.Animation
+            {
+                Duration = TimeSpan.FromMilliseconds(300),
+                Children =
+                {
+                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 1d) } },
+                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 0d) } },
+                }
+            };
+            await fadeOut.RunAsync(toast);
+            items.Remove(toast);
+        }
+
+        private void RefreshLeafPlusPrices()
+        {
+            var monthly   = Services.CurrencyService.FormatPrice(4.99m);
+            var quarterly = Services.CurrencyService.FormatPrice(13.99m);
+            var yearly    = Services.CurrencyService.FormatPrice(49.99m);
+            var qtlySave  = Services.CurrencyService.FormatPrice(4.99m * 3 - 13.99m);
+            var yrlySave  = Services.CurrencyService.FormatPrice(4.99m * 12 - 49.99m);
+
+            var tb = this.FindControl<TextBlock>("LeafPlusMonthlyPrice");
+            if (tb != null) tb.Text = monthly;
+
+            tb = this.FindControl<TextBlock>("LeafPlusQuarterlyPrice");
+            if (tb != null) tb.Text = quarterly;
+
+            tb = this.FindControl<TextBlock>("LeafPlusQuarterlySave");
+            if (tb != null) tb.Text = $"Save {qtlySave}";
+
+            tb = this.FindControl<TextBlock>("LeafPlusYearlyPrice");
+            if (tb != null) tb.Text = yearly;
+
+            tb = this.FindControl<TextBlock>("LeafPlusYearlySave");
+            if (tb != null) tb.Text = $"Save {yrlySave}";
+        }
+
+        private void RefreshPlaytimeStatsCard()
+        {
+            if (_currentSettings == null) return;
+
+            // Stats moved from the home-page sidebar cards into the compact footer
+            // strip, so news banners get their full height back. The footer is
+            // always visible, so this also works across every page.
+            var playtimeLabel    = this.FindControl<TextBlock>("FooterStatsPlaytime");
+            var launchCountLabel = this.FindControl<TextBlock>("FooterStatsLaunches");
+            var topVersionLabel  = this.FindControl<TextBlock>("FooterStatsTopVersion");
+
+            if (playtimeLabel != null)
+                playtimeLabel.Text = FormatPlaytimeShort(_currentSettings.TotalPlaytimeSeconds);
+
+            if (launchCountLabel != null)
+                launchCountLabel.Text = _currentSettings.TotalLaunchCount.ToString();
+
+            if (topVersionLabel != null)
+            {
+                if (_currentSettings.PlaytimeByVersion != null && _currentSettings.PlaytimeByVersion.Count > 0)
+                {
+                    var top = _currentSettings.PlaytimeByVersion
+                        .OrderByDescending(kv => kv.Value)
+                        .First();
+                    topVersionLabel.Text = top.Key;
+                }
+                else
+                {
+                    topVersionLabel.Text = "—";
+                }
+            }
+        }
+
+        private static string FormatPlaytimeShort(long seconds)
+        {
+            if (seconds < 60)         return $"{seconds}s";
+            if (seconds < 3600)       return $"{seconds / 60}m";
+            if (seconds < 86400)      return $"{seconds / 3600}h {(seconds % 3600) / 60}m";
+            return $"{seconds / 86400}d {(seconds % 86400) / 3600}h";
+        }
+
+        private static string? NullIfBlank(string? s)
+            => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+        private static int? ParseNullableInt(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            return int.TryParse(s.Trim(), out int v) ? v : (int?)null;
+        }
+
+        // Recent Activity card was removed — its content (top version / top server)
+        // was merged into the compact footer stats strip, which RefreshPlaytimeStatsCard
+        // already populates.
+
+        private async void ShowPurchaseCelebration(string id, string name, string preview, string rarity)
+        {
+            await RunTntAnimationAsync();
+            ShowCelebrationPanel(id, name, preview, rarity);
+        }
 
         #endregion
 
@@ -468,26 +848,48 @@ namespace LeafClient.Views
         {
             try
             {
-                // === NEW LOGGING SETUP: START ===
-                // Only initialize logging ONCE for the entire application
                 if (_logStreamWriter == null)
                 {
-                    // Store original console streams BEFORE redirecting
                     _originalConsoleOut = Console.Out;
                     _originalConsoleError = Console.Error;
 
-                    // Determine the application's base directory
                     var appDirectory = AppContext.BaseDirectory;
                     _logFolderPath = System.IO.Path.Combine(appDirectory, "Logs");
 
-                    // Ensure the Logs directory exists
                     System.IO.Directory.CreateDirectory(_logFolderPath);
 
-                    // Create a unique log file name with a timestamp
+                    // Log rotation: delete launcher logs older than 30 days, and cap the
+                    // total count at 50 (keep the most recent). Prevents unbounded growth.
+                    try
+                    {
+                        var logDir = new System.IO.DirectoryInfo(_logFolderPath);
+                        var oldLogs = logDir.GetFiles("launcher_log_*.txt");
+                        var cutoff = DateTime.Now.AddDays(-30);
+                        int deletedByAge = 0;
+                        foreach (var f in oldLogs)
+                        {
+                            if (f.LastWriteTime < cutoff)
+                            {
+                                try { f.Delete(); deletedByAge++; } catch { }
+                            }
+                        }
+                        // Refresh list after age-based deletion
+                        var remaining = logDir.GetFiles("launcher_log_*.txt");
+                        if (remaining.Length > 50)
+                        {
+                            Array.Sort(remaining, (a, b) => a.LastWriteTime.CompareTo(b.LastWriteTime));
+                            int toDelete = remaining.Length - 50;
+                            for (int i = 0; i < toDelete; i++)
+                            {
+                                try { remaining[i].Delete(); } catch { }
+                            }
+                        }
+                    }
+                    catch { /* best-effort rotation, never block startup */ }
+
                     var logFileName = $"launcher_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
                     _logFilePath = System.IO.Path.Combine(_logFolderPath, logFileName);
 
-                    // Create a StreamWriter and redirect Console.Out and Console.Error
                     _logStreamWriter = new StreamWriter(new FileStream(_logFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                     {
                         AutoFlush = true
@@ -501,22 +903,31 @@ namespace LeafClient.Views
                 {
                     Console.WriteLine("[LOGGING] Using existing log writer (window recreation)");
                 }
-                // === NEW LOGGING SETUP: END ===
             }
             catch (Exception ex)
             {
-                // Fallback to console if file logging fails
                 Console.Error.WriteLine($"[ERROR] Failed to set up file logging: {ex.Message}");
                 Console.SetOut(_originalConsoleOut ?? new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
                 Console.SetError(_originalConsoleError ?? new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
             }
 
             InitializeComponent();
+            ToastService.ToastRequested += OnToastRequested;
+            InitializeNatureTheme();
             InitializeStartupControls();
+            // Shimmer sweep: register once globally so every ColorBtn in the app
+            // gets the left→right shine animation on hover, regardless of whether
+            // the button was created in AXAML or C#.
+            RegisterColorBtnShimmer();
 
-            // Initialize Update UI Controls
+            // Debug keyboard shortcut for testing the crash reporter.
+            // Ctrl+Shift+X — throw a fake exception to trigger the crash overlay
+            this.KeyDown += OnDebugKeyDown;
+
             _updateCheckOverlay = this.FindControl<Grid>("UpdateCheckOverlay");
-            _updateSpinner = this.FindControl<Border>("UpdateSpinner");
+            _updateSpinner = this.FindControl<Canvas>("UpdateSpinner");
+            // Card is 380 wide with 36px horizontal padding on each side → 308 usable.
+            _progressBarMaxWidth = 308;
 
             DataContext = new MainWindowViewModel();
 
@@ -540,14 +951,10 @@ namespace LeafClient.Views
             InitializeControls();
             InitializeLauncher();
             PopulateAllVersionsData();
-            LoadFriendsAsync();
             AnimateBannersOnLoad();
             LoadAndApplySettings();
             LoadUserInfoAsync();
             LoadServerData();
-            InitializeSignalWatcher();
-
-            // Initialize OnlineCountService with a try-catch for robustness
             try
             {
                 _onlineCountService = new OnlineCountService();
@@ -564,6 +971,7 @@ namespace LeafClient.Views
                 {
                     await PlayCinematicStartupAsync();
                     StartRichPresenceIfEnabled();
+                    InitializeNatureTheme();
 
                     await InitializeDefaultServersAsync();
 
@@ -573,7 +981,6 @@ namespace LeafClient.Views
                         RefreshQuickPlayBar();
                     });
 
-                    // Run these tasks in the background and gracefully handle their exceptions
                     _ = Task.Run(async () =>
                     {
                         try { await RefreshAllServerStatusesAsync(); } catch (Exception ex) { Console.WriteLine($"[RefreshAllServerStatusesAsync Error] {ex.Message}"); }
@@ -584,13 +991,27 @@ namespace LeafClient.Views
 
                     if (_currentSettings.IsFirstLaunch)
                     {
+                        _currentSettings.RenderDistance = 8;
+                        _currentSettings.MaxFps = 0;
+                        _currentSettings.VSync = false;
+                        _currentSettings.SimulationDistance = 5;
+
+                        var minimap = _currentSettings.InstalledMods.FirstOrDefault(m =>
+                            m.Name.Contains("Minimap", StringComparison.OrdinalIgnoreCase) ||
+                            m.ModId.Contains("minimap", StringComparison.OrdinalIgnoreCase));
+
+                        if (minimap != null) minimap.Enabled = false;
+
+                        ApplySettingsToUi(_currentSettings);
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+
                         await Task.Delay(500);
                         OpenAboutLeafClient(null, new RoutedEventArgs());
+
                         _currentSettings.IsFirstLaunch = false;
                         await _settingsService.SaveSettingsAsync(_currentSettings);
                     }
 
-                    // Perform the update check safely
                     await CheckForUpdatesAsync();
 
                     if (_onlineCountService != null)
@@ -599,16 +1020,34 @@ namespace LeafClient.Views
                         try { await UpdateOnlineCountDisplay(); } catch (Exception ex) { Console.WriteLine($"[UpdateOnlineCountDisplay Error] {ex.Message}"); }
                     }
 
+                    try { await UpdateLeafsBalanceAsync(); } catch (Exception ex) { Console.WriteLine($"[UpdateLeafsBalance Error] {ex.Message}"); }
+                    _ = SyncOwnedCosmeticsFromApiAsync();
+
                     _ = Task.Run(async () => { try { await PerformModCleanup(); } catch (Exception ex) { Console.WriteLine($"[PerformModCleanup Error] {ex.Message}"); } });
+
+                    // Pre-warm the cosmetics page in the background so it's instant when the user opens it.
+                    // Small delay lets the home page finish rendering first, then we silently load
+                    // the skin renderer and populate the cosmetics grid off-screen.
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(1500); // let startup settle
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                try { _cosmeticsPage?.LoadCosmeticsPage(); }
+                                catch (Exception ex) { Console.WriteLine($"[CosmeticsPreload] {ex.Message}"); }
+                            });
+                        }
+                        catch (Exception ex) { Console.WriteLine($"[CosmeticsPreload outer] {ex.Message}"); }
+                    });
                 }
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[MainWindow.Opened Critical Error] An unhandled exception occurred during startup tasks: {ex.Message}");
-                    // Ensure overlay is hidden if critical error occurs
                     FadeOutUpdateOverlay();
                 }
             };
-
 
             this.Closing += OnWindowClosing;
 
@@ -622,13 +1061,189 @@ namespace LeafClient.Views
 
             _networkMonitorTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(5)   // how often to re-check
+                Interval = TimeSpan.FromSeconds(5)
             };
             _networkMonitorTimer.Tick += (_, __) => CheckNetworkConnectivity();
             _networkMonitorTimer.Start();
         }
 
-        // NEW: Spinner Animation Logic
+
+        private void InitializeNatureTheme()
+        {
+            var canvas = this.FindControl<Canvas>("FallingLeavesCanvas");
+            var overlay = this.FindControl<Grid>("NatureOverlay");
+
+            if (!_currentSettings.EnableNatureTheme)
+            {
+                if (canvas != null) canvas.IsVisible = false;
+                if (overlay != null) overlay.IsVisible = false;
+                return;
+            }
+
+            if (canvas == null) return;
+
+            canvas.IsVisible = true;
+            if (overlay != null) overlay.IsVisible = true;
+
+            if (_leafTimer == null)
+            {
+                _leafTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(16)
+                };
+                _leafTimer.Tick += UpdateLeaves;
+            }
+
+            if (!_leafTimer.IsEnabled)
+            {
+                _leafTimer.Start();
+
+                if (_leaves.Count == 0)
+                {
+                    for (int i = 0; i < 20; i++)
+                    {
+                        SpawnLeaf(canvas, true);
+                    }
+                }
+            }
+        }
+
+        private void UpdateNatureThemeState()
+        {
+            bool enabled = _natureThemeToggle?.IsChecked ?? true;
+            _currentSettings.EnableNatureTheme = enabled;
+
+            if (enabled)
+            {
+                InitializeNatureTheme();
+            }
+            else
+            {
+                _leafTimer?.Stop();
+
+                var canvas = this.FindControl<Canvas>("FallingLeavesCanvas");
+                if (canvas != null)
+                {
+                    canvas.Children.Clear();
+                    canvas.IsVisible = false;
+                }
+
+                var overlay = this.FindControl<Grid>("NatureOverlay");
+                if (overlay != null) overlay.IsVisible = false;
+
+                _leaves.Clear();
+            }
+        }
+
+
+        private void SpawnLeaf(Canvas canvas, bool randomY = false)
+        {
+            double size = _leafRand.Next(12, 24);
+
+            // Leaf shape geometry
+            var leafShape = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Avalonia.Media.Geometry.Parse("M 0,0 C 5,10 10,10 10,0 C 10,-10 5,-10 0,0"),
+                Width = size,
+                Height = size,
+                Stretch = Stretch.Uniform,
+                Fill = new SolidColorBrush(GetRandomLeafColor()),
+                Opacity = 0.7,
+                RenderTransform = new TransformGroup
+                {
+                    Children = new Transforms
+                    {
+                        new RotateTransform(0),
+                        new TranslateTransform(0, 0)
+                    }
+                }
+            };
+
+            // Fix: Check if Bounds are valid (loaded), otherwise use Design default (1400x750)
+            // This prevents leaves from bunching up on the left side (X=0) during startup.
+            double containerWidth = this.Bounds.Width > 0 ? this.Bounds.Width : 1400;
+            double containerHeight = this.Bounds.Height > 0 ? this.Bounds.Height : 750;
+
+            // Random start position
+            double startX = _leafRand.NextDouble() * containerWidth;
+            double startY = randomY ? _leafRand.NextDouble() * containerHeight : -50;
+
+            var leaf = new LeafParticle
+            {
+                Shape = leafShape,
+                X = startX,
+                Y = startY,
+                SpeedY = 0.5 + (_leafRand.NextDouble() * 1.0),
+                SwayAmplitude = 0.5 + (_leafRand.NextDouble() * 1.0),
+                SwayFrequency = 0.02 + (_leafRand.NextDouble() * 0.03),
+                SwayPhase = _leafRand.NextDouble() * Math.PI * 2,
+                Rotation = _leafRand.Next(0, 360),
+                RotationSpeed = (_leafRand.NextDouble() - 0.5) * 3
+            };
+
+            _leaves.Add(leaf);
+            canvas.Children.Add(leafShape);
+        }
+
+
+        private Color GetRandomLeafColor()
+        {
+            var colors = new[]
+            {
+        Color.Parse("#66BB6A"), // Green
+        Color.Parse("#9CCC65"), // Light Green
+        Color.Parse("#FFCA28"), // Yellow/Orange
+        Color.Parse("#8D6E63")  // Brown
+    };
+            return colors[_leafRand.Next(colors.Length)];
+        }
+
+        private void UpdateLeaves(object? sender, EventArgs e)
+        {
+            var canvas = this.FindControl<Canvas>("FallingLeavesCanvas");
+            if (canvas == null || !canvas.IsVisible) return;
+
+            double windowHeight = this.Bounds.Height;
+
+            for (int i = _leaves.Count - 1; i >= 0; i--)
+            {
+                var leaf = _leaves[i];
+
+                // Physics
+                leaf.Y += leaf.SpeedY;
+                leaf.SwayPhase += leaf.SwayFrequency;
+                double xOffset = Math.Sin(leaf.SwayPhase) * leaf.SwayAmplitude;
+                leaf.Rotation += leaf.RotationSpeed;
+
+                // Apply
+                if (leaf.Shape.RenderTransform is TransformGroup group)
+                {
+                    if (group.Children[0] is RotateTransform rotate)
+                        rotate.Angle = leaf.Rotation;
+
+                    if (group.Children[1] is TranslateTransform translate)
+                        translate.X = xOffset;
+                }
+
+                Canvas.SetLeft(leaf.Shape, leaf.X);
+                Canvas.SetTop(leaf.Shape, leaf.Y);
+
+                // Remove if off screen
+                if (leaf.Y > windowHeight + 50)
+                {
+                    canvas.Children.Remove(leaf.Shape);
+                    _leaves.RemoveAt(i);
+                    SpawnLeaf(canvas); // Respawn at top
+                }
+            }
+
+            // Keep population up
+            if (_leaves.Count < 25 && _leafRand.NextDouble() < 0.05)
+            {
+                SpawnLeaf(canvas);
+            }
+        }
+
         private void StartUpdateSpinner()
         {
             if (_updateSpinner == null) return;
@@ -637,18 +1252,42 @@ namespace LeafClient.Views
             _updateSpinnerCts = new CancellationTokenSource();
             var token = _updateSpinnerCts.Token;
 
+            // 12-dot chasing-opacity spinner.
+            //
+            // Dots are stationary (positioned in XAML around a 72x72 ring).
+            // Every frame we recompute an opacity for each dot based on its
+            // angular distance behind a "lead" position that sweeps around
+            // the ring. An exponential decay gives the trail a smooth fade.
+            //
+            // Period: 1 full chase per second (12 dots × ~83ms each).
+            // This works reliably on every Avalonia build because there is
+            // NO transform involved — pure opacity changes on fixed shapes.
             Task.Run(async () =>
             {
-                double angle = 0;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                const double periodSec = 1.0;
+                const int dotCount = 12;
+
                 while (!token.IsCancellationRequested)
                 {
+                    double phase = (sw.Elapsed.TotalSeconds / periodSec) % 1.0;
+                    double leadFloat = phase * dotCount;
+
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (_updateSpinner.RenderTransform is RotateTransform rt)
+                        if (_updateSpinner == null) return;
+                        var children = _updateSpinner.Children;
+                        int count = Math.Min(children.Count, dotCount);
+                        for (int i = 0; i < count; i++)
                         {
-                            angle += 15; // Speed
-                            if (angle >= 360) angle = 0;
-                            rt.Angle = angle;
+                            if (children[i] is Visual v)
+                            {
+                                // Angular distance behind the lead (wraps around 0..dotCount).
+                                double rawDist = (leadFloat - i + dotCount) % dotCount;
+                                // Exponential decay: lead ≈ 1.0, tail asymptotes to 0.15.
+                                double opacity = 0.15 + 0.85 * Math.Exp(-rawDist * 0.55);
+                                v.Opacity = opacity;
+                            }
                         }
                     });
                     await Task.Delay(16, token);
@@ -656,58 +1295,94 @@ namespace LeafClient.Views
             }, token);
         }
 
+        // ═══ SET TO TRUE TO PREVIEW THE UPDATE UI WITHOUT DOWNLOADING ═══
+        private const bool UPDATE_TEST_MODE = false;
+        private const string UPDATE_TEST_VERSION = "2.0";
+
         private async Task CheckForUpdatesAsync()
         {
-            // Show the overlay and start animation
-            if (_updateCheckOverlay != null)
-            {
-                _updateCheckOverlay.Opacity = 1;
-                _updateCheckOverlay.IsVisible = true;
-            }
+            // Phase 1: Show "checking" spinner overlay — fade the scrim in and
+            // spring the glass card in from scale(0.94). Both transitions are wired
+            // up in XAML; we just flip Opacity / RenderTransform here and let
+            // Avalonia interpolate on the next render tick.
+            ShowUpdateCheckOverlay();
             StartUpdateSpinner();
-
             Console.WriteLine("[Updater] Checking for updates...");
 
+            // ══════════════════════════════════════════
+            //  TEST MODE — simulate the full flow
+            // ══════════════════════════════════════════
+            if (UPDATE_TEST_MODE)
+            {
+                Console.WriteLine("[Updater] TEST MODE — simulating update v" + UPDATE_TEST_VERSION);
+                await Task.Delay(2000);
+                FadeOutUpdateOverlay();
+
+                // Show download overlay
+                await ShowUpdateDownloadOverlay(UPDATE_TEST_VERSION);
+
+                // Simulate progress
+                for (int i = 0; i <= 100; i += 2)
+                {
+                    double pct = i / 100.0;
+                    await UpdateProgress(pct, i < 80 ? "Downloading update..." : "Extracting files...");
+                    await Task.Delay(50);
+                }
+
+                await UpdateProgress(1.0, "Update complete! Restarting...");
+                await Task.Delay(1500);
+
+                // In test mode, just fade the overlay out
+                await Dispatcher.UIThread.InvokeAsync(FadeOutDownloadOverlay);
+                Console.WriteLine("[Updater] TEST MODE — would restart here");
+                return;
+            }
+
+            // ══════════════════════════════════════════
+            //  PRODUCTION — mandatory update
+            // ══════════════════════════════════════════
             if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
             {
                 Console.WriteLine("[Updater] No network. Skipping check.");
-                await Task.Delay(1000); // Show logo for a second before fading
+                await Task.Delay(1000);
                 FadeOutUpdateOverlay();
                 return;
             }
 
-            var currentVersion = GetCurrentAppVersion();
-
             try
             {
-                // Use a timeout to prevent hanging if GitHub is slow
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-                // Add a small artificial delay so the user actually sees the "Checking" screen
-                // instead of a flicker if the internet is super fast.
                 var delayTask = Task.Delay(1500);
+                var checkTask = Services.UpdateService.CheckForUpdateAsync();
+                await Task.WhenAll(delayTask, checkTask);
+                string? newVersion = await checkTask;
 
-                var versionTask = _httpClient.GetStringAsync(versionFileUrl, cts.Token);
-
-                await Task.WhenAll(delayTask, versionTask);
-
-                string latestVersionString = await versionTask;
-                var latestVersion = Version.Parse(latestVersionString.Trim());
-
-                if (latestVersion > currentVersion)
+                if (newVersion != null)
                 {
-                    Console.WriteLine($"[Updater] Update found: {latestVersion}");
+                    Console.WriteLine($"[Updater] Update v{newVersion} found — mandatory update starting");
+                    FadeOutUpdateOverlay();
 
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    // Show the download overlay (blocks interaction)
+                    await ShowUpdateDownloadOverlay(newVersion);
+
+                    // Download with progress
+                    bool staged = await Services.UpdateService.DownloadAndStageAsync(
+                        onProgress: async (pct) =>
+                        {
+                            await UpdateProgress(pct, pct < 0.8 ? "Downloading update..." : "Extracting files...");
+                        }
+                    );
+
+                    if (staged)
                     {
-                        // Proceed to update
-                        await InitiateSelfUpdate(newExeDownloadUrl);
+                        await UpdateProgress(1.0, "Update complete! Restarting...");
+                        await Task.Delay(1200);
+                        Services.UpdateService.RestartToApply();
                     }
                     else
                     {
-                        // Non-Windows: Fade out overlay, show dialog
-                        FadeOutUpdateOverlay();
-                        await ShowManualUpdateDialog(latestVersion.ToString());
+                        await UpdateProgress(0, "Update failed. Please try again later.");
+                        await Task.Delay(3000);
+                        await Dispatcher.UIThread.InvokeAsync(FadeOutDownloadOverlay);
                     }
                 }
                 else
@@ -718,10 +1393,103 @@ namespace LeafClient.Views
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Updater ERROR] Failed to check for updates: {ex.Message}");
-                // On error (503, timeout, etc.), just let the user play.
+                Console.Error.WriteLine($"[Updater ERROR] {ex.Message}");
                 FadeOutUpdateOverlay();
             }
+        }
+
+        // ══════════════════════════════════════════════════════
+        //  Update overlay show/hide helpers
+        // ══════════════════════════════════════════════════════
+
+        // Show the "checking for updates" overlay with a scrim fade + card spring.
+        // XAML has transitions already wired; we just set IsVisible, then push
+        // the target values on the next render tick so they animate from the
+        // initial state (Opacity=0, scale=0.94) rather than snapping.
+        private void ShowUpdateCheckOverlay()
+        {
+            if (_updateCheckOverlay == null) return;
+
+            var card = this.FindControl<Border>("UpdateCheckCard");
+
+            if (!AreAnimationsEnabled())
+            {
+                _updateCheckOverlay.Opacity = 1;
+                _updateCheckOverlay.IsVisible = true;
+                if (card != null)
+                    card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.0)");
+                return;
+            }
+
+            // Reset to the animation-start state.
+            _updateCheckOverlay.Opacity = 0;
+            _updateCheckOverlay.IsVisible = true;
+            if (card != null)
+                card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.94)");
+
+            // Next render tick → push final values so transitions run.
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_updateCheckOverlay != null)
+                    _updateCheckOverlay.Opacity = 1;
+                if (card != null)
+                    card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.0)");
+            }, DispatcherPriority.Render);
+        }
+
+        private async Task ShowUpdateDownloadOverlay(string version)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (UpdateOverlayVersion != null)
+                    UpdateOverlayVersion.Text = $"Downloading v{version}";
+                if (UpdateProgressBar != null)
+                    UpdateProgressBar.Width = 0;
+                if (UpdateProgressText != null)
+                    UpdateProgressText.Text = "0%";
+                if (UpdateDlStatusLabel != null)
+                    UpdateDlStatusLabel.Text = "Preparing...";
+                if (UpdateDownloadOverlay == null) return;
+
+                var card = this.FindControl<Border>("UpdateDownloadCard");
+
+                if (!AreAnimationsEnabled())
+                {
+                    UpdateDownloadOverlay.Opacity = 1;
+                    UpdateDownloadOverlay.IsVisible = true;
+                    if (card != null)
+                        card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.0)");
+                    return;
+                }
+
+                UpdateDownloadOverlay.Opacity = 0;
+                UpdateDownloadOverlay.IsVisible = true;
+                if (card != null)
+                    card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.94)");
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (UpdateDownloadOverlay != null)
+                        UpdateDownloadOverlay.Opacity = 1;
+                    if (card != null)
+                        card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.0)");
+                }, DispatcherPriority.Render);
+            });
+        }
+
+        // Called periodically with a 0..1 fraction. Width transition is on the
+        // XAML Border so setting Width here smoothly interpolates.
+        private async Task UpdateProgress(double pct, string status)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (UpdateProgressBar != null)
+                    UpdateProgressBar.Width = _progressBarMaxWidth * Math.Min(1.0, Math.Max(0, pct));
+                if (UpdateProgressText != null)
+                    UpdateProgressText.Text = $"{(int)(pct * 100)}%";
+                if (UpdateDlStatusLabel != null)
+                    UpdateDlStatusLabel.Text = status;
+            });
         }
 
         private void StopUpdateSpinner()
@@ -729,6 +1497,8 @@ namespace LeafClient.Views
             _updateSpinnerCts?.Cancel();
         }
 
+        // Fade the "checking" overlay out via the XAML Opacity transition, then
+        // hide IsVisible after the animation finishes so the scrim doesn't snap.
         private async void FadeOutUpdateOverlay()
         {
             StopUpdateSpinner();
@@ -738,43 +1508,53 @@ namespace LeafClient.Views
             if (!AreAnimationsEnabled())
             {
                 _updateCheckOverlay.IsVisible = false;
+                _updateCheckOverlay.Opacity = 1;
                 return;
             }
 
-            // Simple fade out
-            for (double i = 1.0; i >= 0; i -= 0.1)
+            // Collapse the card slightly as it fades — mirrors the spring-in.
+            var card = this.FindControl<Border>("UpdateCheckCard");
+            if (card != null)
+                card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.96)");
+
+            _updateCheckOverlay.Opacity = 0;
+            await Task.Delay(300);
+
+            if (_updateCheckOverlay != null)
             {
-                _updateCheckOverlay.Opacity = i;
-                await Task.Delay(20);
+                _updateCheckOverlay.IsVisible = false;
+                _updateCheckOverlay.Opacity = 1; // reset for next show
             }
-            _updateCheckOverlay.IsVisible = false;
-            _updateCheckOverlay.Opacity = 1; // Reset for next time
         }
 
-
-
-        private void InitializeSignalWatcher()
+        // Same pattern for the download overlay — used when the update fails
+        // or completes in test mode and we want to dismiss it cleanly.
+        private async void FadeOutDownloadOverlay()
         {
-            try
+            if (UpdateDownloadOverlay == null) return;
+
+            if (!AreAnimationsEnabled())
             {
-                _externalSignalWatcher = new FileSystemWatcher(_minecraftFolder);
-                _externalSignalWatcher.Filter = "leaf_open_mods.signal";
-
-                // Watch for creation or writing
-                _externalSignalWatcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
-
-                _externalSignalWatcher.Created += OnExternalSignalDetected;
-                _externalSignalWatcher.Changed += OnExternalSignalDetected;
-
-                _externalSignalWatcher.EnableRaisingEvents = true;
-
-                Console.WriteLine("[Signal Watcher] Listening for in-game mod menu trigger...");
+                UpdateDownloadOverlay.IsVisible = false;
+                UpdateDownloadOverlay.Opacity = 1;
+                return;
             }
-            catch (Exception ex)
+
+            var card = this.FindControl<Border>("UpdateDownloadCard");
+            if (card != null)
+                card.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.96)");
+
+            UpdateDownloadOverlay.Opacity = 0;
+            await Task.Delay(300);
+
+            if (UpdateDownloadOverlay != null)
             {
-                Console.WriteLine($"[Signal Watcher] Failed to start: {ex.Message}");
+                UpdateDownloadOverlay.IsVisible = false;
+                UpdateDownloadOverlay.Opacity = 1;
             }
         }
+
+
 
         private void InitializeStartupControls()
         {
@@ -788,7 +1568,6 @@ namespace LeafClient.Views
         {
             if (_startupOverlay == null || _startupLogo == null || _startupBg == null || _startupLogoText == null) return;
 
-            // Ensure initial state
             _startupOverlay.IsVisible = true;
             _startupOverlay.Opacity = 1;
             _startupLogo.Opacity = 0;
@@ -796,59 +1575,44 @@ namespace LeafClient.Views
 
             var easing = new CubicEaseOut();
 
-            // 1. Setup Transitions
+            // Background fades in and slowly de-zooms
             _startupBg.Transitions = new Transitions
-    {
-        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(1200), Easing = easing },
-        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(3000), Easing = easing }
-    };
+            {
+                new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(1200), Easing = easing },
+                new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(3000), Easing = easing }
+            };
 
-            _startupLogo.Transitions = new Transitions
-    {
-        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(800), Easing = easing },
-        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(2000), Easing = easing }
-    };
+            // Both logo elements fade in together with a gentle scale-up
+            var logoTransitions = new Transitions
+            {
+                new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(680), Easing = easing },
+                new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(1800), Easing = easing }
+            };
+            _startupLogo.Transitions = logoTransitions;
+            _startupLogoText.Transitions = logoTransitions;
 
-            _startupLogoText.Transitions = new Transitions
-    {
-        new DoubleTransition { Property = Image.OpacityProperty, Duration = TimeSpan.FromMilliseconds(800), Easing = easing },
-        new TransformOperationsTransition { Property = Image.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(2000), Easing = easing }
-    };
-
-            // 2. Start Background and First Logo Animation
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _startupBg.Opacity = 1;
                 _startupBg.RenderTransform = TransformOperations.Parse("scale(1.0)");
 
+                // Both appear together as one lockup
                 _startupLogo.Opacity = 1;
-                _startupLogo.RenderTransform = TransformOperations.Parse("scale(1.15)");
-            });
-
-            // Wait for the logo to enlarge
-            await Task.Delay(1500);
-
-            // 3. Cross-fade Logo to LogoText
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                _startupLogo.Opacity = 0;
-
+                _startupLogo.RenderTransform = TransformOperations.Parse("scale(1.0)");
                 _startupLogoText.Opacity = 1;
-                _startupLogoText.RenderTransform = TransformOperations.Parse("scale(1.1)");
+                _startupLogoText.RenderTransform = TransformOperations.Parse("scale(1.0)");
             });
 
-            // Wait for the text to be seen
-            await Task.Delay(1200);
+            await Task.Delay(1800);
 
-            // 4. Exit Animation
+            // Fade out the whole overlay together
             _startupOverlay.Transitions = new Transitions
-    {
-        new DoubleTransition { Property = Grid.OpacityProperty, Duration = TimeSpan.FromMilliseconds(600), Easing = new QuarticEaseIn() }
-    };
+            {
+                new DoubleTransition { Property = Grid.OpacityProperty, Duration = TimeSpan.FromMilliseconds(600), Easing = new QuarticEaseIn() }
+            };
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                _startupLogoText.RenderTransform = TransformOperations.Parse("scale(1.2)");
                 _startupOverlay.Opacity = 0;
             });
 
@@ -857,69 +1621,18 @@ namespace LeafClient.Views
         }
 
 
-
-        private void OnExternalSignalDetected(object sender, FileSystemEventArgs e)
-        {
-            // Use Dispatcher to ensure UI operations happen on the main thread
-            Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                try
-                {
-                    // 1. Consume the signal (delete the file so it can be triggered again)
-                    if (System.IO.File.Exists(e.FullPath))
-                    {
-                        await Task.Delay(50); // Tiny delay to ensure Java released the handle
-                        System.IO.File.Delete(e.FullPath);
-                    }
-
-                    // 2. Open the Mods Manager
-                    OpenModsManager();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Signal Watcher] Error processing signal: {ex.Message}");
-                }
-            });
-        }
-
-        private void OpenModsManager()
-        {
-            // Check if it's already open to avoid duplicates
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                var existingManager = desktop.Windows.FirstOrDefault(w => w is ModsManager);
-
-                if (existingManager != null)
-                {
-                    // Just Show() and ensure Topmost. 
-                    // AVOID Activate() if possible, as it forces focus stealing which kills Exclusive Fullscreen.
-                    existingManager.Show();
-                    existingManager.Topmost = true;
-                    existingManager.WindowState = WindowState.Normal;
-                }
-                else
-                {
-                    var modsManager = new ModsManager();
-                    modsManager.Show();
-                    // Ensure the new window is Topmost so it floats over the game (requires Borderless Windowed game)
-                    modsManager.Topmost = true;
-                }
-            }
-        }
-
         private async Task PerformModCleanup()
         {
             if (_modCleanupService == null) return;
 
             Console.WriteLine("[Mod Cleanup] Starting background cleanup process...");
-            var cleanupList = _modCleanupService.GetCleanupList(); // Get a copy of the list
+            var cleanupList = _modCleanupService.GetCleanupList(); 
             var modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
 
             List<ModCleanupEntry> successfullyCleanedMods = new List<ModCleanupEntry>();
 
             foreach (var entry in cleanupList)
             {
-                // Construct InstalledMod for GetModFilePath consistency
                 var tempInstalledMod = new InstalledMod
                 {
                     ModId = entry.ModId,
@@ -964,7 +1677,6 @@ namespace LeafClient.Views
                 }
             }
 
-            // Remove successfully cleaned up mods from the service's list
             foreach (var entry in successfullyCleanedMods)
             {
                 _modCleanupService.RemoveModFromCleanup(entry);
@@ -982,8 +1694,6 @@ namespace LeafClient.Views
 
         private void CheckNetworkConnectivity()
         {
-            // The isOnline check is implicitly handled by ApplyLaunchButtonState now.
-            // Just trigger a re-evaluation of the button state.
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyLaunchButtonState();
@@ -995,7 +1705,6 @@ namespace LeafClient.Views
         /// </summary>
         private async Task UpdateOnlineCountDisplay()
         {
-            // Always perform a null check before using _onlineCountService
             if (_onlineCountService == null)
             {
                 Console.WriteLine("[OnlineCountService] Service not available. Cannot update UI.");
@@ -1006,42 +1715,148 @@ namespace LeafClient.Views
 
             if (_onlineCountTextBlock == null || _onlineStatusDot == null)
             {
-                // Try to find them again in case they weren't initialized on first attempt
                 _onlineCountTextBlock = this.FindControl<TextBlock>("OnlineCountTextBlock");
                 _onlineStatusDot = this.FindControl<Ellipse>("OnlineStatusDot");
 
                 if (_onlineCountTextBlock == null || _onlineStatusDot == null)
                 {
                     Console.WriteLine("[OnlineCountService] Online count TextBlock or Ellipse not found in UI.");
-                    return; // Cannot update UI if controls are not found
+                    return; 
                 }
             }
 
             int count = await _onlineCountService.GetOnlineCount();
-            if (count >= 0)
+            string? motd = _onlineCountService.GetMotd();
+
+            if (count == int.MinValue)
             {
-                // Update UI on the UI thread
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _onlineCountTextBlock.Text = "N/A";
+                    _onlineStatusDot.Fill = new SolidColorBrush(Colors.Gray);
+                });
+            }
+            else if (count >= 0)
+            {
                 Dispatcher.UIThread.Post(() =>
                 {
                     _onlineCountTextBlock.Text = $"{count} Online";
-                    if (count > 0)
-                    {
-                        _onlineStatusDot.Fill = new SolidColorBrush(Colors.Green); // Green for online
-                    }
-                    else
-                    {
-                        _onlineStatusDot.Fill = new SolidColorBrush(Colors.Gray); // Gray for offline or 0 users
-                    }
+                    _onlineStatusDot.Fill = new SolidColorBrush(count > 0 ? Colors.Green : Colors.Gray);
                 });
             }
             else
             {
-                // Indicate error in fetching count
                 Dispatcher.UIThread.Post(() =>
                 {
                     _onlineCountTextBlock.Text = "You're offline";
-                    _onlineStatusDot.Fill = new SolidColorBrush(Colors.Red); // Red for error
+                    _onlineStatusDot.Fill = new SolidColorBrush(Colors.Red);
                 });
+            }
+
+            if (!string.IsNullOrEmpty(motd))
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _motdTextBlock ??= this.FindControl<TextBlock>("MotdTextBlock");
+                    _motdBanner ??= this.FindControl<Border>("MotdBanner");
+                    if (_motdTextBlock != null) _motdTextBlock.Text = motd;
+                    if (_motdBanner != null) _motdBanner.IsVisible = true;
+                });
+            }
+        }
+
+        private async Task ReportSessionPlaytimeAsync()
+        {
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt)) return;
+            if (_sessionStartUtc == null) return;
+
+            var elapsed = DateTime.UtcNow - _sessionStartUtc.Value;
+            _sessionStartUtc = null;
+
+            int minutes = (int)elapsed.TotalMinutes;
+            if (minutes < 5) return;
+
+            var result = await LeafClient.Services.LeafApiService.ReportPlaytimeAsync(jwt, minutes);
+            if (result == null || result.Awarded == 0) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                if (_leafsBalanceText != null)
+                    _leafsBalanceText.Text = result.Coins.ToString("N0");
+            });
+
+            ToastService.Show($"+{result.Awarded} \U0001F343 Leaf Points earned!", ToastType.Success);
+        }
+
+        private async Task UpdateLeafsBalanceAsync()
+        {
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt)) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                _leafsCurrencyWidget ??= this.FindControl<Border>("LeafsCurrencyWidget");
+                if (_leafsCurrencyWidget != null)
+                    _leafsCurrencyWidget.IsVisible = true;
+            });
+
+            var balance = await LeafClient.Services.LeafApiService.GetUserBalanceAsync(jwt);
+            if (balance == null) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                if (_leafsBalanceText != null)
+                    _leafsBalanceText.Text = balance.Coins.ToString("N0");
+            });
+        }
+
+        private async Task SyncOwnedCosmeticsFromApiAsync()
+        {
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt))
+            {
+                Console.WriteLine("[Owned] Skipping API sync — no JWT.");
+                return;
+            }
+
+            try
+            {
+                Console.WriteLine("[Owned] Fetching owned cosmetics from API...");
+                var owned = await LeafClient.Services.LeafApiService.GetOwnedCosmeticsAsync(jwt);
+                if (owned == null)
+                {
+                    Console.WriteLine("[Owned] API returned null — request may have failed.");
+                    return;
+                }
+
+                Console.WriteLine($"[Owned] API returned {owned.Count} cosmetic(s): {string.Join(", ", owned.Select(x => x.Id))}");
+
+                var changed = false;
+                foreach (var item in owned)
+                {
+                    if (_ownedCosmeticIds.Add(item.Id))
+                        changed = true;
+                }
+
+                if (changed)
+                {
+                    SaveOwnedJson();
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds));
+                    Console.WriteLine($"[Owned] Synced {owned.Count} owned cosmetics from API. Current set: {string.Join(", ", _ownedCosmeticIds)}");
+                }
+                else
+                {
+                    Console.WriteLine($"[Owned] No new cosmetics from API. Current set: {string.Join(", ", _ownedCosmeticIds)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Owned] API sync failed: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -1049,6 +1864,7 @@ namespace LeafClient.Views
         {
             _modBrowserOverlay = this.FindControl<Grid>("ModBrowserOverlay");
             _modBrowserPanel = this.FindControl<Border>("ModBrowserPanel");
+            _modBrowserBackdrop = this.FindControl<Border>("ModBrowserBackdrop");
             _modsResultsPanel = this.FindControl<WrapPanel>("ModsResultsPanel");
             _modsLoadingPanel = this.FindControl<StackPanel>("ModsLoadingPanel");
             _modsEmptyPanel = this.FindControl<StackPanel>("ModsEmptyPanel");
@@ -1065,7 +1881,7 @@ namespace LeafClient.Views
                 _modSearchBox.TextChanged += OnModSearchTextChanged;
 
             _modrinthClient.DefaultRequestHeaders.Remove("User-Agent");
-            _modrinthClient.DefaultRequestHeaders.Add("User-Agent", "LeafClient/1.1.0 (contact@leafclient.net)");
+            _modrinthClient.DefaultRequestHeaders.Add("User-Agent", "LeafClient/1.1.0 (contact@leafclient.com)");
         }
         #region Updater Important Variables
 
@@ -1077,23 +1893,26 @@ namespace LeafClient.Views
 
         private async Task DownloadLeafRuntimeDependencies(string version, bool isFabric)
         {
-            // Only for Fabric profiles and for versions we host in latestjars/<version>/
             var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "1.20.1",
-        "1.20.2",
-        "1.21.4",
-        "1.21.5",
+        "1.20.1 Supported",
+        "1.20.2 Supported",
+        "1.21.4 Supported",
+        "1.21.5 Supported",
+        "1.21.6 Supported",
+        "1.21.7 Supported",
+        "1.21.8 Supported",
+        "1.21.9 Supported",
+        "1.21.10 Supported",
+        "1.21.11 Supported",
     };
 
             if (!isFabric || !supported.Contains(version))
                 return;
 
-            // Store per-version locally to avoid conflicts between versions
             string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime", version);
             System.IO.Directory.CreateDirectory(leafRuntimeDir);
 
-            // Download from the versioned folder on GitHub
             string runtimeUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
 
             string runtimePath = System.IO.Path.Combine(leafRuntimeDir, "leafclient.jar");
@@ -1174,7 +1993,6 @@ namespace LeafClient.Views
 
         private async void CheckForUpdatesManual(object? sender, RoutedEventArgs e)
         {
-            // Re-show the overlay for manual check
             if (_updateCheckOverlay != null)
             {
                 _updateCheckOverlay.Opacity = 1;
@@ -1192,7 +2010,6 @@ namespace LeafClient.Views
 
             try
             {
-                // 1. Get the current executable path reliably
                 string currentExePath = Environment.ProcessPath;
                 if (string.IsNullOrEmpty(currentExePath))
                 {
@@ -1211,7 +2028,6 @@ namespace LeafClient.Views
                 string updaterExeName = "LeafClientUpdater.exe";
                 string updaterLocalPath = System.IO.Path.Combine(updaterDir, updaterExeName);
 
-                // 2. Download the Updater
                 Console.WriteLine($"[Updater] Downloading updater from {updaterDownloadUrl} to {updaterLocalPath}");
                 using (var client = new HttpClient())
                 {
@@ -1220,28 +2036,24 @@ namespace LeafClient.Views
                 }
                 Console.WriteLine("[Updater] Updater downloaded successfully.");
 
-                // 3. Get current Process ID (PID) to pass to updater
                 int currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
 
-                // 4. Launch Updater with arguments: [PID] [ExePath] [DownloadUrl]
-                // We base64 encode strings to prevent quote/space path errors entirely
                 string pathBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(currentExePath));
                 string urlBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(newExeDownloadUrl));
 
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = updaterLocalPath,
-                    WorkingDirectory = updaterDir, // <--- ADDED: Ensures updater finds its own dependencies if they exist
+                    WorkingDirectory = updaterDir, 
                     Arguments = $"{currentPid} {pathBytes} {urlBytes}",
                     UseShellExecute = false,
-                    CreateNoWindow = false // Let the insane UI show
+                    CreateNoWindow = false 
                 };
 
                 Process.Start(startInfo);
 
                 Console.WriteLine("[Updater] Launched updater. Exiting...");
 
-                // 5. Shutdown gracefully
                 if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
                 {
                     desktop.Shutdown();
@@ -1411,6 +2223,19 @@ namespace LeafClient.Views
             await dialog.ShowDialog(this);
         }
 
+        // Mods the launcher installs automatically as part of mod presets.
+        // These are hidden from the user-facing Installed Mods list because the user
+        // didn't pick them — the launcher manages them based on the active profile's
+        // ModPreset. Also used to backfill the IsAutoInstalled flag on settings saved
+        // before the field existed.
+        private static readonly System.Collections.Generic.HashSet<string> _launcherManagedModIds =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "sodium", "lithium", "ferritecore", "immediatelyfast",
+                "entityculling", "modernfix", "fabric-api", "phosphor",
+                "iris", "dynamiclights", "betterfps",
+            };
+
         private void LoadUserMods()
         {
             if (_userModsPanel == null || _noUserModsMessage == null) return;
@@ -1419,26 +2244,35 @@ namespace LeafClient.Views
 
             _userModsPanel.Children.Clear();
 
-            // Only show mods for the currently selected Minecraft version
             string currentMcVersion = _currentSettings.SelectedSubVersion;
+
+            // Backfill: any existing entry whose ID matches a known launcher-managed
+            // mod gets flagged so it stops showing up in the user list even if the
+            // settings.json predates the IsAutoInstalled field.
+            foreach (var m in _currentSettings.InstalledMods)
+            {
+                if (!m.IsAutoInstalled && _launcherManagedModIds.Contains(m.ModId))
+                    m.IsAutoInstalled = true;
+            }
+
             var modsForCurrentVersion = _currentSettings.InstalledMods
                 .Where(m => m.MinecraftVersion.Equals(currentMcVersion, StringComparison.OrdinalIgnoreCase))
+                .Where(m => !m.IsAutoInstalled) // hide launcher-managed mods
                 .OrderBy(m => m.Name)
                 .ToList();
 
             if (!modsForCurrentVersion.Any())
             {
-                Console.WriteLine("[User Mods] No mods found in settings for current MC version.");
+                Console.WriteLine("[User Mods] No user-installed mods found for current MC version.");
                 _noUserModsMessage.IsVisible = true;
                 return;
             }
 
-            _noSkinsMessage.IsVisible = false; // This line seems to be a copy-paste error from LoadSkins, should be _noUserModsMessage
+            _noSkinsMessage.IsVisible = false;
             _noUserModsMessage.IsVisible = false;
 
             foreach (var mod in modsForCurrentVersion)
             {
-                // ADDED: Skip rendering the Leaf Client Runtime mod in the UI
                 if (mod.ModId.Equals("leafclient", StringComparison.OrdinalIgnoreCase))
                 {
                     Console.WriteLine($"[User Mods] Skipping display of internal mod: {mod.Name}");
@@ -1450,7 +2284,7 @@ namespace LeafClient.Views
                 _userModsPanel.Children.Add(modCard);
             }
 
-            Console.WriteLine($"[User Mods] Loaded {_userModsPanel.Children.Count} mod cards for MC {currentMcVersion}");
+            Console.WriteLine($"[User Mods] Loaded {_userModsPanel.Children.Count} user-mod cards for MC {currentMcVersion}");
         }
 
 
@@ -1470,7 +2304,6 @@ namespace LeafClient.Views
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Mod icon
             var iconBorder = new Border
             {
                 Width = 40,
@@ -1504,7 +2337,6 @@ namespace LeafClient.Views
             Grid.SetColumn(iconBorder, 0);
             grid.Children.Add(iconBorder);
 
-            // Mod info
             var infoStack = new StackPanel
             {
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
@@ -1529,7 +2361,6 @@ namespace LeafClient.Views
             Grid.SetColumn(infoStack, 1);
             grid.Children.Add(infoStack);
 
-            // Toggle switch
             var toggle = new ToggleSwitch
             {
                 IsChecked = mod.Enabled,
@@ -1545,7 +2376,6 @@ namespace LeafClient.Views
             Grid.SetColumn(toggle, 2);
             grid.Children.Add(toggle);
 
-            // Delete button
             var deleteButton = new Button
             {
                 Content = "×",
@@ -1570,60 +2400,57 @@ namespace LeafClient.Views
 
         private async Task ToggleMod(InstalledMod mod, bool enabled)
         {
-            mod.Enabled = enabled; // Update the in-memory state
+            mod.Enabled = enabled; 
 
             string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-            string currentJarPath = GetModFilePath(modsFolder, mod, isDisabled: false); // Path if it's currently .jar
-            string currentDisabledPath = GetModFilePath(modsFolder, mod, isDisabled: true); // Path if it's currently .jar.disabled
+            string currentJarPath = GetModFilePath(modsFolder, mod, isDisabled: false); 
+            string currentDisabledPath = GetModFilePath(modsFolder, mod, isDisabled: true); 
 
-            string targetPath = GetModFilePath(modsFolder, mod, isDisabled: !enabled); // The path we want it to be
+            string targetPath = GetModFilePath(modsFolder, mod, isDisabled: !enabled); 
 
-            if (enabled) // User wants to ENABLE the mod
+            if (enabled) 
             {
-                if (File.Exists(currentDisabledPath)) // It's currently disabled on disk
+                if (File.Exists(currentDisabledPath)) 
                 {
                     try
                     {
-                        File.Move(currentDisabledPath, currentJarPath); // Rename .jar.disabled to .jar
+                        File.Move(currentDisabledPath, currentJarPath); 
                         Console.WriteLine($"[Mod Manager] Enabled mod '{mod.Name}'.");
                     }
                     catch (Exception ex)
                     {
                         Console.Error.WriteLine($"[Mod Manager] Failed to enable mod '{mod.Name}': {ex.Message}");
                         ShowLaunchErrorBanner($"Failed to enable mod '{mod.Name}'. It might be in use.");
-                        mod.Enabled = !enabled; // Revert state in UI if failed
+                        mod.Enabled = !enabled; 
                     }
                 }
                 else if (!File.Exists(currentJarPath))
                 {
-                    // Mod file (.jar or .jar.disabled) is completely missing.
-                    // It will be re-downloaded by InstallUserModsAsync during launch.
                     Console.WriteLine($"[Mod Manager] Mod '{mod.Name}' file missing. Will be re-downloaded on next launch if still enabled.");
                 }
             }
-            else // User wants to DISABLE the mod
+            else 
             {
-                if (File.Exists(currentJarPath)) // It's currently enabled on disk
+                if (File.Exists(currentJarPath)) 
                 {
                     try
                     {
-                        File.Move(currentJarPath, currentDisabledPath); // Rename .jar to .jar.disabled
+                        File.Move(currentJarPath, currentDisabledPath); 
                         Console.WriteLine($"[Mod Manager] Disabled mod '{mod.Name}'.");
                     }
                     catch (Exception ex)
                     {
                         Console.Error.WriteLine($"[Mod Manager] Failed to disable mod '{mod.Name}': {ex.Message}");
                         ShowLaunchErrorBanner($"Failed to disable mod '{mod.Name}'. It might be in use.");
-                        mod.Enabled = !enabled; // Revert state in UI if failed
+                        mod.Enabled = !enabled; 
                     }
                 }
             }
 
             await _settingsService.SaveSettingsAsync(_currentSettings);
-            LoadUserMods(); // Reload UI to reflect potential state changes
+            LoadUserMods(); 
         }
 
-        // File: MainWindow.cs (within the MainWindow class)
 
         private async Task DeleteUserMod(InstalledMod mod)
         {
@@ -1631,13 +2458,11 @@ namespace LeafClient.Views
             string jarPath = GetModFilePath(modsFolder, mod, isDisabled: false);
             string disabledPath = GetModFilePath(modsFolder, mod, isDisabled: true);
 
-            // Remove from settings immediately
             _currentSettings.InstalledMods.Remove(mod);
             await _settingsService.SaveSettingsAsync(_currentSettings);
             Console.WriteLine($"[Mod Manager] Removed '{mod.Name}' from settings.");
 
             bool fileDeletedSuccessfully = false;
-            // Attempt to delete the physical files
             if (File.Exists(jarPath))
             {
                 try
@@ -1649,7 +2474,6 @@ namespace LeafClient.Views
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[Mod Manager] Failed to delete mod file '{System.IO.Path.GetFileName(jarPath)}': {ex.Message}");
-                    // Add to cleanup list if deletion failed
                     _modCleanupService?.AddModToCleanup(mod);
                     ShowLaunchErrorBanner($"Failed to delete mod '{mod.Name}'. It might be in use. It will be retried later.");
                 }
@@ -1660,19 +2484,16 @@ namespace LeafClient.Views
                 {
                     File.Delete(disabledPath);
                     Console.WriteLine($"[Mod Manager] Deleted disabled mod file: {System.IO.Path.GetFileName(disabledPath)}");
-                    fileDeletedSuccessfully = true; // Mark as true if at least one file was deleted
+                    fileDeletedSuccessfully = true; 
                 }
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[Mod Manager] Failed to delete disabled mod file '{System.IO.Path.GetFileName(disabledPath)}': {ex.Message}");
-                    // Add to cleanup list if deletion failed
                     _modCleanupService?.AddModToCleanup(mod);
                     ShowLaunchErrorBanner($"Failed to delete mod '{mod.Name}'. It might be in use. It will be retried later.");
                 }
             }
 
-            // If both files were not found or could not be deleted, and it was removed from settings,
-            // then it's effectively "cleaned up" from the user's perspective, so remove from cleanup list.
             if (!fileDeletedSuccessfully && _modCleanupService != null)
             {
                 _modCleanupService.RemoveModFromCleanup(new ModCleanupEntry
@@ -1683,14 +2504,12 @@ namespace LeafClient.Views
                 });
             }
 
-            // If the deleted mod was the currently selected one, clear selection
             if (_currentSettings.SelectedSkinId == mod.ModId)
             {
                 _currentSettings.SelectedSkinId = null;
                 _currentlySelectedSkinCard = null;
             }
 
-            // Reload UI to reflect changes (mod removed from list)
             LoadUserMods();
         }
 
@@ -1722,18 +2541,32 @@ namespace LeafClient.Views
             InitializeModBrowserControls();
             InitializeModManagementControls();
             InitializePlannedUpdatesControls();
+            InitializeAAdsSystem();
+
+            _gameWindowPendingText = this.FindControl<TextBlock>("GameWindowPendingText");
+
 
             if (this.FindControl<TextBlock>("AppVersionTextBlock") is { } appVersionTextBlock)
             {
                 Version currentVersion = GetCurrentAppVersion();
-                string versionString = $"Version {currentVersion.Major}.{currentVersion.Minor}.{currentVersion.Build} Beta"; // Format as "Version 1.1.0 Beta"
+                string versionString = $"Version {currentVersion.Major}.{currentVersion.Minor}.{currentVersion.Build} Beta"; 
                 appVersionTextBlock.Text = versionString;
             }
 
             _feedbackOverlay = this.FindControl<Grid>("FeedbackOverlay");
             _feedbackPanel = this.FindControl<Border>("FeedbackPanel");
 
-            if (_feedbackPanel != null) // Only try to find nested controls if the panel exists
+            _crashReportOverlay = this.FindControl<Grid>("CrashReportOverlay");
+            _crashReportPanel = this.FindControl<Border>("CrashReportPanel");
+            if (_crashReportPanel != null)
+            {
+                _crashScreenshotLine = _crashReportPanel.FindControl<TextBlock>("CrashScreenshotLine");
+                _crashStatusLine = _crashReportPanel.FindControl<TextBlock>("CrashStatusLine");
+                _crashSendButton = _crashReportPanel.FindControl<Button>("CrashSendButton");
+                _crashDismissButton = _crashReportPanel.FindControl<Button>("CrashDismissButton");
+            }
+
+            if (_feedbackPanel != null) 
             {
                 _feedbackTypeComboBox = _feedbackPanel.FindControl<ComboBox>("FeedbackTypeComboBox");
                 _featureSuggestionPanel = _feedbackPanel.FindControl<StackPanel>("FeatureSuggestionPanel");
@@ -1747,18 +2580,15 @@ namespace LeafClient.Views
                 _leafClientVersionTextBox = _feedbackPanel.FindControl<TextBox>("LeafClientVersionTextBox");
                 _statusMessageTextBlock = _feedbackPanel.FindControl<TextBlock>("StatusMessageTextBlock");
 
-                // Get references to buttons for event wiring. Perform null checks.
                 var attachLogButton = _feedbackPanel.FindControl<Button>("AttachLogButton");
                 var sendFeedbackButton = _feedbackPanel.FindControl<Button>("SendFeedbackButton");
                 var cancelFeedbackButton = _feedbackPanel.FindControl<Button>("CancelFeedbackButton");
 
-                // Wire up events only if controls are successfully found
                 if (attachLogButton != null) attachLogButton.Click += AttachLogButton_Click;
                 if (sendFeedbackButton != null) sendFeedbackButton.Click += SendFeedbackButton_Click;
                 if (cancelFeedbackButton != null) cancelFeedbackButton.Click += CancelFeedbackButton_Click;
                 if (_feedbackTypeComboBox != null) _feedbackTypeComboBox.SelectionChanged += FeedbackTypeComboBox_SelectionChanged;
 
-                // Pre-fill system information once here, as controls are now initialized
                 if (_osVersionTextBox != null)
                     _osVersionTextBox.Text = Environment.OSVersion.ToString();
 
@@ -1788,24 +2618,6 @@ namespace LeafClient.Views
                 }
             }
 
-            _enablePrayerTimeReminderToggle = this.FindControl<ToggleSwitch>("EnablePrayerTimeReminderToggle");
-            _prayerTimeCountryComboBox = this.FindControl<ComboBox>("PrayerTimeCountryComboBox");
-            _prayerTimeCityTextBox = this.FindControl<TextBox>("PrayerTimeCityTextBox");
-            _prayerCalculationMethodComboBox = this.FindControl<ComboBox>("PrayerCalculationMethodComboBox");
-            _prayerReminderMinutesBeforeSlider = this.FindControl<Slider>("PrayerReminderMinutesBeforeSlider");
-            _prayerReminderMinutesBeforeValueText = this.FindControl<TextBlock>("PrayerReminderMinutesBeforeValueText");
-
-            if (_prayerReminderMinutesBeforeSlider != null)
-            {
-                _prayerReminderMinutesBeforeSlider.ValueChanged += (s, e) =>
-                {
-                    if (_prayerReminderMinutesBeforeValueText != null)
-                    {
-                        _prayerReminderMinutesBeforeValueText.Text = $"{e.NewValue:F0} minutes";
-                    }
-                };
-            }
-
             _resolutionScaleNote = this.FindControl<TextBlock>("ResolutionScaleNote");
             _resolutionBox = this.FindControl<Border>("ResolutionBox");
             _resolutionPresetOverlay = this.FindControl<Grid>("ResolutionPresetOverlay");
@@ -1819,7 +2631,6 @@ namespace LeafClient.Views
             if (this.FindControl<Button>("ResolutionVisualCloseButton") is { } visualCloseBtn)
                 visualCloseBtn.Click += CloseResolutionVisualOverlay;
 
-            // Keep existing wire-up but it will now open the overlay
             if (_selectResolutionPresetButton != null)
                 _selectResolutionPresetButton.Click += SelectGameResolutionPreset;
             if (_visualiseResolutionButton != null)
@@ -1859,7 +2670,7 @@ namespace LeafClient.Views
                     if (_isApplyingSettings) return;
                     _currentSettings.ShowUsernameInDiscordRichPresence = true;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
-                    UpdateRichPresenceFromState(); // Immediate update
+                    UpdateRichPresenceFromState(); 
                     MarkSettingsDirty();
                 };
                 _showUsernameInDiscordRichPresenceToggle.Unchecked += async (_, __) =>
@@ -1867,7 +2678,7 @@ namespace LeafClient.Views
                     if (_isApplyingSettings) return;
                     _currentSettings.ShowUsernameInDiscordRichPresence = false;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
-                    UpdateRichPresenceFromState(); // Immediate update
+                    UpdateRichPresenceFromState(); 
                     MarkSettingsDirty();
                 };
             }
@@ -1918,15 +2729,20 @@ namespace LeafClient.Views
             _onlineCountTextBlock = this.FindControl<TextBlock>("OnlineCountTextBlock");
             _onlineStatusDot = this.FindControl<Ellipse>("OnlineStatusDot");
 
-            _optiFineToggle = this.FindControl<ToggleSwitch>("OptiFineToggle");
-            _lithiumToggle = this.FindControl<ToggleSwitch>("LithiumToggle");
-            _sodiumToggle = this.FindControl<ToggleSwitch>("SodiumToggle");
+            _optiFineToggle  = this.FindControl<ToggleSwitch>("OptiFineToggle");
+            _testModeToggle  = this.FindControl<ToggleSwitch>("TestModeToggle");
+            _testModePathBox = this.FindControl<TextBox>("TestModePathBox");
+            _testModePathPanel = this.FindControl<Border>("TestModePathPanel");
 
             _commonQuestionsOverlay = this.FindControl<Grid>("CommonQuestionsOverlay");
             _commonQuestionsPanel = this.FindControl<Border>("CommonQuestionsPanel");
 
             _aboutLeafClientOverlay = this.FindControl<Grid>("AboutLeafClientOverlay");
             _aboutLeafClientPanel = this.FindControl<Border>("AboutLeafClientPanel");
+
+            _checkoutOverlay = this.FindControl<Grid>("CheckoutOverlay");
+            _checkoutPanel = this.FindControl<Border>("CheckoutPanel");
+            _checkoutWebView = this.FindControl<WebView>("CheckoutWebView");
 
             _jvmArgumentsEditButton = this.FindControl<Button>("JvmArgumentsEditButton");
             if (_jvmArgumentsEditButton != null)
@@ -1940,14 +2756,13 @@ namespace LeafClient.Views
             _settingsIndicator = this.FindControl<Border>("SettingsIndicator");
             _savedSettingsIndicatorTransitions = _settingsIndicator?.Transitions?.ToList();
 
-            // Ensure these class fields are assigned correctly
             _promoBanner = this.FindControl<Border>("PromoBanner");
             _savedPromoBannerTransitions = _promoBanner?.Transitions?.ToList();
 
             _launchSection = this.FindControl<Border>("LaunchSection");
             _savedLaunchSectionTransitions = _launchSection?.Transitions?.ToList();
 
-            _newsSectionGrid = this.FindControl<Grid>("NewsSectionGrid"); // This was likely causing the 'not exist' error
+            _newsSectionGrid = this.FindControl<Grid>("NewsSectionGrid"); 
             _savedNewsSectionGridTransitions = _newsSectionGrid?.Transitions?.ToList();
 
             _launchErrorBanner = this.FindControl<Border>("LaunchErrorBanner");
@@ -1960,22 +2775,15 @@ namespace LeafClient.Views
             _savedSettingsSaveBannerTransitions = _settingsSaveBanner?.Transitions?.ToList();
 
             _accountPanel = this.FindControl<Border>("AccountPanel");
-            // AccountPanel's transitions are on its RenderTransform
-            // We need to safely get the TranslateTransform first, then its transitions
-            if (_accountPanel?.RenderTransform is TranslateTransform accountPanelTt)
+            if (_accountPanel != null)
             {
-                _savedAccountPanelTransitions = accountPanelTt.Transitions?.ToList();
-            }
-            else
-            {
-                // If it's not a TranslateTransform or not set, create one to ensure it exists
-                var newTt = new TranslateTransform();
-                _accountPanel!.RenderTransform = newTt;
-                _savedAccountPanelTransitions = newTt.Transitions?.ToList();
+                _savedAccountPanelTransitions = _accountPanel.Transitions?.ToList();
+                // Ensure a ScaleTransform exists for the new centered overlay
+                if (_accountPanel.RenderTransform is not ScaleTransform)
+                    _accountPanel.RenderTransform = new ScaleTransform(0.94, 0.94);
             }
 
 
-            // Find and save transitions for sidebar buttons
             _gameButton = this.FindControl<Border>("GameButton");
             _savedGameButtonTransitions = _gameButton?.Transitions?.ToList();
             _versionsButton = this.FindControl<Border>("VersionsButton");
@@ -1989,8 +2797,61 @@ namespace LeafClient.Views
 
             _versionOptiFineSupport = this.FindControl<TextBlock>("VersionOptiFineSupport");
             _serversWrapPanel = this.FindControl<StackPanel>("ServersWrapPanel");
+            _featuredServersPanel = this.FindControl<StackPanel>("FeaturedServersPanel");
             _quickPlayServersContainer = this.FindControl<StackPanel>("QuickPlayServersContainer");
             _noServersMessage = this.FindControl<Border>("NoServersMessage");
+
+            InitLaunchAnimation();
+            _profilesListPanel = this.FindControl<StackPanel>("ProfilesListPanel");
+            _noProfilesMessage = this.FindControl<Border>("NoProfilesMessage");
+
+            // Profile Editor Overlay
+            _profileEditorOverlay = this.FindControl<Grid>("ProfileEditorOverlay");
+            _mainContentGrid      = this.FindControl<Grid>("MainContentGrid");
+            _po_TitleText         = this.FindControl<TextBlock>("PO_TitleText");
+            _po_AvatarLetter      = this.FindControl<TextBlock>("PO_AvatarLetter");
+            _po_NavBtnGeneral     = this.FindControl<Button>("PO_NavBtnGeneral");
+            _po_NavBtnPerformance = this.FindControl<Button>("PO_NavBtnPerformance");
+            _po_NavBtnMods        = this.FindControl<Button>("PO_NavBtnMods");
+            _po_NavBtnAdvanced    = this.FindControl<Button>("PO_NavBtnAdvanced");
+            _po_NavIndicator      = this.FindControl<Border>("PO_NavIndicator");
+            _po_NavActiveBar      = this.FindControl<Border>("PO_NavActiveBar");
+            _po_TabIdentity       = this.FindControl<StackPanel>("PO_TabIdentity");
+            _po_TabPerformance    = this.FindControl<StackPanel>("PO_TabPerformance");
+            _po_TabMods           = this.FindControl<StackPanel>("PO_TabMods");
+            _po_TabAdvanced       = this.FindControl<StackPanel>("PO_TabAdvanced");
+            _po_DescriptionBox    = this.FindControl<TextBox>("PO_DescriptionBox");
+            _po_IconEmojiBox      = this.FindControl<TextBox>("PO_IconEmojiBox");
+            _po_JvmArgsBox        = this.FindControl<TextBox>("PO_JvmArgsBox");
+            _po_UseCustomResolutionToggle = this.FindControl<ToggleSwitch>("PO_UseCustomResolutionToggle");
+            _po_ResWidthBox       = this.FindControl<TextBox>("PO_ResWidthBox");
+            _po_ResHeightBox      = this.FindControl<TextBox>("PO_ResHeightBox");
+            _po_QuickJoinAddressBox = this.FindControl<TextBox>("PO_QuickJoinAddressBox");
+            _po_QuickJoinPortBox  = this.FindControl<TextBox>("PO_QuickJoinPortBox");
+            _po_StatLaunches      = this.FindControl<TextBlock>("PO_StatLaunches");
+            _po_StatPlaytime      = this.FindControl<TextBlock>("PO_StatPlaytime");
+            _po_StatLastUsed      = this.FindControl<TextBlock>("PO_StatLastUsed");
+            _po_NameBox           = this.FindControl<TextBox>("PO_NameBox");
+            _po_AccountCombo      = this.FindControl<ComboBox>("PO_AccountCombo");
+            _po_VersionCombo      = this.FindControl<ComboBox>("PO_VersionCombo");
+            _po_JavaCombo         = this.FindControl<ComboBox>("PO_JavaCombo");
+            _po_ShowAllVersions   = this.FindControl<CheckBox>("PO_ShowAllVersions");
+            _po_SupportBanner     = this.FindControl<Border>("PO_SupportBanner");
+            _po_SupportDot        = this.FindControl<Ellipse>("PO_SupportDot");
+            _po_SupportTitle      = this.FindControl<TextBlock>("PO_SupportTitle");
+            _po_SupportSub        = this.FindControl<TextBlock>("PO_SupportSub");
+            _po_JavaBannerText    = this.FindControl<TextBlock>("PO_JavaBannerText");
+            _po_MemSlider         = this.FindControl<Slider>("PO_MemSlider");
+            _po_MemLabel          = this.FindControl<TextBlock>("PO_MemLabel");
+            _po_ModsSupportBanner = this.FindControl<Border>("PO_ModsSupportBanner");
+            _po_ModsSupportText   = this.FindControl<TextBlock>("PO_ModsSupportText");
+            _po_PresetBalanced    = this.FindControl<Border>("PO_PresetBalanced");
+            _po_PresetEnhanced    = this.FindControl<Border>("PO_PresetEnhanced");
+            _po_PresetLite        = this.FindControl<Border>("PO_PresetLite");
+            _po_BadgesBalanced    = this.FindControl<WrapPanel>("PO_BadgesBalanced");
+            _po_BadgesEnhanced    = this.FindControl<WrapPanel>("PO_BadgesEnhanced");
+            _po_BadgesLite        = this.FindControl<WrapPanel>("PO_BadgesLite");
+            PO_PopulatePresetBadges();
             _quickPlayTooltip = this.FindControl<Border>("QuickPlayTooltip");
             _quickPlayTooltipText = this.FindControl<TextBlock>("QuickPlayTooltipText");
 
@@ -2007,25 +2868,40 @@ namespace LeafClient.Views
             _launchProgressPanel = this.FindControl<StackPanel>("LaunchProgressPanel");
             _launchProgressBar = this.FindControl<ProgressBar>("LaunchProgressBar");
             _launchProgressText = this.FindControl<TextBlock>("LaunchProgressText");
-            // _selectionIndicator, _settingsIndicator already assigned above
             _modsInfoText = this.FindControl<TextBlock>("ModsInfoText");
             _launchBgImage = this.FindControl<Image>("LaunchBgImage");
             if (_launchBgImage != null)
             {
-                _launchBgScale = new ScaleTransform(1, 1);
-                _launchBgImage.RenderTransform = _launchBgScale;
+                // The XAML defines a TransformGroup with named children; grab them
+                if (_launchBgImage.RenderTransform is TransformGroup tg)
+                {
+                    _launchBgScale = tg.Children.OfType<ScaleTransform>().FirstOrDefault()
+                                     ?? new ScaleTransform(1.08, 1.08);
+                    _launchBgTranslate = tg.Children.OfType<TranslateTransform>().FirstOrDefault()
+                                         ?? new TranslateTransform();
+                }
+                else
+                {
+                    // Fallback: build the group ourselves
+                    _launchBgScale = new ScaleTransform(1.08, 1.08);
+                    _launchBgTranslate = new TranslateTransform();
+                    var group = new TransformGroup();
+                    group.Children.Add(_launchBgScale);
+                    group.Children.Add(_launchBgTranslate);
+                    _launchBgImage.RenderTransform = group;
+                }
                 _launchBgImage.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                StartParallaxLoop();
             }
             _particleLayer = this.FindControl<Canvas>("ParticleLayer");
-            // _launchSection already assigned above
             SetupParticles();
             _accountPanelOverlay = this.FindControl<Grid>("AccountPanelOverlay");
-            // _accountPanel already assigned above
+            _accountsListPanel = this.FindControl<StackPanel>("AccountsListPanel");
+            _accountTypeLabel = this.FindControl<TextBlock>("AccountTypeLabel");
+            _accountOnlineDot = this.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccountOnlineDot");
             _accountUsernameDisplay = this.FindControl<TextBlock>("AccountUsernameDisplay");
             _accountUuidDisplay = this.FindControl<TextBlock>("AccountUuidDisplay");
             _playingAsUsername = this.FindControl<TextBlock>("PlayingAsUsername");
-            _friendsLoadingPanel = this.FindControl<StackPanel>("FriendsLoadingPanel");
-            _noFriendsMessage = this.FindControl<TextBlock>("NoFriendsMessage");
             _newsItem1Image = this.FindControl<Image>("NewsItem1Image");
             if (_newsItem1Image != null)
             {
@@ -2040,6 +2916,8 @@ namespace LeafClient.Views
                 _newsItem2Image.RenderTransform = _newsItem2Scale;
                 _newsItem2Image.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             }
+            _majorUpdateBadge = this.FindControl<Border>("MajorUpdateBadge");
+            StartMajorUpdateBadgeAnimation();
             _gamePage = this.FindControl<Grid>("GamePage");
             _versionsPage = this.FindControl<Grid>("VersionsPage");
             _serversPage = this.FindControl<Grid>("ServersPage");
@@ -2071,20 +2949,29 @@ namespace LeafClient.Views
             InitializeSettingsControls();
             WireGameOptionsHandlers();
             InitializeSkinsControls();
+            _cosmeticsPage = this.FindControl<LeafClient.Views.Pages.CosmeticsPageView>("CosmeticsPage");
+            _cosmeticsPage?.SetHost(this);
+            _storePage = this.FindControl<LeafClient.Views.Pages.StorePageView>("StorePage");
+            _storePage?.SetHost(this);
+            _screenshotsPage = this.FindControl<LeafClient.Views.Pages.ScreenshotsPageView>("ScreenshotsPage");
+            _screenshotsPage?.SetHost(this);
+            _resourcePacksPage = this.FindControl<LeafClient.Views.Pages.ResourcePacksPageView>("ResourcePacksPage");
+            _resourcePacksPage?.SetHost(this);
             InitializeSkinStatusBanner();
 
             if (this.FindControl<Button>("LaunchGameButton") is { } launchBtn)
             {
                 launchBtn.Click += async (s, e) =>
                 {
-                    // Case 1: A game is currently running. Terminate it.
+                    // Allow terminating a RUNNING game (game window open)
                     if (_gameProcess != null && !_gameProcess.HasExited)
                     {
                         try
                         {
                             Console.WriteLine("[Launcher] User clicked to terminate running game process.");
-                            _gameProcess.Kill(); // Terminate the running game process
-                            _gameProcess.WaitForExit(5000); // Wait a bit for it to exit cleanly
+                            _userTerminatedGame = true;
+                            _gameProcess.Kill();
+                            _gameProcess.WaitForExit(5000);
                             Console.WriteLine("[Launcher] Running game process terminated successfully.");
                         }
                         catch (Exception ex)
@@ -2094,111 +2981,263 @@ namespace LeafClient.Views
                         }
                         finally
                         {
-                            // Always reset flags and button state after trying to kill the process
                             _isLaunching = false;
                             _isInstalling = false;
-                            _gameProcess = null; // Clear the reference
-                            UpdateLaunchButton("LAUNCH GAME", "SeaGreen"); // Reset button to default
-                            await UpdateServerButtonStates(); // Re-enable server buttons if they were disabled
+                            _gameProcess = null;
+                            UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
+                            await UpdateServerButtonStates();
                         }
-                        return; // Operation handled, exit click handler
-                    }
-
-                    // Case 2: An installation or pre-launch task is in progress. Cancel it.
-                    if (_isLaunching || _isInstalling)
-                    {
-                        Console.WriteLine("[Launcher] User clicked to cancel ongoing launch/install operation.");
-                        _launchCancellationTokenSource?.Cancel(); // Cancel any ongoing async operations
-                        _isLaunching = false;
-                        _isInstalling = false;
-                        UpdateLaunchButton("LAUNCH CANCELLED", "Orange"); // Indicate cancellation
-                        await UpdateServerButtonStates(); // Re-enable server buttons if they were disabled
-                        return; // Operation handled, exit click handler
-                    }
-
-                    // Case 3: No task in progress and no game running. Proceed with a new launch.
-                    var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
-                    if (selectedVersionInfo == null)
-                    {
-                        UpdateLaunchButton("SELECT VERSION", "OrangeRed"); // This will disable the button via ApplyLaunchButtonState
-                        ShowLaunchErrorBanner("Please select a Minecraft version to launch.");
                         return;
                     }
 
-                    // Ensure user is logged in (unless it's an offline session explicitly chosen)
-                    if (_session == null) // This check needs to be smarter for offline mode
+                    // REMOVED: Old cancellation logic for launching/installing.
+                    // If launching, clicking the main button now does nothing.
+                    if (_isLaunching || _isInstalling)
                     {
-                        // If offline username is set, it's an offline session, allow.
-                        // Otherwise, require login.
-                        if (_currentSettings.AccountType != "offline" || string.IsNullOrWhiteSpace(_currentSettings.OfflineUsername))
-                        {
-                            UpdateLaunchButton("LOGIN REQUIRED", "OrangeRed"); // This will disable the button via ApplyLaunchButtonState
-                            ShowLaunchErrorBanner("LOGIN REQUIRED: Please log in to your Minecraft account to launch.");
-                            return;
-                        }
+                        return;
+                    }
+
+                    // Active profile version takes priority over SelectedSubVersion
+                    var activeProfileForLaunch = _currentSettings.Profiles?.FirstOrDefault(p => p.Id == _currentSettings.ActiveProfileId);
+                    string versionForLaunch = activeProfileForLaunch?.MinecraftVersion ?? _currentSettings.SelectedSubVersion;
+
+                    var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == versionForLaunch);
+                    if (selectedVersionInfo == null)
+                    {
+                        UpdateLaunchButton("SELECT VERSION", "OrangeRed");
+                        ShowLaunchErrorBanner("Please select a Minecraft version to launch.");
+                        return;
                     }
 
                     bool isFabric = selectedVersionInfo.Loader.Equals("Fabric", StringComparison.OrdinalIgnoreCase);
                     await LaunchGameAsync(selectedVersionInfo.FullVersion, isFabric);
                 };
 
-                // Add PointerEntered and PointerExited handlers for hover effect
                 launchBtn.PointerEntered += (s, e) =>
                 {
-                    // Check if an operation is in progress OR a game is running
-                    if (_isLaunching || _isInstalling || (_gameProcess != null && !_gameProcess.HasExited))
+                    // Only show hover effect for TERMINATE, not for cancel anymore
+                    if (_gameProcess != null && !_gameProcess.HasExited)
                     {
-                        string hoverText;
-                        Color tempBaseColor;
-
-                        if (_gameProcess != null && !_gameProcess.HasExited)
-                        {
-                            hoverText = "TERMINATE GAME"; // Specific text for running game
-                            tempBaseColor = Colors.DarkRed; // More aggressive red for termination
-                        }
-                        else
-                        {
-                            hoverText = "CANCEL OPERATION"; // Generic for launching/installing
-                            tempBaseColor = Colors.Firebrick; // Red for cancellation
-                        }
-
-                        // Temporarily change button appearance for hover
-                        // Do NOT update _currentOperationText or _currentOperationColor here
                         if (s is Button hoveredBtn)
                         {
-                            hoveredBtn.Background = new SolidColorBrush(tempBaseColor);
+                            hoveredBtn.Background = new SolidColorBrush(Colors.DarkRed);
                             if (this.FindControl<Border>("LaunchButtonOuterBorder") is { } outerBorder)
                             {
-                                Color tempBorderColor = DarkenColor(tempBaseColor, 0.2f);
-                                outerBorder.BorderBrush = new SolidColorBrush(tempBorderColor);
+                                outerBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(139, 0, 0));
                             }
                             if (hoveredBtn.Content is StackPanel contentStack && contentStack.Children.OfType<TextBlock>().FirstOrDefault() is TextBlock mainTextBlock)
                             {
-                                mainTextBlock.Text = hoverText;
+                                mainTextBlock.Text = "TERMINATE GAME";
                             }
                         }
                     }
-                    // If no operation is active, the button should retain its current (non-hover) appearance,
-                    // which is already set by ApplyLaunchButtonState. No action needed here.
                 };
 
                 launchBtn.PointerExited += (s, e) =>
                 {
-                    // Revert to the actual state by reapplying it, which will pick up the stored
-                    // _currentOperationText and _currentOperationColor (or default LAUNCH GAME)
                     ApplyLaunchButtonState();
                 };
                 _settingsSaveBanner = this.FindControl<Border>("SettingsSaveBanner");
                 _settingsSaveBannerSaveButton = this.FindControl<Button>("SettingsSaveBannerSaveButton");
+                _settingsSaveBannerCancelButton = this.FindControl<Button>("SettingsSaveBannerCancelButton");
+
                 if (_settingsSaveBannerSaveButton != null)
                 {
                     _settingsSaveBannerSaveButton.Click += (s, e) =>
                     {
                         SaveSettingsFromUi();
+                        // Take fresh snapshot of the just-saved state so next Cancel can revert to it
+                        try { _settingsSnapshotJson = System.Text.Json.JsonSerializer.Serialize(_currentSettings, JsonContext.Default.LauncherSettings); }
+                        catch { _settingsSnapshotJson = null; }
                         HideSettingsSaveBanner();
                     };
                 }
+
+                if (_settingsSaveBannerCancelButton != null)
+                {
+                    _settingsSaveBannerCancelButton.Click += async (s, e) =>
+                    {
+                        // Revert to the snapshot taken before changes began
+                        if (_settingsSnapshotJson != null)
+                        {
+                            try
+                            {
+                                var reverted = System.Text.Json.JsonSerializer.Deserialize(_settingsSnapshotJson, JsonContext.Default.LauncherSettings);
+                                if (reverted != null)
+                                {
+                                    _currentSettings = reverted;
+                                    await _settingsService.SaveSettingsAsync(_currentSettings);
+                                    ApplySettingsToUi(_currentSettings);
+                                }
+                            }
+                            catch
+                            {
+                                // Fallback: reload from disk
+                                LoadAndApplySettings();
+                            }
+                        }
+                        else
+                        {
+                            LoadAndApplySettings();
+                        }
+                        _settingsSnapshotJson = null;
+                        HideSettingsSaveBanner();
+                    };
+                }
+
                 WireSettingsDirtyHandlers();
+            }
+        }
+
+        private void OpenGameOutput(object? sender, RoutedEventArgs e)
+        {
+            if (_gameOutputWindow != null)
+            {
+                _gameOutputWindow.Show();
+                _gameOutputWindow.Activate();
+            }
+            else
+            {
+                _gameOutputWindow = new GameOutputWindow();
+                _gameOutputWindow.Closed += (s, args) => _gameOutputWindow = null;
+                _gameOutputWindow.Show();
+            }
+        }
+
+
+        private void CancelLaunchButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (_isLaunching || _isInstalling)
+            {
+                Console.WriteLine("[Launcher] User clicked CANCEL button.");
+                _launchCancellationTokenSource?.Cancel();
+
+                _isLaunching = false;
+                _isInstalling = false;
+
+                UpdateLaunchButton("LAUNCH CANCELLED", "Orange");
+                _ = UpdateServerButtonStates();
+
+                if (_cancelLaunchButton != null)
+                    _cancelLaunchButton.IsVisible = false;
+            }
+        }
+
+
+        private void InitializeAAdsSystem()
+        {
+            _adButton = this.FindControl<Button>("AdButton");
+            _adImage = this.FindControl<Image>("AdImage");
+            _adLoadingText = this.FindControl<TextBlock>("AdLoadingText");
+
+            _ = LoadAAdsBannerAsync();
+        }
+
+        private async Task LoadAAdsBannerAsync()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Console.WriteLine("[A-Ads] Non-Windows OS detected. Hiding ad section.");
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (AdSection != null) AdSection.IsVisible = false;
+                });
+                return;
+            }
+
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (_adLoadingText != null) _adLoadingText.IsVisible = true;
+                    if (AdSection != null) AdSection.IsVisible = true; 
+                });
+
+                string apiUrl = $"{AAdsApiBaseUrl}{AAdsAdUnitId}";
+                Console.WriteLine($"[A-Ads] Fetching from: {apiUrl}");
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)); 
+                var json = await _httpClient.GetStringAsync(apiUrl, cts.Token);
+
+                Console.WriteLine($"[A-Ads] Raw Response: {json}");
+
+                var adResponse = JsonSerializer.Deserialize(json, JsonContext.Default.AAdsAdResponse);
+
+                if (adResponse == null)
+                {
+                    Console.WriteLine("[A-Ads] Response was null.");
+                    await HideAdSection();
+                    return;
+                }
+
+                if (adResponse.status == false)
+                {
+                    Console.WriteLine("[A-Ads] Ad status is 'false' (likely pending verification or no fill).");
+                    await HideAdSection();
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(adResponse.banner) || string.IsNullOrEmpty(adResponse.link))
+                {
+                    Console.WriteLine("[A-Ads] Banner image or Link URL is missing.");
+                    await HideAdSection();
+                    return;
+                }
+
+                _currentAdData = adResponse; 
+
+                Console.WriteLine($"[A-Ads] Downloading banner image: {_currentAdData.banner}");
+                var imageBytes = await _httpClient.GetByteArrayAsync(_currentAdData.banner, cts.Token);
+                using var stream = new MemoryStream(imageBytes);
+                var bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (_adImage != null) _adImage.Source = bitmap;
+                    if (_adLoadingText != null) _adLoadingText.IsVisible = false; 
+                    if (AdSection != null) AdSection.IsVisible = true; 
+
+                    if (_adButton != null)
+                    {
+                        ToolTip.SetTip(_adButton, _currentAdData.alt ?? "Anonymous Ad");
+                    }
+
+                    Console.WriteLine($"[A-Ads] Ad loaded successfully.");
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[A-Ads] Failed to load banner: {ex.Message}");
+                await HideAdSection();
+            }
+        }
+
+        private async Task HideAdSection()
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (AdSection != null) AdSection.IsVisible = false;
+            });
+        }
+
+
+        private void OnAdClicked(object? sender, RoutedEventArgs e)
+        {
+            if (_currentAdData != null && !string.IsNullOrEmpty(_currentAdData.link))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _currentAdData.link,
+                        UseShellExecute = true
+                    });
+                    Console.WriteLine($"[A-Ads] User clicked ad. Opening: {_currentAdData.link}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[A-Ads] Failed to open ad link: {ex.Message}");
+                }
             }
         }
 
@@ -2211,15 +3250,14 @@ namespace LeafClient.Views
 
         private async void OpenPlannedUpdates(object? sender, PointerEventArgs e)
         {
-            _plannedUpdatesCts?.Cancel(); // Cancel any pending close operation
-            _plannedUpdatesCts = new CancellationTokenSource(); // Create a new CTS for the current animation
+            _plannedUpdatesCts?.Cancel(); 
+            _plannedUpdatesCts = new CancellationTokenSource(); 
             var token = _plannedUpdatesCts.Token;
 
             if (_plannedUpdatesOverlay == null || _plannedUpdatesPanel == null) return;
 
             _plannedUpdatesOverlay.IsVisible = true;
 
-            // Only reset position/blur if it was fully hidden to ensure smooth re-entry
             if (_plannedUpdatesPanel.Opacity == 0)
             {
                 if (_plannedUpdatesPanel.RenderTransform is TranslateTransform tt) tt.Y = 20;
@@ -2234,15 +3272,13 @@ namespace LeafClient.Views
                 return;
             }
 
-            // Animate In: Fade In + Slide Up + Unblur
             const int steps = 20;
             for (int i = 0; i <= steps; i++)
             {
-                // Stop if a close was requested mid-animation (which cancels this token)
                 if (token.IsCancellationRequested) return;
 
                 double t = (double)i / steps;
-                double easeOut = 1 - Math.Pow(1 - t, 3); // Cubic Ease Out
+                double easeOut = 1 - Math.Pow(1 - t, 3); 
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -2277,7 +3313,6 @@ namespace LeafClient.Views
                             return;
                         }
 
-                        // Animate Out: Fade Out + Slide Down + Blur
                         const int steps = 15;
                         for (int i = 0; i <= steps; i++)
                         {
@@ -2299,7 +3334,7 @@ namespace LeafClient.Views
                             _plannedUpdatesOverlay.IsVisible = false;
                     });
                 }
-                catch (TaskCanceledException) { /* Ignore */ }
+                catch (TaskCanceledException) {  }
             });
         }
 
@@ -2307,19 +3342,19 @@ namespace LeafClient.Views
         private string MaskUsername(string username)
         {
             if (string.IsNullOrWhiteSpace(username) || username.Length <= 2)
-                return username; // Don't mask very short usernames
+                return username; 
 
-            int visibleChars = 1; // Show first and last char
+            int visibleChars = 1; 
             int maskedLength = username.Length - (visibleChars * 2);
 
             if (maskedLength <= 0)
-                return username; // Username too short to mask meaningfully
+                return username; 
 
             string masked = username[0] + new string('*', maskedLength) + username[username.Length - 1];
             return masked;
         }
 
-        private double _lastAspectRatio = 16.0 / 9.0; // Default aspect ratio
+        private double _lastAspectRatio = 16.0 / 9.0; 
 
         private void OnResolutionWidthChanged(object? sender, RoutedEventArgs e)
         {
@@ -2330,13 +3365,11 @@ namespace LeafClient.Views
             {
                 if (int.TryParse(_gameResolutionWidthTextBox.Text, out int newWidth) && newWidth > 0)
                 {
-                    // Calculate aspect ratio from current values if both are valid
                     if (int.TryParse(_gameResolutionHeightTextBox.Text, out int currentHeight) && currentHeight > 0)
                     {
                         _lastAspectRatio = (double)currentHeight / newWidth;
                     }
 
-                    // Apply aspect ratio
                     int newHeight = (int)Math.Round(newWidth * _lastAspectRatio);
                     _gameResolutionHeightTextBox.Text = newHeight.ToString();
 
@@ -2354,13 +3387,11 @@ namespace LeafClient.Views
             {
                 if (int.TryParse(_gameResolutionHeightTextBox.Text, out int newHeight) && newHeight > 0)
                 {
-                    // Calculate aspect ratio from current values if both are valid
                     if (int.TryParse(_gameResolutionWidthTextBox.Text, out int currentWidth) && currentWidth > 0)
                     {
                         _lastAspectRatio = (double)newHeight / currentWidth;
                     }
 
-                    // Apply aspect ratio
                     int newWidth = (int)Math.Round(newHeight / _lastAspectRatio);
                     _gameResolutionWidthTextBox.Text = newWidth.ToString();
 
@@ -2405,7 +3436,7 @@ namespace LeafClient.Views
             }
             finally
             {
-                await CalculateDiskUsageAsync(); // Recalculate and update UI
+                await CalculateDiskUsageAsync(); 
             }
         }
 
@@ -2417,12 +3448,7 @@ namespace LeafClient.Views
             try
             {
                 string minecraftCachePath = System.IO.Path.Combine(_minecraftFolder, "assets", "objects");
-                string cmlLibCachePath = System.IO.Path.Combine(_minecraftFolder, "libraries"); // CMLib caches libraries here
-                // We should be careful with versions folder, as it contains installed versions.
-                // For a full "clear cache", we might want to clean up *old* or *corrupted* versions,
-                // but not all of them unless explicitly requested.
-                // For now, let's just ensure the core paths exist, but don't aggressively delete versions.
-                // If a user wants to truly remove versions, they should do it from the Versions page.
+                string cmlLibCachePath = System.IO.Path.Combine(_minecraftFolder, "libraries"); 
 
                 if (System.IO.Directory.Exists(minecraftCachePath))
                 {
@@ -2435,7 +3461,6 @@ namespace LeafClient.Views
                     Console.WriteLine($"[Clear Cache] Deleted CMLib libraries cache: {cmlLibCachePath}");
                 }
 
-                // Recreate essential directories if they were deleted
                 System.IO.Directory.CreateDirectory(System.IO.Path.Combine(_minecraftFolder, "assets", "objects"));
                 System.IO.Directory.CreateDirectory(System.IO.Path.Combine(_minecraftFolder, "libraries"));
 
@@ -2449,7 +3474,7 @@ namespace LeafClient.Views
             }
             finally
             {
-                await CalculateDiskUsageAsync(); // Recalculate and update UI
+                await CalculateDiskUsageAsync(); 
             }
         }
 
@@ -2459,41 +3484,31 @@ namespace LeafClient.Views
                 _otherUsageBar == null || _logsUsageText == null || _profilesUsageText == null || _assetsUsageText == null ||
                 _cacheUsageText == null || _otherUsageText == null || _totalUsageText == null) return;
 
-            // Run disk calculation on a background thread to avoid blocking UI
             await Task.Run(async () =>
             {
                 double logsSize = await GetDirectorySizeAsync(_logFolderPath);
                 double profilesSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "versions"));
                 double assetsSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "assets"));
-                double librariesSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "libraries")); // Use libraries as "cache" for now
+                double librariesSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "libraries")); 
 
                 double totalKnownSize = logsSize + profilesSize + assetsSize + librariesSize;
 
-                // Attempt to get the total .minecraft folder size and calculate "Other"
                 double minecraftRootSize = await GetDirectorySizeAsync(_minecraftFolder);
                 double otherSize = minecraftRootSize - totalKnownSize;
-                if (otherSize < 0) otherSize = 0; // Prevent negative if known parts exceed root (e.g., due to symlinks or incomplete scan)
+                if (otherSize < 0) otherSize = 0; 
 
-                double totalActualDisplayedSize = totalKnownSize + otherSize; // Sum of all displayed categories
+                double totalActualDisplayedSize = totalKnownSize + otherSize; 
 
-                // Update UI elements on the UI thread
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    // Update TextBlocks
                     _logsUsageText.Text = $"Logs - {FormatBytes(logsSize)}";
                     _profilesUsageText.Text = $"Profiles - {FormatBytes(profilesSize)}";
                     _assetsUsageText.Text = $"Assets - {FormatBytes(assetsSize)}";
-                    _cacheUsageText.Text = $"Cache - {FormatBytes(librariesSize)}"; // Display libraries as cache
+                    _cacheUsageText.Text = $"Cache - {FormatBytes(librariesSize)}"; 
                     _otherUsageText.Text = $"Other - {FormatBytes(otherSize)}";
                     _totalUsageText.Text = FormatBytes(totalActualDisplayedSize);
 
-                    // Update Usage Bars
-                    // The XAML for usage bars is a Grid with 5 columns. We'll set the Width of each Border
-                    // within its respective column. For a true continuous bar, a different XAML structure
-                    // (e.g., a single Border with a LinearGradientBrush) would be needed.
-                    // For now, these are just illustrative widths for their respective columns.
 
-                    // Get the total width of the parent container for the bars
                     double parentWidth = 0;
                     if (_logsUsageBar.Parent is Grid parentGrid)
                     {
@@ -2534,8 +3549,8 @@ namespace LeafClient.Views
                         {
                             size += new System.IO.FileInfo(file).Length;
                         }
-                        catch (UnauthorizedAccessException) { /* Ignore access denied files */ }
-                        catch (System.IO.IOException) { /* Ignore other IO errors */ }
+                        catch (UnauthorizedAccessException) {  }
+                        catch (System.IO.IOException) {  }
                     }
                 });
             }
@@ -2660,12 +3675,10 @@ namespace LeafClient.Views
                 return;
             }
 
-            // Divide physical target by screen scaling to get the correct window size.
             double scaling = this.RenderScaling;
             double logicalWidth = width / scaling;
             double logicalHeight = height / scaling;
 
-            // Create a separate, borderless window for the preview
             var previewWindow = new Window
             {
                 Title = "Resolution Preview",
@@ -2675,17 +3688,14 @@ namespace LeafClient.Views
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 CanResize = false,
                 Topmost = true,
-                // Semi-transparent background
                 Background = new SolidColorBrush(Color.Parse("#CC101010")),
                 TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent },
                 ExtendClientAreaToDecorationsHint = true,
                 ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.NoChrome
             };
 
-            // Content showing the dimensions
             var container = new Border
             {
-                // Use the app's accent color for the border
                 BorderBrush = GetBrush("PrimaryAccentBrush", Brushes.Lime),
                 BorderThickness = new Thickness(4),
                 Child = new StackPanel
@@ -2724,10 +3734,8 @@ namespace LeafClient.Views
 
             previewWindow.Content = container;
 
-            // Close if clicked inside the window
             previewWindow.PointerPressed += (_, __) => previewWindow.Close();
 
-            // Close if clicked outside (window loses focus)
             previewWindow.Deactivated += (_, __) => previewWindow.Close();
 
             previewWindow.Show();
@@ -2735,7 +3743,6 @@ namespace LeafClient.Views
 
 
 
-        // ADD close handler
         private void CloseResolutionVisualOverlay(object? sender, RoutedEventArgs e)
         {
             if (_resolutionVisualOverlay == null || _resolutionVisualPanel == null) return;
@@ -2798,13 +3805,12 @@ namespace LeafClient.Views
 
             if (!AreAnimationsEnabled())
             {
-                transform.Y = 0; // Fully visible position
+                transform.Y = 0; 
                 _launchFailureBanner.Opacity = 1;
                 return;
             }
 
-            // Animate slide-down and fade-in
-            transform.Y = -100; // Start off-screen top
+            transform.Y = -100; 
             _launchFailureBanner.Opacity = 0;
 
             const int durationMs = 500;
@@ -2818,36 +3824,34 @@ namespace LeafClient.Views
                     if (ct.IsCancellationRequested) break;
 
                     double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
+                    double eased = 1 - Math.Pow(1 - progress, 3); 
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         if (_launchFailureBanner == null || ct.IsCancellationRequested) return;
-                        transform.Y = -100 + (100 * eased); // -100 -> 0 (slides into view)
-                        _launchFailureBanner.Opacity = eased; // Fade to full opacity
+                        transform.Y = -100 + (100 * eased); 
+                        _launchFailureBanner.Opacity = eased; 
                     });
 
                     if (i < steps)
                         await Task.Delay(delayMs, ct);
                 }
 
-                // Auto-hide after a few seconds
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await Task.Delay(5000, ct); // Show for 5 seconds
+                        await Task.Delay(5000, ct); 
                         if (!ct.IsCancellationRequested)
                         {
                             await Dispatcher.UIThread.InvokeAsync(() => HideLaunchFailureBanner());
                         }
                     }
-                    catch (OperationCanceledException) { /* ignore if cancelled */ }
+                    catch (OperationCanceledException) {  }
                 }, ct);
             }
             catch (OperationCanceledException)
             {
-                // Animation was cancelled (e.g. by HideLaunchFailureBanner), simply return.
             }
         }
 
@@ -2855,42 +3859,72 @@ namespace LeafClient.Views
         {
             if (_launchFailureBanner == null) return;
 
-            _launchFailureBannerCts?.Cancel(); // Cancel any ongoing auto-hide or show animation
-            _launchFailureBannerShownForCurrentLaunch = false; // Reset flag
+            _launchFailureBannerCts?.Cancel();
+            _launchFailureBannerShownForCurrentLaunch = false;
 
             TranslateTransform? transform = _launchFailureBanner.RenderTransform as TranslateTransform;
-            if (transform == null) return;
+            if (transform == null)
+            {
+                _launchFailureBanner.IsVisible = false;
+                return;
+            }
 
             if (!AreAnimationsEnabled())
             {
-                transform.Y = -100; // Instantly move off-screen
+                transform.Y = -100;
                 _launchFailureBanner.Opacity = 0;
                 _launchFailureBanner.IsVisible = false;
                 return;
             }
 
-            // Animate slide-up and fade-out
-            const int durationMs = 500;
-            const int steps = 30;
-            const int delayMs = durationMs / steps;
+            // Capture current position so we animate from wherever the banner actually is
+            double startY = transform.Y;
+            double startOpacity = _launchFailureBanner.Opacity;
 
-            for (int i = 0; i <= steps; i++)
+            if (startOpacity < 0.01)
             {
-                double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (_launchFailureBanner == null) return;
-                    transform.Y = 0 - (100 * eased); // 0 -> -100 (slides out of view)
-                    _launchFailureBanner.Opacity = 1 - eased; // Fade out
-                });
-
-                if (i < steps)
-                    await Task.Delay(delayMs);
+                _launchFailureBanner.IsVisible = false;
+                return;
             }
 
-            _launchFailureBanner.IsVisible = false;
+            var hideCts = new CancellationTokenSource();
+            var ct = hideCts.Token;
+
+            const int durationMs = 380;
+            const int steps = 24;
+            const int delayMs = durationMs / steps;
+
+            try
+            {
+                for (int i = 0; i <= steps; i++)
+                {
+                    if (ct.IsCancellationRequested) break;
+
+                    double progress = (double)i / steps;
+                    double eased = progress * progress; // ease-in: slow start then fast exit
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_launchFailureBanner == null || ct.IsCancellationRequested) return;
+                        transform.Y      = startY + (-100.0 - startY) * eased;
+                        _launchFailureBanner.Opacity = startOpacity * (1.0 - eased);
+                    });
+
+                    if (i < steps)
+                        await Task.Delay(delayMs, ct);
+                }
+            }
+            catch (OperationCanceledException) { }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (_launchFailureBanner != null)
+                {
+                    transform.Y = -100;
+                    _launchFailureBanner.Opacity  = 0;
+                    _launchFailureBanner.IsVisible = false;
+                }
+            });
         }
 
         private async void ShowGameStartingBanner(string message)
@@ -2901,9 +3935,9 @@ namespace LeafClient.Views
 
             _gameStartingBannerText.Text = message;
             _gameStartingBanner.IsVisible = true;
-            _gameStartingBannerShownForCurrentLaunch = true; // Mark as shown for this launch
+            _gameStartingBannerShownForCurrentLaunch = true; 
 
-            _gameStartingBannerCts?.Cancel(); // Cancel any existing auto-hide
+            _gameStartingBannerCts?.Cancel(); 
             _gameStartingBannerCts = new CancellationTokenSource();
             var ct = _gameStartingBannerCts.Token;
 
@@ -2916,13 +3950,12 @@ namespace LeafClient.Views
 
             if (!AreAnimationsEnabled())
             {
-                transform.Y = 0; // Fully visible position
+                transform.Y = 0; 
                 _gameStartingBanner.Opacity = 1;
                 return;
             }
 
-            // Animate slide-down and fade-in
-            transform.Y = -100; // Start off-screen top
+            transform.Y = -100; 
             _gameStartingBanner.Opacity = 0;
 
             const int durationMs = 500;
@@ -2934,31 +3967,30 @@ namespace LeafClient.Views
                 if (ct.IsCancellationRequested) break;
 
                 double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
+                double eased = 1 - Math.Pow(1 - progress, 3); 
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (_gameStartingBanner == null || ct.IsCancellationRequested) return;
-                    transform.Y = -100 + (100 * eased); // -100 -> 0 (slides into view)
-                    _gameStartingBanner.Opacity = eased * 0.8; // Fade to semi-transparent (80% opacity)
+                    transform.Y = -100 + (100 * eased); 
+                    _gameStartingBanner.Opacity = eased * 0.8; 
                 });
 
                 if (i < steps)
                     await Task.Delay(delayMs, ct);
             }
 
-            // Auto-hide after a few seconds
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await Task.Delay(5000, ct); // Show for 5 seconds
+                    await Task.Delay(5000, ct); 
                     if (!ct.IsCancellationRequested)
                     {
                         await Dispatcher.UIThread.InvokeAsync(() => HideGameStartingBanner());
                     }
                 }
-                catch (OperationCanceledException) { /* ignore if cancelled */ }
+                catch (OperationCanceledException) {  }
             }, ct);
         }
 
@@ -2972,20 +4004,19 @@ namespace LeafClient.Views
         {
             if (_gameStartingBanner == null) return;
 
-            _gameStartingBannerCts?.Cancel(); // Cancel any ongoing auto-hide or show animation
+            _gameStartingBannerCts?.Cancel(); 
 
             TranslateTransform? transform = _gameStartingBanner.RenderTransform as TranslateTransform;
             if (transform == null) return;
 
             if (!AreAnimationsEnabled())
             {
-                transform.Y = -100; // Instantly move off-screen
+                transform.Y = -100; 
                 _gameStartingBanner.Opacity = 0;
                 _gameStartingBanner.IsVisible = false;
                 return;
             }
 
-            // Animate slide-up and fade-out
             const int durationMs = 500;
             const int steps = 30;
             const int delayMs = durationMs / steps;
@@ -2993,13 +4024,13 @@ namespace LeafClient.Views
             for (int i = 0; i <= steps; i++)
             {
                 double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
+                double eased = 1 - Math.Pow(1 - progress, 3); 
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (_gameStartingBanner == null) return;
-                    transform.Y = 0 - (100 * eased); // 0 -> -100 (slides out of view)
-                    _gameStartingBanner.Opacity = (1 - eased) * 0.8; // Fade out from current opacity
+                    transform.Y = 0 - (100 * eased); 
+                    _gameStartingBanner.Opacity = (1 - eased) * 0.8; 
                 });
 
                 if (i < steps)
@@ -3009,83 +4040,628 @@ namespace LeafClient.Views
             _gameStartingBanner.IsVisible = false;
         }
 
+        // ─── Launch Animation ─────────────────────────────────────────────────────
+
+        private Image?   _centerLeaf;
+        private Ellipse? _leafGlowOrb;
+        private ProgressBar? _launchAnimProgressBar;
+
+        private void InitLaunchAnimation()
+        {
+            var rootGrid = this.FindControl<Grid>("MainRootGrid");
+            if (rootGrid == null) return;
+
+            var rng = new Random(42);
+            // Canvas 400×360 — centered scene, no text
+            const double cw = 400, ch = 360;
+            double cx = cw / 2, cy = ch / 2;
+
+            _blockCanvas = new Canvas
+            {
+                Width = cw, Height = ch, ClipToBounds = false,
+                RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                RenderTransform = new ScaleTransform(1.0, 1.0),
+            };
+
+            // ── Deep radial background glow ───────────────────────────────────
+            var bgGlow = new Ellipse
+            {
+                Width = 320, Height = 280,
+                Fill = new RadialGradientBrush
+                {
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Color.FromArgb(90, 20, 90, 35),  Offset = 0.0 },
+                        new GradientStop { Color = Color.FromArgb(30, 10, 50, 15),  Offset = 0.6 },
+                        new GradientStop { Color = Color.FromArgb(0,   0,  0,  0),  Offset = 1.0 },
+                    }
+                }
+            };
+            Canvas.SetLeft(bgGlow, cx - 160);
+            Canvas.SetTop(bgGlow,  cy - 140);
+            _blockCanvas.Children.Add(bgGlow);
+
+            // ── 3 faint orbit path rings (flattened ellipses for 3-D feel) ────
+            _orbitPathRings.Clear();
+            var orbitRadiiPairs = new (double rx, double ry)[] { (70, 49), (115, 80), (160, 112) };
+            foreach (var (rx, ry) in orbitRadiiPairs)
+            {
+                var ring = new Ellipse
+                {
+                    Width  = rx * 2, Height = ry * 2,
+                    Stroke = new SolidColorBrush(Color.FromArgb(28, 74, 222, 128)),
+                    StrokeThickness = 1.0,
+                };
+                Canvas.SetLeft(ring, cx - rx);
+                Canvas.SetTop(ring,  cy - ry);
+                _blockCanvas.Children.Add(ring);
+                _orbitPathRings.Add(ring);
+            }
+
+            // ── Soft pulsing glow orb behind the leaf ─────────────────────────
+            _leafGlowOrb = new Ellipse
+            {
+                Width  = 120, Height = 120,
+                Fill = new RadialGradientBrush
+                {
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Color.FromArgb(190, 50, 210, 85),  Offset = 0.00 },
+                        new GradientStop { Color = Color.FromArgb(70,  20, 130, 45),  Offset = 0.55 },
+                        new GradientStop { Color = Color.FromArgb(0,    0,   0,  0),  Offset = 1.00 },
+                    }
+                },
+                Effect = new DropShadowEffect { BlurRadius = 55, Color = Color.Parse("#22C55E"), OffsetX = 0, OffsetY = 0, Opacity = 0.95 }
+            };
+            Canvas.SetLeft(_leafGlowOrb, cx - 60);
+            Canvas.SetTop(_leafGlowOrb,  cy - 60);
+            _blockCanvas.Children.Add(_leafGlowOrb);
+
+            // ── 24 orbiting particles across 3 rings ──────────────────────────
+            // Ring 0: 8 inner  (rx=70,  ry=49),  clockwise,         warm green
+            // Ring 1: 8 middle (rx=115, ry=80),  counter-clockwise, bright green
+            // Ring 2: 8 outer  (rx=160, ry=112), clockwise,         pale/cyan green
+            _orbiterStates.Clear();
+            _orbiterControls.Clear();
+
+            var orbiterRings = new (int count, double rx, double ry, double speed, byte r, byte g, byte b, double szMin, double szMax)[]
+            {
+                ( 8,  70,  49, +0.012, 120, 255, 140, 4.0, 6.5),
+                ( 8, 115,  80, -0.008,  74, 222, 128, 4.5, 7.0),
+                ( 8, 160, 112, +0.006, 150, 240, 180, 3.5, 5.5),
+            };
+            foreach (var (count, rx, ry, speed, cr, cg, cb, szMin, szMax) in orbiterRings)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    double angle = Math.PI * 2.0 * i / count;
+                    double sz    = szMin + rng.NextDouble() * (szMax - szMin);
+                    var orb = new Ellipse
+                    {
+                        Width  = sz, Height = sz,
+                        Fill   = new SolidColorBrush(Color.FromArgb(220, cr, cg, cb)),
+                        Effect = new DropShadowEffect
+                        {
+                            BlurRadius = 12,
+                            Color      = Color.FromArgb(200, cr, cg, cb),
+                            OffsetX = 0, OffsetY = 0, Opacity = 0.95
+                        },
+                    };
+                    _blockCanvas.Children.Add(orb);
+                    _orbiterControls.Add(orb);
+                    _orbiterStates.Add(new OrbiterState
+                    {
+                        Angle     = angle,
+                        Speed     = speed * (0.8 + rng.NextDouble() * 0.4),
+                        Rx        = rx,
+                        Ry        = ry,
+                        GlowPhase = rng.NextDouble() * Math.PI * 2,
+                        GlowSpeed = 1.5 + rng.NextDouble() * 1.5,
+                    });
+                }
+            }
+
+            // ── 30 rising dust motes ──────────────────────────────────────────
+            _sparkleStates.Clear();
+            _sparkleControls.Clear();
+            Color[] dustCols = { Color.Parse("#4ADE80"), Color.Parse("#86EFAC"), Color.Parse("#22C55E"), Color.Parse("#A3E635") };
+            for (int i = 0; i < 30; i++)
+            {
+                double spawnX = cx + (rng.NextDouble() - 0.5) * 220;
+                double spawnY = cy + 50 + rng.NextDouble() * 70;
+                double sz     = 1.5 + rng.NextDouble() * 2.5;
+                var sq = new Rectangle
+                {
+                    Width = sz, Height = sz,
+                    Fill  = new SolidColorBrush(dustCols[i % dustCols.Length]),
+                    Opacity = 0,
+                };
+                Canvas.SetLeft(sq, spawnX - sz / 2);
+                Canvas.SetTop(sq,  spawnY - sz / 2);
+                _blockCanvas.Children.Add(sq);
+                _sparkleControls.Add(sq);
+                _sparkleStates.Add(new SparkleState
+                {
+                    X = spawnX, Y = spawnY,
+                    Vx = (rng.NextDouble() - 0.5) * 0.4,
+                    Vy = -0.28 - rng.NextDouble() * 0.42,
+                    Life    = rng.NextDouble() * 110,   // staggered starts
+                    MaxLife = 100 + rng.NextDouble() * 80,
+                    Size    = sz,
+                    Angle = 0, AngularV = 0,
+                });
+            }
+
+            // ── Leaf logo — exact canvas center, on top of everything ─────────
+            _centerLeaf = new Image
+            {
+                Width  = 84, Height = 84,
+                Source = new Avalonia.Media.Imaging.Bitmap(
+                    Avalonia.Platform.AssetLoader.Open(new Uri("avares://LeafClient/Assets/LeafRebrandedTransparent.png"))),
+                RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                RenderTransform = new ScaleTransform(1.0, 1.0),
+                Effect = new DropShadowEffect { BlurRadius = 30, Color = Color.Parse("#4ADE80"), OffsetX = 0, OffsetY = 0, Opacity = 0.95 }
+            };
+            Canvas.SetLeft(_centerLeaf, cx - 42);
+            Canvas.SetTop(_centerLeaf,  cy - 42);
+            _blockCanvas.Children.Add(_centerLeaf);
+
+            // ── Shimmer "LAUNCHING" text ──────────────────────────────────────
+            _launchAnimText = new TextBlock
+            {
+                Text          = "LAUNCHING",
+                FontSize      = 21,
+                FontWeight    = FontWeight.Bold,
+                LetterSpacing = 8,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.Parse("#2A6A2A")),
+                Effect = new DropShadowEffect { BlurRadius = 14, Color = Color.Parse("#4ADE80"), OffsetX = 0, OffsetY = 0, Opacity = 0.55 }
+            };
+            _launchAnimSubText = new TextBlock
+            {
+                Text          = "LEAF CLIENT",
+                FontSize      = 9,
+                FontWeight    = FontWeight.Medium,
+                LetterSpacing = 5,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromArgb(70, 74, 222, 128)),
+                Margin = new Thickness(0, 6, 0, 0)
+            };
+            var contentStack = new StackPanel
+            {
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                Spacing = 0
+            };
+            contentStack.Children.Add(_blockCanvas);
+            contentStack.Children.Add(_launchAnimText);
+            contentStack.Children.Add(_launchAnimSubText);
+
+            // ── Full-screen overlay ───────────────────────────────────────────
+            _launchAnimOverlay = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(252, 2, 7, 3)),
+                ZIndex     = 999,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Stretch,
+                IsVisible  = false,
+                Child      = contentStack
+            };
+            Grid.SetRowSpan(_launchAnimOverlay, 99);
+            Grid.SetColumnSpan(_launchAnimOverlay, 99);
+            rootGrid.Children.Add(_launchAnimOverlay);
+
+            // ── 60 fps animation timer ────────────────────────────────────────
+            _launchAnimTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _launchAnimTimer.Tick += TickLaunchAnimation;
+
+            // ── Placeholder text timer (no-op — no text in new animation) ─────
+            _launchAnimTextTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60000) };
+            _launchAnimTextTimer.Tick += (_, __) => { };
+        }
+
+        // Repositions all three polygons of one isometric block to centre (bx, by)
+        private static void PositionBlock(Polygon top, Polygon left, Polygon right, double bx, double by, double s)
+        {
+            top.Points = new Points(new[]
+            {
+                new Point(bx,     by - s / 2),
+                new Point(bx + s, by),
+                new Point(bx,     by + s / 2),
+                new Point(bx - s, by),
+            });
+            left.Points = new Points(new[]
+            {
+                new Point(bx - s, by),
+                new Point(bx,     by + s / 2),
+                new Point(bx,     by + s),
+                new Point(bx - s, by + s / 2),
+            });
+            right.Points = new Points(new[]
+            {
+                new Point(bx + s, by),
+                new Point(bx,     by + s / 2),
+                new Point(bx,     by + s),
+                new Point(bx + s, by + s / 2),
+            });
+        }
+
+        private void TickLaunchAnimation(object? sender, EventArgs e)
+        {
+            if (_blockCanvas == null) return;
+            _animTime += 0.016;
+            const double cw = 400, ch = 360;
+            double cx = cw / 2, cy = ch / 2;
+
+            // ── Auto-start fade-out at 5 s ────────────────────────────────────
+            if (!_animFadingOut && _animTime >= 5.0)
+            {
+                _animFadingOut = true;
+                _animFadeTime  = 0;
+            }
+
+            // ── Handle fade-out phase ─────────────────────────────────────────
+            if (_animFadingOut)
+            {
+                _animFadeTime += 0.016;
+                const double fadeDur = 0.85;
+                double fp    = Math.Min(1.0, _animFadeTime / fadeDur);
+                double eased = fp * fp;                         // ease-in: slow → fast
+                _launchAnimOverlay!.Opacity = 1.0 - eased;
+                // Canvas breathes outward slightly as it fades — feels like entering the game
+                if (_blockCanvas.RenderTransform is ScaleTransform cs)
+                {
+                    cs.ScaleX = 1.0 + 0.12 * eased;
+                    cs.ScaleY = 1.0 + 0.12 * eased;
+                }
+                if (fp >= 1.0)
+                {
+                    _launchAnimTimer?.Stop();
+                    _launchAnimOverlay.IsVisible = false;
+                    _launchAnimOverlay.Opacity   = 1.0;
+                    if (_blockCanvas.RenderTransform is ScaleTransform cs2) { cs2.ScaleX = 1; cs2.ScaleY = 1; }
+                    if (_mainContentGrid != null) _mainContentGrid.Effect = null;
+                    return;
+                }
+            }
+
+            // ── Orbiting particles ────────────────────────────────────────────
+            for (int i = 0; i < _orbiterStates.Count; i++)
+            {
+                var o = _orbiterStates[i];
+                o.Angle     += o.Speed;
+                o.GlowPhase += o.GlowSpeed * 0.016;
+
+                // Elliptical orbit gives 3-D feel (full horizontal, foreshortened vertical)
+                double ox = cx + Math.Cos(o.Angle) * o.Rx;
+                double oy = cy + Math.Sin(o.Angle) * o.Ry;
+
+                // Depth cue: back-half particles (sin > 0 in screen-space) appear
+                // smaller and dimmer, giving them a sense of going behind the orb
+                double depthT  = (Math.Sin(o.Angle) + 1.0) * 0.5; // 0=front, 1=back
+                double scale   = 1.0 - depthT * 0.40;
+                double opacity = (0.45 + (1.0 - depthT) * 0.55)
+                               * (0.75 + 0.25 * Math.Sin(o.GlowPhase));
+
+                var orb = _orbiterControls[i];
+                double sz = orb.Width * scale;
+                orb.Opacity = Math.Clamp(opacity, 0.05, 1.0);
+                Canvas.SetLeft(orb, ox - sz * 0.5);
+                Canvas.SetTop(orb,  oy - sz * 0.5);
+
+                _orbiterStates[i] = o;
+            }
+
+            // ── Rising dust motes ─────────────────────────────────────────────
+            for (int i = 0; i < _sparkleStates.Count; i++)
+            {
+                var p = _sparkleStates[i];
+                p.Life += 1;
+                if (p.Life > p.MaxLife)
+                {
+                    // Respawn below canvas centre, spread horizontally
+                    double spawnX = cx + (((i * 17) % 220) - 110);
+                    double spawnY = cy + 55 + (i % 45);
+                    p.X = spawnX;
+                    p.Y = spawnY;
+                    p.Vx = (((i * 7) % 11) - 5) * 0.08;
+                    p.Vy = -0.26 - ((i * 3) % 5) * 0.10;
+                    p.Life    = 0;
+                    p.MaxLife = 100 + (i * 13) % 80;
+                }
+                else
+                {
+                    p.X += p.Vx;
+                    p.Y += p.Vy;
+                }
+
+                double lifeRatio = p.Life / p.MaxLife;
+                double alpha = lifeRatio < 0.20 ? lifeRatio / 0.20
+                             : lifeRatio > 0.72 ? 1.0 - (lifeRatio - 0.72) / 0.28
+                             : 1.0;
+
+                var sq = _sparkleControls[i];
+                sq.Opacity = Math.Clamp(alpha * 0.72, 0, 1);
+                Canvas.SetLeft(sq, p.X - p.Size * 0.5);
+                Canvas.SetTop(sq,  p.Y - p.Size * 0.5);
+
+                _sparkleStates[i] = p;
+            }
+
+            // ── Pulse glow orb ────────────────────────────────────────────────
+            if (_leafGlowOrb != null)
+            {
+                double gs = 120.0 * (1.0 + 0.18 * Math.Sin(_animTime * 2.1));
+                _leafGlowOrb.Width  = gs;
+                _leafGlowOrb.Height = gs;
+                Canvas.SetLeft(_leafGlowOrb, cx - gs * 0.5);
+                Canvas.SetTop(_leafGlowOrb,  cy - gs * 0.5);
+            }
+
+            // ── Breathe leaf logo ─────────────────────────────────────────────
+            if (_centerLeaf?.RenderTransform is ScaleTransform lst)
+            {
+                double breathe = 1.0 + 0.06 * Math.Sin(_animTime * 1.8);
+                lst.ScaleX = breathe;
+                lst.ScaleY = breathe;
+            }
+
+            // ── Shimmer sweep through "LAUNCHING" text ────────────────────────
+            if (_launchAnimText != null)
+            {
+                double sweep = ((_animTime * 0.38) % 1.7) - 0.35;
+                double s0 = Math.Clamp(sweep - 0.18, 0.0, 1.0);
+                double s1 = Math.Clamp(sweep,         0.0, 1.0);
+                double s2 = Math.Clamp(sweep + 0.18, 0.0, 1.0);
+                _launchAnimText.Foreground = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+                    EndPoint   = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Color.Parse("#2A6A2A"), Offset = 0.0 },
+                        new GradientStop { Color = Color.Parse("#2A6A2A"), Offset = s0  },
+                        new GradientStop { Color = Color.Parse("#CCFFE0"), Offset = s1  },
+                        new GradientStop { Color = Color.Parse("#2A6A2A"), Offset = s2  },
+                        new GradientStop { Color = Color.Parse("#2A6A2A"), Offset = 1.0 },
+                    }
+                };
+            }
+        }
+
+        public void ShowLaunchAnimation()
+        {
+            if (_launchAnimOverlay == null) return;
+            _animTime      = 0;
+            _animFadingOut = false;
+            _animFadeTime  = 0;
+            _launchAnimOverlay.Opacity = 1.0;
+            if (_blockCanvas?.RenderTransform is ScaleTransform cs) { cs.ScaleX = 1; cs.ScaleY = 1; }
+            if (_launchAnimText    != null) _launchAnimText.Text    = "LAUNCHING";
+            if (_launchAnimSubText != null) _launchAnimSubText.Text = "Building your world...";
+            if (_mainContentGrid   != null) _mainContentGrid.Effect = new BlurEffect { Radius = 8 };
+
+            // Reset all blocks to their start positions so they fly in fresh
+            for (int i = 0; i < _blockStates.Count; i++)
+            {
+                var b = _blockStates[i];
+                b.X        = b.StartX;
+                b.Y        = b.StartY;
+                b.Progress = 0;
+                b.Arrived  = false;
+                _blockStates[i] = b;
+                if (i < _blockControls.Count)
+                {
+                    var (pt, pl, pr) = _blockControls[i];
+                    PositionBlock(pt, pl, pr, b.StartX, b.StartY, b.Size);
+                }
+            }
+
+            _launchAnimOverlay.IsVisible = true;
+            _launchAnimTimer?.Start();
+            _launchAnimTextTimer?.Start();
+        }
+
+        public void HideLaunchAnimation()
+        {
+            if (_launchAnimOverlay == null || !_launchAnimOverlay.IsVisible) return;
+            _launchAnimTextTimer?.Stop();
+            // Trigger smooth fade-out instead of instant hide
+            if (!_animFadingOut)
+            {
+                _animFadingOut = true;
+                _animFadeTime  = 0;
+                _launchAnimTimer?.Start(); // ensure tick is running for the fade
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // Mods page sub-tab switcher (Mods / Resource Packs).  The Resource Packs
+        // page is now embedded inside ModsPage instead of being its own sidebar
+        // entry — this handler toggles which sub-view is visible and keeps the
+        // pill-tab visual state in sync.
+        private void OnModsTabTapped(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Border pill || pill.Tag is not string tag) return;
+
+            var tabMods   = this.FindControl<Border>("ModsTab_Mods");
+            var tabRp     = this.FindControl<Border>("ModsTab_Rp");
+            var modsScroll = this.FindControl<ScrollViewer>("ModsContent");
+            var title     = this.FindControl<TextBlock>("ModsPageTitle");
+            var subtitle  = this.FindControl<TextBlock>("ModsPageSubtitle");
+            var addLocal  = this.FindControl<Button>("ModsAddLocalBtn");
+            var browse    = this.FindControl<Button>("ModsBrowseBtn");
+
+            bool showMods = tag == "mods";
+
+            if (modsScroll != null) modsScroll.IsVisible = showMods;
+            if (_resourcePacksPage != null)
+            {
+                _resourcePacksPage.IsVisible = !showMods;
+                if (!showMods) _resourcePacksPage.LoadResourcePacksPage();
+            }
+
+            // Hide the Mods-specific action buttons when viewing Resource Packs
+            if (addLocal != null) addLocal.IsVisible = showMods;
+            if (browse != null)   browse.IsVisible   = showMods;
+
+            if (title != null)    title.Text    = showMods ? "MODS" : "RESOURCE PACKS";
+            if (subtitle != null) subtitle.Text = showMods
+                ? "Manage installed mods and resource packs"
+                : "Install and browse resource packs";
+
+            // Pill visual state
+            if (tabMods != null)
+            {
+                tabMods.Background = showMods
+                    ? SolidColorBrush.Parse("#9333EA")
+                    : SolidColorBrush.Parse("#0F1A24");
+                tabMods.BorderBrush = showMods
+                    ? null
+                    : SolidColorBrush.Parse("#1C2A38");
+                tabMods.BorderThickness = showMods ? new Thickness(0) : new Thickness(1);
+                if (tabMods.Child is TextBlock tm)
+                    tm.Foreground = showMods ? Brushes.White : SolidColorBrush.Parse("#9CA3AF");
+            }
+            if (tabRp != null)
+            {
+                tabRp.Background = !showMods
+                    ? SolidColorBrush.Parse("#9333EA")
+                    : SolidColorBrush.Parse("#0F1A24");
+                tabRp.BorderBrush = !showMods
+                    ? null
+                    : SolidColorBrush.Parse("#1C2A38");
+                tabRp.BorderThickness = !showMods ? new Thickness(0) : new Thickness(1);
+                if (tabRp.Child is TextBlock tr)
+                    tr.Foreground = !showMods ? Brushes.White : SolidColorBrush.Parse("#9CA3AF");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+
+        private async void AddLocalMods_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var topLevel = TopLevel.GetTopLevel(this);
+                if (topLevel == null) return;
+
+                var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+                {
+                    Title = "Select Mods",
+                    AllowMultiple = true,
+                    FileTypeFilter = new[]
+                    {
+                        new Avalonia.Platform.Storage.FilePickerFileType("Minecraft Mods") { Patterns = new[] { "*.jar", "*.zip" } },
+                        new Avalonia.Platform.Storage.FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                    }
+                });
+
+                if (files == null || files.Count == 0) return;
+
+                // Determine the mods directory for the active profile
+                string modsDir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    ".minecraft", "mods");
+                Directory.CreateDirectory(modsDir);
+
+                int copied = 0;
+                foreach (var file in files)
+                {
+                    var path = file.Path.IsFile ? file.Path.LocalPath : null;
+                    if (path == null) continue;
+
+                    string destName = System.IO.Path.GetFileName(path);
+                    string destPath = System.IO.Path.Combine(modsDir, destName);
+
+                    // Handle zip files - extract .jar files from inside
+                    if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            using var archive = System.IO.Compression.ZipFile.OpenRead(path);
+                            foreach (var entry in archive.Entries)
+                            {
+                                if (entry.FullName.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) && !entry.FullName.Contains('/'))
+                                {
+                                    string jarDest = System.IO.Path.Combine(modsDir, entry.Name);
+                                    entry.ExtractToFile(jarDest, overwrite: true);
+                                    copied++;
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Mods] Error extracting zip {path}: {ex.Message}");
+                            // Fall back to just copying the zip
+                            File.Copy(path, destPath, overwrite: true);
+                            copied++;
+                        }
+                    }
+                    else
+                    {
+                        File.Copy(path, destPath, overwrite: true);
+                        copied++;
+                    }
+                }
+
+                Console.WriteLine($"[Mods] Copied {copied} mod file(s) to {modsDir}");
+                LoadUserMods();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Mods] Error adding local mods: {ex.Message}");
+            }
+        }
+
         private async void OpenModBrowser(object? sender, RoutedEventArgs e)
         {
             if (_modBrowserOverlay == null || _modBrowserPanel == null) return;
 
+            // Reset to closed state before showing so transitions play from the start
+            _modBrowserPanel.Opacity = 0;
+            _modBrowserPanel.RenderTransform = new ScaleTransform(0.92, 0.92);
+            if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 0;
+
             _modBrowserOverlay.IsVisible = true;
 
             if (_modSearchBox != null) _modSearchBox.Text = "";
-            await SearchMods("");
-
-            TranslateTransform? tt = _modBrowserPanel.RenderTransform as TranslateTransform;
-            if (tt == null)
-            {
-                tt = new TranslateTransform();
-                _modBrowserPanel.RenderTransform = tt;
-            }
+            _ = SearchMods("");
 
             if (!AreAnimationsEnabled())
             {
-                tt.Y = 0;
+                _modBrowserPanel.Opacity = 1;
+                _modBrowserPanel.RenderTransform = new ScaleTransform(1, 1);
+                if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 1;
                 return;
             }
 
-            int durationMs = 500;    // Remove const
-            int steps = 30;          // Remove const  
-            int delayMs = durationMs / steps; // Now this works fine
-
-            for (int i = 0; i <= steps; i++)
-            {
-                double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3);
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (tt != null) tt.Y = -800 + (800 * eased);
-                });
-
-                if (i < steps)
-                    await Task.Delay(delayMs);
-            }
+            // Let Avalonia transitions animate opacity + scale
+            await Task.Delay(16); // one frame delay so the reset state registers
+            _modBrowserPanel.Opacity = 1;
+            _modBrowserPanel.RenderTransform = TransformOperations.Parse("scale(1,1)");
+            if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 1;
         }
 
         private async void CloseModBrowser(object? sender, RoutedEventArgs e)
         {
             if (_modBrowserOverlay == null || _modBrowserPanel == null) return;
 
-            TranslateTransform? tt = _modBrowserPanel.RenderTransform as TranslateTransform;
-            if (tt == null) return;
-
             if (!AreAnimationsEnabled())
             {
-                tt.Y = -800;
                 _modBrowserOverlay.IsVisible = false;
                 return;
             }
 
-            int durationMs = 500;    // Remove const
-            int steps = 30;          // Remove const
-            int delayMs = durationMs / steps; // Now this works fine
+            _modBrowserPanel.Opacity = 0;
+            _modBrowserPanel.RenderTransform = TransformOperations.Parse("scale(0.92,0.92)");
+            if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 0;
 
-            for (int i = 0; i <= steps; i++)
-            {
-                double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3);
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (tt != null) tt.Y = 0 - (800 * eased);
-                });
-
-                if (i < steps)
-                    await Task.Delay(delayMs);
-            }
-
+            // Wait for transition to finish (350ms for scale, 300ms for opacity)
+            await Task.Delay(380);
             _modBrowserOverlay.IsVisible = false;
         }
 
-        // Search functionality with debouncing
         private async void OnModSearchTextChanged(object? sender, TextChangedEventArgs e)
         {
             _modSearchCts?.Cancel();
@@ -3095,12 +4671,11 @@ namespace LeafClient.Views
 
             try
             {
-                await Task.Delay(500, _modSearchCts.Token); // Debounce 500ms
+                await Task.Delay(500, _modSearchCts.Token); 
                 await SearchMods(searchText);
             }
             catch (OperationCanceledException)
             {
-                // Search was cancelled by new input
             }
         }
 
@@ -3108,7 +4683,6 @@ namespace LeafClient.Views
         {
             if (_modsResultsPanel == null || _modsLoadingPanel == null || _modsEmptyPanel == null) return;
 
-            // Show loading state
             _modsLoadingPanel.IsVisible = true;
             _modsEmptyPanel.IsVisible = false;
             _modsResultsPanel.IsVisible = false;
@@ -3119,12 +4693,10 @@ namespace LeafClient.Views
                 string apiUrl;
                 if (string.IsNullOrWhiteSpace(query))
                 {
-                    // Get popular mods when no query
                     apiUrl = "https://api.modrinth.com/v2/search?limit=20&index=downloads";
                 }
                 else
                 {
-                    // Search with query
                     apiUrl = $"https://api.modrinth.com/v2/search?query={Uri.EscapeDataString(query)}&limit=30";
                 }
 
@@ -3132,7 +4704,7 @@ namespace LeafClient.Views
                 try
                 {
 
-                    var searchResponse = JsonSerializer.Deserialize<ModrinthSearchResponse>(response, Json.Options);
+                    var searchResponse = JsonSerializer.Deserialize(response, JsonContext.Default.ModrinthSearchResponse);
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
@@ -3181,7 +4753,6 @@ namespace LeafClient.Views
             var card = new Border
             {
                 Width = 200,
-                // Height removed to avoid big empty space; let content size the card
                 Background = GetBrush("CardBackgroundColor"),
                 CornerRadius = new CornerRadius(12),
                 Cursor = new Cursor(StandardCursorType.Hand),
@@ -3190,10 +4761,9 @@ namespace LeafClient.Views
 
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(120) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // info
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // stats
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); 
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); 
 
-            // Mod Icon
             var iconBorder = new Border
             {
                 Background = GetBrush("HoverBackgroundBrush"),
@@ -3219,7 +4789,6 @@ namespace LeafClient.Views
             Grid.SetRow(iconBorder, 0);
             grid.Children.Add(iconBorder);
 
-            // Info
             var infoStack = new StackPanel { Spacing = 5, Margin = new Thickness(15, 0, 15, 0) };
             var titleText = new TextBlock
             {
@@ -3245,7 +4814,6 @@ namespace LeafClient.Views
             Grid.SetRow(infoStack, 1);
             grid.Children.Add(infoStack);
 
-            // Stats (no giant gap because both rows are Auto and card height is not fixed)
             var statsStack = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -3272,7 +4840,6 @@ namespace LeafClient.Views
 
             card.Child = grid;
 
-            // Click -> open details sidebar instead of installing
             card.PointerPressed += (s, e) => ShowModDetails(mod, modIcon.Source);
 
             return card;
@@ -3321,7 +4888,6 @@ namespace LeafClient.Views
             }
             catch
             {
-                // Fallback to default icon
                 image.Source = new Avalonia.Media.Imaging.Bitmap(
                     AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
             }
@@ -3340,7 +4906,6 @@ namespace LeafClient.Views
         {
             try
             {
-                // Get the latest compatible version
                 var versionsUrl = $"https://api.modrinth.com/v2/project/{mod.project_id}/version";
                 var versionsResponse = await _modrinthClient.GetStringAsync(versionsUrl);
 
@@ -3352,10 +4917,9 @@ namespace LeafClient.Views
                 try
                 {
 
-                    var versions = JsonSerializer.Deserialize<List<ModrinthVersionDetailed>>(versionsResponse, Json.Options);
+                    var versions = JsonSerializer.Deserialize(versionsResponse, JsonContext.Default.ListModrinthVersionDetailed);
 
 
-                    // Find a version compatible with current Minecraft version and Fabric
                     var currentVersion = _currentSettings.SelectedSubVersion;
                     var compatibleVersion = versions?.FirstOrDefault(v =>
                         v.GameVersions.Contains(currentVersion) &&
@@ -3368,7 +4932,6 @@ namespace LeafClient.Views
                         return;
                     }
 
-                    // Download and install the mod
                     var modFile = compatibleVersion.files.FirstOrDefault(f =>
                         f.filename.EndsWith(".jar", StringComparison.OrdinalIgnoreCase));
 
@@ -3378,26 +4941,22 @@ namespace LeafClient.Views
                         return;
                     }
 
-                    // Create installed mod record
                     var installedMod = new InstalledMod
                     {
                         ModId = mod.project_id,
                         Name = mod.title,
                         Description = mod.description ?? "No description available",
                         Version = compatibleVersion.version_number,
-                        MinecraftVersion = currentVersion, // Ensure this is correctly set here
+                        MinecraftVersion = currentVersion, 
                         FileName = modFile.filename,
                         DownloadUrl = modFile.url,
-                        Enabled = true, // Enabled by default after install
+                        Enabled = true, 
                         InstallDate = DateTime.Now,
                         IconUrl = mod.icon_url ?? ""
                     };
 
-                    // Download and install the mod file
                     await DownloadAndInstallMod(modFile.url, modFile.filename, mod.title, installedMod);
 
-                    // Add to settings and save (only if not already present by ModId and MC Version)
-                    // This prevents duplicates if the user installs the same mod multiple times
                     if (!_currentSettings.InstalledMods.Any(m => m.ModId == installedMod.ModId && m.MinecraftVersion == installedMod.MinecraftVersion))
                     {
                         _currentSettings.InstalledMods.Add(installedMod);
@@ -3407,7 +4966,6 @@ namespace LeafClient.Views
                     }
                     else
                     {
-                        // Update existing mod details (e.g., download URL, enable state)
                         Console.WriteLine($"[User Mods] Mod '{mod.title}' for MC {installedMod.MinecraftVersion} already exists in settings. Updating existing entry.");
                         var existingMod = _currentSettings.InstalledMods.First(m => m.ModId == installedMod.ModId && m.MinecraftVersion == installedMod.MinecraftVersion);
                         existingMod.Name = installedMod.Name;
@@ -3415,7 +4973,7 @@ namespace LeafClient.Views
                         existingMod.Version = installedMod.Version;
                         existingMod.FileName = installedMod.FileName;
                         existingMod.DownloadUrl = installedMod.DownloadUrl;
-                        existingMod.Enabled = true; // Always enable if re-installed/updated
+                        existingMod.Enabled = true; 
                         existingMod.InstallDate = DateTime.Now;
                         existingMod.IconUrl = installedMod.IconUrl;
                         await _settingsService.SaveSettingsAsync(_currentSettings);
@@ -3423,7 +4981,6 @@ namespace LeafClient.Views
                     }
 
 
-                    // REFRESH THE UI
                     await Dispatcher.UIThread.InvokeAsync(() => { LoadUserMods(); });
 
                     await ShowSimpleDialog("Success",
@@ -3452,38 +5009,28 @@ namespace LeafClient.Views
             }
         }
 
-        private async Task DownloadAndInstallMod(string downloadUrl, string fileName, string modName, InstalledMod installedMod)
-        {
-            var modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-            Directory.CreateDirectory(modsFolder);
-
-            var filePath = System.IO.Path.Combine(modsFolder, fileName);
-
-            // Show progress
-            ShowProgress(true, $"Downloading {modName}...");
-
-            try
-            {
-                var modData = await _modrinthClient.GetByteArrayAsync(downloadUrl);
-                await File.WriteAllBytesAsync(filePath, modData);
-
-                // Update the installed mod with the actual file path
-                installedMod.FileName = fileName;
-
-                Console.WriteLine($"[Mod Install] Successfully installed {modName}");
-            }
-            finally
-            {
-                ShowProgress(false);
-            }
-        }
-
         private async Task InstallUserModsAsync(string mcVersion)
         {
             string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
             Directory.CreateDirectory(modsFolder);
 
-            // Get only the ENABLED launcher-managed mods for the current MC version
+            // Migration: prune any legacy "leafclient" entries from InstalledMods.
+            // The Leaf core mod is NEVER installed via the user mods path — it's injected
+            // through -Dfabric.addMods pointing at the offline/test-mode build. Having a
+            // stale leafclient row in settings causes this loop to download the old GitHub
+            // jar on every launch, leaving TWO leafclient mods on Fabric's classpath and
+            // non-deterministically loading the wrong one. See LaunchDiag reports.
+            int removedLegacy = _currentSettings.InstalledMods.RemoveAll(
+                m => m.ModId != null && m.ModId.Equals("leafclient", StringComparison.OrdinalIgnoreCase));
+            if (removedLegacy > 0)
+            {
+                _gameOutputWindow?.AppendLog(
+                    $"[LaunchDiag] Pruned {removedLegacy} legacy 'leafclient' entry/entries from InstalledMods (handled via -Dfabric.addMods instead).",
+                    "WARN");
+                Console.WriteLine($"[User Mods] Removed {removedLegacy} legacy leafclient entries from settings.");
+                await _settingsService.SaveSettingsAsync(_currentSettings);
+            }
+
             var modsToEnsurePresent = _currentSettings.InstalledMods
                 .Where(m => m.Enabled && m.MinecraftVersion.Equals(mcVersion, StringComparison.OrdinalIgnoreCase))
                 .ToList();
@@ -3496,14 +5043,24 @@ namespace LeafClient.Views
 
             foreach (var mod in modsToEnsurePresent)
             {
+                // Extra safety: never install anything identified as leafclient via this path.
+                // The legacy entry is already pruned above, but a future bug elsewhere that
+                // re-adds it should still not break the launch.
+                if (mod.ModId != null && mod.ModId.Equals("leafclient", StringComparison.OrdinalIgnoreCase))
+                {
+                    _gameOutputWindow?.AppendLog(
+                        $"[LaunchDiag] Skipping install of '{mod.Name}' (ModId=leafclient) — core mod is injected via -Dfabric.addMods, not the mods folder.",
+                        "WARN");
+                    continue;
+                }
+
                 try
                 {
                     ShowProgress(true, $"Ensuring '{mod.Name}' is installed...");
 
-                    string targetFilePath = GetModFilePath(modsFolder, mod, isDisabled: false); // Should be .jar
-                    string disabledFilePath = GetModFilePath(modsFolder, mod, isDisabled: true); // Should be .jar.disabled
+                    string targetFilePath = GetModFilePath(modsFolder, mod, isDisabled: false); 
+                    string disabledFilePath = GetModFilePath(modsFolder, mod, isDisabled: true); 
 
-                    // If the disabled version exists, but should be enabled, try to move it
                     if (File.Exists(disabledFilePath))
                     {
                         try
@@ -3515,7 +5072,7 @@ namespace LeafClient.Views
                         {
                             Console.Error.WriteLine($"[User Mods] Failed to re-enable '{mod.Name}': {ex.Message}");
                             ShowLaunchErrorBanner($"Failed to re-enable '{mod.Name}'. It might be in use.");
-                            continue; // Skip to next mod
+                            continue; 
                         }
                     }
 
@@ -3524,7 +5081,7 @@ namespace LeafClient.Views
                         string? launcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
                         if (string.IsNullOrEmpty(launcherExePath))
                         {
-                            launcherExePath = Environment.ProcessPath; // Fallback for single-file deployments
+                            launcherExePath = Environment.ProcessPath; 
                         }
 
                         string? launcherDir = null;
@@ -3537,17 +5094,15 @@ namespace LeafClient.Views
                         {
                             Console.Error.WriteLine($"[User Mods] Could not determine launcher directory for internal mod '{mod.Name}'.");
                             ShowLaunchErrorBanner($"Internal mod '{mod.Name}' could not be located. Launch might fail.");
-                            continue; // Skip to next mod
+                            continue; 
                         }
 
-                        // Use mod.FileName (which should now be "leafclient.jar") to construct the source path
                         string sourceLeafClientJarPath = System.IO.Path.Combine(launcherDir, mod.FileName);
 
                         if (System.IO.File.Exists(sourceLeafClientJarPath))
                         {
                             try
                             {
-                                // Copy the internal mod, overwriting if it already exists
                                 System.IO.File.Copy(sourceLeafClientJarPath, targetFilePath, true);
                                 Console.WriteLine($"[User Mods] Copied internal mod '{mod.Name}' from launcher dir to mods folder.");
                             }
@@ -3562,16 +5117,14 @@ namespace LeafClient.Views
                             Console.Error.WriteLine($"[User Mods] Internal mod '{mod.Name}' ({mod.FileName}) not found next to launcher EXE: {sourceLeafClientJarPath}");
                             ShowLaunchErrorBanner($"Internal mod '{mod.Name}' not found. Launch might fail.");
                         }
-                        continue; // Skip to next mod as it's now handled
+                        continue; 
                     }
-                    // Check if the mod (as .jar) already exists
                     if (File.Exists(targetFilePath))
                     {
                         Console.WriteLine($"[User Mods] '{mod.Name}' already exists, skipping download.");
-                        continue; // Mod is already present and enabled
+                        continue; 
                     }
 
-                    // If it's not present (and not disabled), download it
                     var modData = await _modrinthClient.GetByteArrayAsync(mod.DownloadUrl);
                     await File.WriteAllBytesAsync(targetFilePath, modData);
 
@@ -3635,30 +5188,14 @@ namespace LeafClient.Views
         /// <param name="e">Event arguments.</param>
         private async void OpenFeedbackOverlay(object? sender, RoutedEventArgs e)
         {
-            // First, ensure the overlay container and panel themselves are found.
-            // These should have been initialized in InitializeControls.
             if (_feedbackOverlay == null || _feedbackPanel == null)
             {
-                // This indicates a critical XAML loading error for the overlay itself.
                 Console.Error.WriteLine("[CRITICAL ERROR] FeedbackOverlay or FeedbackPanel were not initialized. Check MainWindow.axaml and InitializeControls.");
                 return;
             }
 
-            // If already visible or currently animating, ignore
-            if (_feedbackOverlay.IsVisible || _isFeedbackAnimating)
-            {
-                // If the overlay is already visible but perhaps hidden behind another overlay,
-                // ensure it comes to front and its state is correctly set.
-                if (_feedbackOverlay.IsVisible)
-                {
-                    // Bring to front (Avalonia does this automatically with ZIndex, but can re-trigger animations)
-                    // For now, just ensure animation is not stuck.
-                }
-                return;
-            }
+            if (_feedbackOverlay.IsVisible || _isFeedbackAnimating) return;
 
-            // At this point, all feedback controls should be non-null and events wired from InitializeControls.
-            // We can now safely access them.
             if (_feedbackTypeComboBox == null || _featureSuggestionPanel == null || _suggestionTextBox == null ||
                 _bugReportPanel == null || _expectedBehaviorTextBox == null || _actualBehaviorTextBox == null ||
                 _stepsToReproduceTextBox == null || _attachedLogFileName == null || _osVersionTextBox == null ||
@@ -3669,12 +5206,8 @@ namespace LeafClient.Views
                 return;
             }
 
-
             _isFeedbackAnimating = true;
-            _feedbackOverlay.IsVisible = true;
 
-
-            // Pre-fill system information (these controls are now guaranteed non-null)
             _osVersionTextBox.Text = Environment.OSVersion.ToString();
 
             Version? currentAppVersion = GetCurrentAppVersion();
@@ -3682,25 +5215,17 @@ namespace LeafClient.Views
                                             $"Launcher v{currentAppVersion.Major}.{currentAppVersion.Minor}.{currentAppVersion.Build}" :
                                             "N/A";
 
-            // Determine initial feedback type based on sender's Tag
-            SuggestionType initialType = SuggestionType.Feature; // Default
+            SuggestionType initialType = SuggestionType.Feature;
             if (sender is Button button && button.Tag is string buttonTag)
             {
-                if (Enum.TryParse(buttonTag, out SuggestionType parsedType))
-                {
-                    initialType = parsedType;
-                }
+                if (Enum.TryParse(buttonTag, out SuggestionType parsedType)) initialType = parsedType;
             }
             else if (sender is MenuItem menuItem && menuItem.Tag is string menuTag)
             {
-                if (Enum.TryParse(menuTag, out SuggestionType parsedType))
-                {
-                    initialType = parsedType;
-                }
+                if (Enum.TryParse(menuTag, out SuggestionType parsedType)) initialType = parsedType;
             }
-            SetInitialFeedbackType(initialType); // Set the ComboBox selection
+            SetInitialFeedbackType(initialType);
 
-            // Reset fields
             _suggestionTextBox.Text = string.Empty;
             _expectedBehaviorTextBox.Text = string.Empty;
             _actualBehaviorTextBox.Text = string.Empty;
@@ -3709,117 +5234,38 @@ namespace LeafClient.Views
             _attachedLogFileName.Text = "No file attached";
             _statusMessageTextBlock.Text = string.Empty;
 
-            _feedbackLogFolderPath = _logFolderPath; // Pass the log folder path from MainWindow
-
-            var tt = _feedbackPanel.RenderTransform as TranslateTransform;
-            if (tt == null)
-            {
-                tt = new TranslateTransform();
-                _feedbackPanel.RenderTransform = tt;
-            }
-
-            if (!AreAnimationsEnabled())
-            {
-                tt.Y = 0;
-                _feedbackPanel.Opacity = 1;
-                _isFeedbackAnimating = false;
-                return;
-            }
-
-            const int durationMs = 500;
-            const int steps = 30;
-            const int delayMs = durationMs / steps;
-
-            tt.Y = -700;
-            _feedbackPanel.Opacity = 0;
+            _feedbackLogFolderPath = _logFolderPath;
 
             try
             {
-                for (int i = 0; i <= steps; i++)
-                {
-                    double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (_feedbackPanel == null) return; // Re-check _feedbackPanel in case it became null
-                        tt.Y = -700 + (700 * eased);
-                        _feedbackPanel.Opacity = eased;
-                    });
-
-                    if (i < steps)
-                        await Task.Delay(delayMs);
-                }
+                var backdrop = this.FindControl<Border>("FeedbackBackdrop");
+                await AnimateOverlayOpenAsync(_feedbackOverlay, _feedbackPanel, backdrop);
             }
-            finally
-            {
-                _isFeedbackAnimating = false;
-            }
+            finally { _isFeedbackAnimating = false; }
         }
 
         /// <summary>
         /// Closes the feedback overlay.
         /// </summary>
-        /// <param name="sender">The UI element that triggered the action.</param>
-        /// <param name="e">Event arguments.</param>
         private async void CloseFeedbackOverlay(object? sender, RoutedEventArgs e)
         {
             if (_feedbackOverlay == null || _feedbackPanel == null) return;
-
-            // Only allow closing if overlay is visible and not already animating
-            if (!_feedbackOverlay.IsVisible || _isFeedbackAnimating)
-                return;
+            if (!_feedbackOverlay.IsVisible || _isFeedbackAnimating) return;
 
             _isFeedbackAnimating = true;
-
-            var tt = _feedbackPanel.RenderTransform as TranslateTransform;
-            if (tt == null)
-            {
-                tt = new TranslateTransform();
-                _feedbackPanel.RenderTransform = tt;
-            }
-
-            if (!AreAnimationsEnabled())
-            {
-                tt.Y = -700;
-                _feedbackPanel.Opacity = 0;
-                _feedbackOverlay.IsVisible = false;
-                _isFeedbackAnimating = false;
-                return;
-            }
-
-            const int durationMs = 500;
-            const int steps = 30;
-            const int delayMs = durationMs / steps;
-
             try
             {
-                for (int i = 0; i <= steps; i++)
-                {
-                    double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (_feedbackPanel == null) return;
-                        tt.Y = 0 - (700 * eased);
-                        _feedbackPanel.Opacity = 1 - eased;
-                    });
-
-                    if (i < steps)
-                        await Task.Delay(delayMs);
-                }
-
-                _feedbackOverlay.IsVisible = false;
+                var backdrop = this.FindControl<Border>("FeedbackBackdrop");
+                await AnimateOverlayCloseAsync(_feedbackOverlay, _feedbackPanel, backdrop);
             }
-            finally
-            {
-                _isFeedbackAnimating = false;
-            }
+            finally { _isFeedbackAnimating = false; }
         }
 
         /// <summary>
         /// Handles the selection change in the feedback type ComboBox.
+        /// The ComboBox itself is hidden in the redesigned overlay and is
+        /// driven by the pill-tab buttons via <see cref="OnFeedbackTabTapped"/>,
+        /// but the existing handler still toggles panel visibility so we keep it.
         /// </summary>
         private void FeedbackTypeComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
@@ -3827,7 +5273,78 @@ namespace LeafClient.Views
             {
                 if (_featureSuggestionPanel != null) _featureSuggestionPanel.IsVisible = (tag == "Feature");
                 if (_bugReportPanel != null) _bugReportPanel.IsVisible = (tag == "Bug");
-                if (_statusMessageTextBlock != null) _statusMessageTextBlock.Text = ""; // Clear status message on type change
+                if (_statusMessageTextBlock != null) _statusMessageTextBlock.Text = "";
+                UpdateFeedbackTabVisuals(tag);
+            }
+        }
+
+        /// <summary>
+        /// Click/pointer handler for the redesigned pill tabs in the Feedback
+        /// overlay. Reads the source Border's Tag ("Feature" or "Bug") and
+        /// flips the hidden ComboBox — which in turn triggers panel toggling
+        /// via <see cref="FeedbackTypeComboBox_SelectionChanged"/>.
+        /// </summary>
+        private void OnFeedbackTabTapped(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        {
+            if (sender is not Avalonia.Controls.Border border || border.Tag is not string tag) return;
+            if (_feedbackTypeComboBox?.Items is not { } items) return;
+
+            var target = items.OfType<ComboBoxItem>().FirstOrDefault(i => (i.Tag as string) == tag);
+            if (target != null)
+            {
+                _feedbackTypeComboBox.SelectedItem = target;
+            }
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// Applies the "active" gradient to the selected feedback pill tab and
+        /// reverts the other one to its idle (transparent) look.
+        /// </summary>
+        private void UpdateFeedbackTabVisuals(string activeTag)
+        {
+            var featureTab = this.FindControl<Avalonia.Controls.Border>("FeedbackFeatureTab");
+            var bugTab     = this.FindControl<Avalonia.Controls.Border>("FeedbackBugTab");
+            if (featureTab == null || bugTab == null) return;
+
+            var activeBrush = new Avalonia.Media.LinearGradientBrush
+            {
+                StartPoint = new Avalonia.RelativePoint(0, 0, Avalonia.RelativeUnit.Relative),
+                EndPoint   = new Avalonia.RelativePoint(1, 1, Avalonia.RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new Avalonia.Media.GradientStop(Avalonia.Media.Color.Parse("#9333EA"), 0),
+                    new Avalonia.Media.GradientStop(Avalonia.Media.Color.Parse("#7B2CBF"), 0.55),
+                    new Avalonia.Media.GradientStop(Avalonia.Media.Color.Parse("#6B21A8"), 1),
+                }
+            };
+            var idleBrush = Avalonia.Media.Brushes.Transparent;
+
+            var activeText = Avalonia.Media.Brush.Parse("#FFFFFF");
+            var idleText   = Avalonia.Media.Brush.Parse("#9CA3AF");
+
+            bool featureActive = activeTag == "Feature";
+            featureTab.Background = featureActive ? activeBrush : idleBrush;
+            bugTab.Background     = featureActive ? idleBrush   : activeBrush;
+
+            // Recolour the label + icon inside each pill.
+            PaintPillChildren(featureTab, featureActive ? activeText : idleText);
+            PaintPillChildren(bugTab,     featureActive ? idleText   : activeText);
+        }
+
+        /// <summary>
+        /// Helper that walks a feedback pill Border and colours its TextBlock
+        /// and Path children to match the active/idle palette.
+        /// </summary>
+        private static void PaintPillChildren(Avalonia.Controls.Border pill, Avalonia.Media.IBrush brush)
+        {
+            foreach (var tb in pill.GetVisualDescendants().OfType<Avalonia.Controls.TextBlock>())
+            {
+                tb.Foreground = brush;
+            }
+            foreach (var path in pill.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>())
+            {
+                path.Stroke = brush;
             }
         }
 
@@ -3854,7 +5371,6 @@ namespace LeafClient.Views
         /// </summary>
         private async void AttachLogButton_Click(object? sender, RoutedEventArgs e)
         {
-            // All these controls should be non-null after InitializeControls
             if (_statusMessageTextBlock == null || _attachedLogFileName == null || _osVersionTextBox == null || _leafClientVersionTextBox == null) return;
 
             _statusMessageTextBlock.Text = "Loading log file...";
@@ -3920,7 +5436,7 @@ namespace LeafClient.Views
             {
                 result = await _suggestionsService.SendFeatureSuggestionAsync(_suggestionTextBox?.Text ?? string.Empty);
             }
-            else // BugReportPanel.IsVisible == true
+            else 
             {
                 result = await _suggestionsService.SendBugReportAsync(
                     _expectedBehaviorTextBox?.Text ?? string.Empty,
@@ -3937,8 +5453,8 @@ namespace LeafClient.Views
 
             if (result.Success)
             {
-                await Task.Delay(2000); // Show message for a bit
-                CloseFeedbackOverlay(null, new RoutedEventArgs()); // Close the overlay on success
+                await Task.Delay(2000); 
+                CloseFeedbackOverlay(null, new RoutedEventArgs()); 
             }
         }
 
@@ -3951,157 +5467,456 @@ namespace LeafClient.Views
         }
 
 
-        private async void OpenAboutLeafClient(object? sender, RoutedEventArgs e)
+        // ─── Crash Report Overlay ────────────────────────────────────────────
+
+        /// <summary>
+        /// Shows the crash report overlay with slide-in animation.
+        /// Call this from App.axaml.cs after capturing the screenshot.
+        /// </summary>
+        public async void ShowCrashReportOverlay(Exception ex, byte[]? screenshotBytes)
         {
-            if (_aboutLeafClientOverlay == null || _aboutLeafClientPanel == null) return;
+            if (_crashReportOverlay == null || _crashReportPanel == null) return;
+            if (_crashReportOverlay.IsVisible || _isCrashAnimating) return;
 
-            // If already visible or currently animating, ignore
-            if (_aboutLeafClientOverlay.IsVisible || _isAboutLeafClientAnimating)
-                return;
+            _currentCrashException = ex;
+            _currentScreenshotBytes = screenshotBytes;
+            _lastCrashSendResult = null;
 
-            _isAboutLeafClientAnimating = true;
-            _aboutLeafClientOverlay.IsVisible = true;
+            // Reset state
+            if (_crashSendButton != null) _crashSendButton.IsEnabled = true;
+            if (_crashDismissButton != null) _crashDismissButton.IsEnabled = true;
+            if (_crashStatusLine != null) { _crashStatusLine.Text = ""; _crashStatusLine.IsVisible = false; }
 
-            var tt = _aboutLeafClientPanel.RenderTransform as TranslateTransform;
-            if (tt == null)
-            {
-                tt = new TranslateTransform();
-                _aboutLeafClientPanel.RenderTransform = tt;
-            }
+            // Hide the copy / open-folder fallback buttons until the send
+            // attempt finishes and we know whether a local copy exists.
+            var copyBtnReset = this.FindControl<Button>("CrashCopyButton");
+            var openBtnReset = this.FindControl<Button>("CrashOpenFolderButton");
+            if (copyBtnReset != null) copyBtnReset.IsVisible = false;
+            if (openBtnReset != null) openBtnReset.IsVisible = false;
+            if (_crashScreenshotLine != null)
+                _crashScreenshotLine.Text = screenshotBytes != null
+                    ? "A screenshot was taken when this happened."
+                    : "No screenshot was captured.";
+
+            _isCrashAnimating = true;
+            _crashReportOverlay.IsVisible = true;
+
+            var tt = _crashReportPanel.RenderTransform as TranslateTransform ?? new TranslateTransform();
+            _crashReportPanel.RenderTransform = tt;
 
             if (!AreAnimationsEnabled())
             {
                 tt.Y = 0;
-                _aboutLeafClientPanel.Opacity = 1;
-                _isAboutLeafClientAnimating = false;
+                _crashReportPanel.Opacity = 1;
+                _isCrashAnimating = false;
                 return;
             }
 
             const int durationMs = 500;
             const int steps = 30;
-            const int delayMs = durationMs / steps;
-
             tt.Y = -700;
-            _aboutLeafClientPanel.Opacity = 0;
+            _crashReportPanel.Opacity = 0;
 
             try
             {
                 for (int i = 0; i <= steps; i++)
                 {
-                    double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3);
-
+                    double eased = 1 - Math.Pow(1 - (double)i / steps, 3);
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (_aboutLeafClientPanel == null) return;
-                        tt.Y = -700 + (700 * eased);
-                        _aboutLeafClientPanel.Opacity = eased;
+                        if (_crashReportPanel == null) return;
+                        tt.Y = -700 + 700 * eased;
+                        _crashReportPanel.Opacity = eased;
                     });
-
-                    if (i < steps)
-                        await Task.Delay(delayMs);
+                    if (i < steps) await Task.Delay(durationMs / steps);
                 }
             }
             finally
             {
-                _isAboutLeafClientAnimating = false;
+                _isCrashAnimating = false;
             }
         }
 
-        // 3) REPLACE your existing CloseAboutLeafClient with this
+        private async void CloseCrashOverlay()
+        {
+            if (_crashReportOverlay == null || _crashReportPanel == null) return;
+            if (!_crashReportOverlay.IsVisible || _isCrashAnimating) return;
+
+            _isCrashAnimating = true;
+
+            if (!AreAnimationsEnabled())
+            {
+                _crashReportPanel.Opacity = 0;
+                _crashReportOverlay.IsVisible = false;
+                _isCrashAnimating = false;
+                return;
+            }
+
+            // Reset any translation from the entry animation
+            if (_crashReportPanel.RenderTransform is TranslateTransform tt2)
+                tt2.Y = 0;
+
+            const int durationMs = 320;
+            const int steps = 22;
+
+            var blurEffect = new Avalonia.Media.BlurEffect { Radius = 0 };
+            _crashReportPanel.Effect = blurEffect;
+
+            try
+            {
+                for (int i = 0; i <= steps; i++)
+                {
+                    double t = (double)i / steps;
+                    double eased = t * t; // ease-in: slow start, fast end
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_crashReportPanel == null) return;
+                        _crashReportPanel.Opacity = 1 - eased;
+                        blurEffect.Radius = eased * 18;
+                    });
+                    if (i < steps) await Task.Delay(durationMs / steps);
+                }
+                _crashReportOverlay.IsVisible = false;
+            }
+            finally
+            {
+                _isCrashAnimating = false;
+                _currentCrashException = null;
+                _currentScreenshotBytes = null;
+                if (_crashReportPanel != null)
+                {
+                    _crashReportPanel.Effect = null;
+                    _crashReportPanel.Opacity = 1;
+                }
+            }
+        }
+
+        // Holds the most recent crash-send outcome so the user can copy or
+        // open the locally-saved report even after the send finishes.
+        private LeafClient.Services.CrashReportService.SendResult? _lastCrashSendResult;
+
+        private async void CrashSendButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (_crashSendButton != null) _crashSendButton.IsEnabled = false;
+            if (_crashDismissButton != null) _crashDismissButton.IsEnabled = false;
+
+            if (_crashStatusLine != null)
+            {
+                _crashStatusLine.Text = "Sending report...";
+                _crashStatusLine.IsVisible = true;
+                _crashStatusLine.Foreground = GetBrush("SecondaryForegroundBrush");
+            }
+
+            LeafClient.Services.CrashReportService.SendResult? result = null;
+            try
+            {
+                var ex = _currentCrashException;
+                var screenshot = _currentScreenshotBytes;
+                if (ex != null)
+                {
+                    var settingsService = new LeafClient.Services.SettingsService();
+                    var settings = await settingsService.LoadSettingsAsync();
+                    result = await LeafClient.Services.CrashReportService.SendAsync(ex, screenshot, settings);
+                }
+            }
+            catch { /* never propagate from the crash reporter */ }
+
+            _lastCrashSendResult = result;
+
+            // Reveal the fallback actions only when we actually have a saved
+            // copy on disk — if both the network AND the local save failed
+            // there's nothing for the user to open.
+            var copyBtn = this.FindControl<Button>("CrashCopyButton");
+            var openBtn = this.FindControl<Button>("CrashOpenFolderButton");
+            bool haveSaved = result is { SavedLocally: true, SavedPath: not null };
+            if (copyBtn != null) copyBtn.IsVisible = haveSaved;
+            if (openBtn != null) openBtn.IsVisible = haveSaved;
+
+            if (_crashStatusLine != null)
+            {
+                if (result is { NetworkSent: true })
+                {
+                    _crashStatusLine.Text = haveSaved
+                        ? "Report sent. Thank you! ✅  (Saved a copy locally too.)"
+                        : "Report sent. Thank you! ✅";
+                    _crashStatusLine.Foreground = GetBrush("SuccessBrush");
+                }
+                else
+                {
+                    string reason = result?.Failure switch
+                    {
+                        LeafClient.Services.CrashReportService.FailureKind.IspBlockOrTlsIntercept
+                            => "Your network is blocking our upload endpoint (ISP/firewall/TLS intercept).",
+                        LeafClient.Services.CrashReportService.FailureKind.Timeout
+                            => "The upload timed out.",
+                        LeafClient.Services.CrashReportService.FailureKind.NetworkUnreachable
+                            => "Couldn't reach the upload endpoint. Check your connection.",
+                        LeafClient.Services.CrashReportService.FailureKind.ServerRejected
+                            => "The server rejected the report.",
+                        _ => "Couldn't send the report.",
+                    };
+
+                    _crashStatusLine.Text = haveSaved
+                        ? $"{reason}\nSaved locally — use the buttons below to copy or open it and send via Discord."
+                        : reason;
+                    _crashStatusLine.Foreground = GetBrush("ErrorBrush");
+                }
+            }
+
+            if (_crashSendButton != null) _crashSendButton.IsEnabled = true;
+            if (_crashDismissButton != null) _crashDismissButton.IsEnabled = true;
+
+            // Only auto-close on success. When the send failed we leave the
+            // overlay open so the user has time to read the error and use
+            // the Copy / Open Folder buttons.
+            if (result is { NetworkSent: true })
+            {
+                await Task.Delay(1800);
+                CloseCrashOverlay();
+            }
+        }
+
+        /// <summary>
+        /// Copies the JSON crash payload from the most recent send attempt
+        /// to the clipboard, so the user can paste it into Discord/email.
+        /// </summary>
+        private async void CrashCopyButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var result = _lastCrashSendResult;
+            if (result?.PayloadJson == null) return;
+
+            try
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard != null)
+                {
+                    await clipboard.SetTextAsync(result.PayloadJson);
+                    if (_crashStatusLine != null)
+                    {
+                        _crashStatusLine.Text = "Copied crash JSON to clipboard — paste it into Discord and we'll take a look.";
+                        _crashStatusLine.Foreground = GetBrush("SuccessBrush");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[CrashReport] Copy to clipboard failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Opens the %APPDATA%\LeafClient\CrashReports folder in Explorer so
+        /// the user can grab the saved .json / .txt and share it manually.
+        /// </summary>
+        private void CrashOpenFolderButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var folder = _lastCrashSendResult?.SavedFolder;
+            if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return;
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = folder,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[CrashReport] Open folder failed: {ex.Message}");
+            }
+        }
+
+        private void CrashDismissButton_Click(object? sender, RoutedEventArgs e)
+        {
+            CloseCrashOverlay();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ─────────────────────────────────────────────────────────────────
+        // Smooth overlay open/close helpers.
+        //
+        // The old frame-stepped animations (30 × Task.Delay(16ms)) stuttered
+        // badly because the timer granularity on Windows is only ~15ms, so
+        // every step ended up 15-30ms instead of 16.7ms. We now rely on the
+        // Avalonia transition system — the panel itself has a DoubleTransition
+        // for Opacity and a TransformOperationsTransition for RenderTransform
+        // configured in XAML, and we just set the target values here. The
+        // compositor interpolates at render-tick cadence so it stays glassy
+        // smooth regardless of UI thread load.
+        //
+        // The pattern:
+        //   1. Make the overlay IsVisible=true so the panel is laid out.
+        //   2. Yield one background-priority tick so the starting state
+        //      (scale 0.92, opacity 0) actually gets rendered.
+        //   3. Set the target state (scale 1.0, opacity 1) — the Transition
+        //      kicks in and animates to it.
+        //   4. For close: set the target to the hidden state, wait the
+        //      transition duration, then set IsVisible=false.
+        // ─────────────────────────────────────────────────────────────────
+        private const int OverlayAnimDurationMs = 320;
+
+        private async Task AnimateOverlayOpenAsync(
+            Grid? overlay, Border? panel, Border? backdrop)
+        {
+            if (overlay == null || panel == null) return;
+
+            overlay.IsVisible = true;
+
+            // Initial (closed) state. Do this explicitly so re-opening after
+            // a previous close animation starts from the right values.
+            panel.Opacity = 0;
+            if (panel.RenderTransform is ScaleTransform st0)
+            {
+                st0.ScaleX = 0.92;
+                st0.ScaleY = 0.92;
+            }
+            else
+            {
+                panel.RenderTransform = new ScaleTransform { ScaleX = 0.92, ScaleY = 0.92 };
+            }
+            if (backdrop != null) backdrop.Opacity = 0;
+
+            if (!AreAnimationsEnabled())
+            {
+                panel.Opacity = 1;
+                if (panel.RenderTransform is ScaleTransform stI)
+                {
+                    stI.ScaleX = 1.0;
+                    stI.ScaleY = 1.0;
+                }
+                if (backdrop != null) backdrop.Opacity = 1;
+                return;
+            }
+
+            // Wait one background-priority tick so the initial state actually
+            // renders before we set the target, otherwise the transition
+            // snaps straight to the end.
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+            if (backdrop != null) backdrop.Opacity = 1;
+            panel.Opacity = 1;
+            if (panel.RenderTransform is ScaleTransform stT)
+            {
+                stT.ScaleX = 1.0;
+                stT.ScaleY = 1.0;
+            }
+
+            await Task.Delay(OverlayAnimDurationMs);
+        }
+
+        private async Task AnimateOverlayCloseAsync(
+            Grid? overlay, Border? panel, Border? backdrop)
+        {
+            if (overlay == null || panel == null || !overlay.IsVisible) return;
+
+            if (!AreAnimationsEnabled())
+            {
+                panel.Opacity = 0;
+                if (panel.RenderTransform is ScaleTransform stI)
+                {
+                    stI.ScaleX = 0.92;
+                    stI.ScaleY = 0.92;
+                }
+                if (backdrop != null) backdrop.Opacity = 0;
+                overlay.IsVisible = false;
+                return;
+            }
+
+            if (backdrop != null) backdrop.Opacity = 0;
+            panel.Opacity = 0;
+            if (panel.RenderTransform is ScaleTransform st)
+            {
+                st.ScaleX = 0.92;
+                st.ScaleY = 0.92;
+            }
+
+            await Task.Delay(OverlayAnimDurationMs);
+            overlay.IsVisible = false;
+        }
+
+        private async void OpenAboutLeafClient(object? sender, RoutedEventArgs e)
+        {
+            if (_aboutLeafClientOverlay == null || _aboutLeafClientPanel == null) return;
+            if (_aboutLeafClientOverlay.IsVisible || _isAboutLeafClientAnimating) return;
+
+            _isAboutLeafClientAnimating = true;
+            try
+            {
+                var backdrop = this.FindControl<Border>("AboutLeafClientBackdrop");
+                await AnimateOverlayOpenAsync(_aboutLeafClientOverlay, _aboutLeafClientPanel, backdrop);
+            }
+            finally { _isAboutLeafClientAnimating = false; }
+        }
 
         private async void CloseAboutLeafClient(object? sender, RoutedEventArgs e)
         {
             if (_aboutLeafClientOverlay == null || _aboutLeafClientPanel == null) return;
-
-            // Only allow closing if overlay is visible and not already animating
-            if (!_aboutLeafClientOverlay.IsVisible || _isAboutLeafClientAnimating)
-                return;
+            if (!_aboutLeafClientOverlay.IsVisible || _isAboutLeafClientAnimating) return;
 
             _isAboutLeafClientAnimating = true;
-
-            var tt = _aboutLeafClientPanel.RenderTransform as TranslateTransform;
-            if (tt == null)
-            {
-                tt = new TranslateTransform();
-                _aboutLeafClientPanel.RenderTransform = tt;
-            }
-
-            if (!AreAnimationsEnabled())
-            {
-                tt.Y = -700;
-                _aboutLeafClientPanel.Opacity = 0;
-                _aboutLeafClientOverlay.IsVisible = false;
-                _isAboutLeafClientAnimating = false;
-                return;
-            }
-
-            const int durationMs = 500;
-            const int steps = 30;
-            const int delayMs = durationMs / steps;
-
             try
             {
-                for (int i = 0; i <= steps; i++)
-                {
-                    double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (_aboutLeafClientPanel == null) return;
-                        tt.Y = 0 - (700 * eased);
-                        _aboutLeafClientPanel.Opacity = 1 - eased;
-                    });
-
-                    if (i < steps)
-                        await Task.Delay(delayMs);
-                }
-
-                _aboutLeafClientOverlay.IsVisible = false;
+                var backdrop = this.FindControl<Border>("AboutLeafClientBackdrop");
+                await AnimateOverlayCloseAsync(_aboutLeafClientOverlay, _aboutLeafClientPanel, backdrop);
             }
-            finally
-            {
-                _isAboutLeafClientAnimating = false;
-            }
+            finally { _isAboutLeafClientAnimating = false; }
         }
 
 
-
-        // 4) REPLACE your existing OpenCommonQuestions with this
-
-        private async void OpenCommonQuestions(object? sender, RoutedEventArgs e)
+        private async void OpenCheckout(string url)
         {
-            if (_commonQuestionsOverlay == null || _commonQuestionsPanel == null) return;
+            if (_checkoutOverlay == null || _checkoutPanel == null) return;
 
-            // If already visible or currently animating, ignore
-            if (_commonQuestionsOverlay.IsVisible || _isCommonQuestionsAnimating)
-                return;
+            if (_checkoutOverlay.IsVisible || _isCheckoutAnimating) return;
 
-            _isCommonQuestionsAnimating = true;
-            _commonQuestionsOverlay.IsVisible = true;
+            _isCheckoutAnimating = true;
+            _checkoutOverlay.IsVisible = true;
 
-            var tt = _commonQuestionsPanel.RenderTransform as TranslateTransform;
+            // Make the WebView visible BEFORE setting the URL.  The backing
+            // WebView2 HWND silently drops navigation requests issued while it
+            // is hidden, which is why subsequent opens rendered an empty panel
+            // after the first checkout was closed.
+            if (_checkoutWebView != null)
+            {
+                _checkoutWebView.IsVisible = true;
+
+                // Give the native HWND enough time to re-attach to the visual
+                // tree before we issue the navigation. A single background tick
+                // is not enough after multiple hide/show cycles — the HWND
+                // needs layout + render passes to complete.
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+                await Task.Delay(80);
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+                try
+                {
+                    _checkoutWebView.Url = new Uri(url);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Checkout] Failed to load URL in WebView: {ex.Message}");
+                }
+            }
+
+            var tt = _checkoutPanel.RenderTransform as TranslateTransform;
             if (tt == null)
             {
-                tt = new TranslateTransform();
-                _commonQuestionsPanel.RenderTransform = tt;
+                tt = new TranslateTransform { Y = 900 };
+                _checkoutPanel.RenderTransform = tt;
             }
 
             if (!AreAnimationsEnabled())
             {
                 tt.Y = 0;
-                _commonQuestionsPanel.Opacity = 1;
-                _isCommonQuestionsAnimating = false;
+                _isCheckoutAnimating = false;
                 return;
             }
 
-            const int durationMs = 500;
-            const int steps = 30;
+            const int durationMs = 300;
+            const int steps = 20;
             const int delayMs = durationMs / steps;
-
-            tt.Y = -700;
-            _commonQuestionsPanel.Opacity = 0;
 
             try
             {
@@ -4112,9 +5927,8 @@ namespace LeafClient.Views
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (_commonQuestionsPanel == null) return;
-                        tt.Y = -700 + (700 * eased);
-                        _commonQuestionsPanel.Opacity = eased;
+                        if (_checkoutPanel == null) return;
+                        tt.Y = 900 * (1 - eased);
                     });
 
                     if (i < steps)
@@ -4123,40 +5937,45 @@ namespace LeafClient.Views
             }
             finally
             {
-                _isCommonQuestionsAnimating = false;
+                _isCheckoutAnimating = false;
             }
         }
 
-        // 5) REPLACE your existing CloseCommonQuestions with this
-
-        private async void CloseCommonQuestions(object? sender, RoutedEventArgs e)
+        private async void CloseCheckout()
         {
-            if (_commonQuestionsOverlay == null || _commonQuestionsPanel == null) return;
+            if (_checkoutOverlay == null || _checkoutPanel == null) return;
+            if (!_checkoutOverlay.IsVisible || _isCheckoutAnimating) return;
 
-            // Only allow closing if overlay is visible and not already animating
-            if (!_commonQuestionsOverlay.IsVisible || _isCommonQuestionsAnimating)
-                return;
+            _isCheckoutAnimating = true;
 
-            _isCommonQuestionsAnimating = true;
+            // Hide the WebView BEFORE animating — the native HWND doesn't respect
+            // RenderTransform, so if we leave it visible it floats above the
+            // sliding panel and then snaps away at the end.
+            // Do NOT navigate to about:blank here: issuing a navigation while the
+            // HWND is hidden corrupts WebView2's navigation state, causing the next
+            // open to silently drop the URL and show a blank panel.
+            if (_checkoutWebView != null)
+            {
+                _checkoutWebView.IsVisible = false;
+            }
 
-            var tt = _commonQuestionsPanel.RenderTransform as TranslateTransform;
+            var tt = _checkoutPanel.RenderTransform as TranslateTransform;
             if (tt == null)
             {
                 tt = new TranslateTransform();
-                _commonQuestionsPanel.RenderTransform = tt;
+                _checkoutPanel.RenderTransform = tt;
             }
 
             if (!AreAnimationsEnabled())
             {
-                tt.Y = -700;
-                _commonQuestionsPanel.Opacity = 0;
-                _commonQuestionsOverlay.IsVisible = false;
-                _isCommonQuestionsAnimating = false;
+                tt.Y = 900;
+                _checkoutOverlay.IsVisible = false;
+                _isCheckoutAnimating = false;
                 return;
             }
 
-            const int durationMs = 500;
-            const int steps = 30;
+            const int durationMs = 250;
+            const int steps = 16;
             const int delayMs = durationMs / steps;
 
             try
@@ -4164,25 +5983,233 @@ namespace LeafClient.Views
                 for (int i = 0; i <= steps; i++)
                 {
                     double progress = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - progress, 3);
+                    double eased = Math.Pow(progress, 2);
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (_commonQuestionsPanel == null) return;
-                        tt.Y = 0 - (700 * eased);
-                        _commonQuestionsPanel.Opacity = 1 - eased;
+                        if (_checkoutPanel == null) return;
+                        tt.Y = 900 * eased;
                     });
 
                     if (i < steps)
                         await Task.Delay(delayMs);
                 }
 
-                _commonQuestionsOverlay.IsVisible = false;
+                _checkoutOverlay.IsVisible = false;
             }
             finally
             {
-                _isCommonQuestionsAnimating = false;
+                _isCheckoutAnimating = false;
             }
+        }
+
+        private void OnCheckoutClose(object? sender, TappedEventArgs e) => CloseCheckout();
+
+        private void OnCheckoutBackdropTapped(object? sender, TappedEventArgs e) => CloseCheckout();
+
+        // ─── Monthly Pass Popup ─────────────────────────────────────────────
+        private bool _isMonthlyPassAnimating;
+
+        public async void ShowMonthlyPassPopup()
+        {
+            var overlay = this.FindControl<Grid>("MonthlyPassOverlay");
+            var panel   = this.FindControl<Border>("MonthlyPassPanel");
+            var backdrop= this.FindControl<Border>("MonthlyPassBackdrop");
+            if (overlay == null || panel == null) return;
+            if (_isMonthlyPassAnimating || overlay.IsVisible) return;
+
+            _isMonthlyPassAnimating = true;
+
+            // Reset the tier selector to Monthly on every open so repeat shows
+            // don't remember the previous click.
+            if (this.FindControl<Border>("LeafPlusTier_Monthly") is { } monthlyPill)
+            {
+                OnLeafPlusTierTapped(monthlyPill, null!);
+            }
+
+            overlay.IsVisible = true;
+            if (backdrop != null) backdrop.Opacity = 0;
+            panel.Opacity = 0;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(0.85, 0.85);
+            panel.RenderTransform       = st;
+            panel.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            st.ScaleX = 0.85;
+            st.ScaleY = 0.85;
+
+            if (!AreAnimationsEnabled())
+            {
+                if (backdrop != null) backdrop.Opacity = 1;
+                panel.Opacity = 1;
+                st.ScaleX = 1; st.ScaleY = 1;
+                _isMonthlyPassAnimating = false;
+                return;
+            }
+
+            const int steps = 18;
+            const int durationMs = 260;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t    = (double)i / steps;
+                double ease = 1 - Math.Pow(1 - t, 3);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = ease;
+                    panel.Opacity = ease;
+                    st.ScaleX = 0.85 + 0.15 * ease;
+                    st.ScaleY = 0.85 + 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+
+            _isMonthlyPassAnimating = false;
+        }
+
+        private async void CloseMonthlyPassPopup()
+        {
+            var overlay = this.FindControl<Grid>("MonthlyPassOverlay");
+            var panel   = this.FindControl<Border>("MonthlyPassPanel");
+            var backdrop= this.FindControl<Border>("MonthlyPassBackdrop");
+            if (overlay == null || panel == null) return;
+            if (!overlay.IsVisible || _isMonthlyPassAnimating) return;
+
+            _isMonthlyPassAnimating = true;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+            panel.RenderTransform = st;
+
+            if (!AreAnimationsEnabled())
+            {
+                overlay.IsVisible = false;
+                _isMonthlyPassAnimating = false;
+                return;
+            }
+
+            const int steps = 14;
+            const int durationMs = 200;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t    = (double)i / steps;
+                double ease = Math.Pow(t, 2);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = 1 - ease;
+                    panel.Opacity = 1 - ease;
+                    st.ScaleX = 1.0 - 0.15 * ease;
+                    st.ScaleY = 1.0 - 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+
+            overlay.IsVisible = false;
+            _isMonthlyPassAnimating = false;
+        }
+
+        private void OnMonthlyPassClose(object? sender, TappedEventArgs e) => CloseMonthlyPassPopup();
+        private void OnMonthlyPassBackdropTapped(object? sender, TappedEventArgs e) => CloseMonthlyPassPopup();
+
+        // Currently selected Leaf+ billing tier. Defaults to "monthly" — we
+        // reset the visual highlight to the monthly pill every time the popup
+        // is shown so repeat opens don't remember the previous selection.
+        private string _selectedLeafPlusTier = "monthly";
+
+        private void OnLeafPlusTierTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is not Border pill || pill.Tag is not string tier) return;
+            _selectedLeafPlusTier = tier;
+
+            var monthly   = this.FindControl<Border>("LeafPlusTier_Monthly");
+            var quarterly = this.FindControl<Border>("LeafPlusTier_Quarterly");
+            var yearly    = this.FindControl<Border>("LeafPlusTier_Yearly");
+
+            void Paint(Border? b, bool selected)
+            {
+                if (b == null) return;
+                if (selected)
+                {
+                    b.Background = SolidColorBrush.Parse("#1A1E44");
+                    b.BorderBrush = SolidColorBrush.Parse("#7C3AED");
+                    b.BorderThickness = new Thickness(1.5);
+                }
+                else
+                {
+                    b.Background = SolidColorBrush.Parse("#0F1A24");
+                    b.BorderBrush = SolidColorBrush.Parse("#1C2A38");
+                    b.BorderThickness = new Thickness(1);
+                }
+            }
+
+            Paint(monthly,   tier == "monthly");
+            Paint(quarterly, tier == "quarterly");
+            Paint(yearly,    tier == "yearly");
+        }
+
+        // Lemon Squeezy checkout URLs — one per billing tier.
+        private const string LeafPlusCheckoutMonthly   = "https://leafclient.lemonsqueezy.com/checkout/buy/5b0ccff3-487a-4f7e-b3d0-f85eb6fab73e";
+        private const string LeafPlusCheckoutQuarterly = "https://leafclient.lemonsqueezy.com/checkout/buy/06aa90ac-5b7c-4e8c-93ec-56a947c81865";
+        private const string LeafPlusCheckoutYearly    = "https://leafclient.lemonsqueezy.com/checkout/buy/d485dfcb-d312-44de-a783-241089d76b73";
+
+        private void OnMonthlyPassSubscribeTapped(object? sender, TappedEventArgs e)
+        {
+            string url = _selectedLeafPlusTier switch
+            {
+                "monthly"   => LeafPlusCheckoutMonthly,
+                "quarterly" => LeafPlusCheckoutQuarterly,
+                "yearly"    => LeafPlusCheckoutYearly,
+                _           => LeafPlusCheckoutYearly,
+            };
+
+            Console.WriteLine($"[LeafPlus] Opening in-app checkout — tier={_selectedLeafPlusTier}");
+
+            // Close the Leaf+ popup first, then reuse the same in-app WebView
+            // checkout overlay used for cosmetic purchases.
+            CloseMonthlyPassPopup();
+            OpenCheckout(url);
+        }
+
+        private void CloseCelebrationOverlay()
+        {
+            var overlay = this.FindControl<Grid>("CelebrationOverlay");
+            if (overlay != null) overlay.IsVisible = false;
+        }
+
+        private void OnCelebrationBackdropTapped(object? sender, TappedEventArgs e) => CloseCelebrationOverlay();
+
+        private void OnCelebClose(object? sender, TappedEventArgs e) => CloseCelebrationOverlay();
+
+        private void OnCelebEquipNow(object? sender, TappedEventArgs e)
+        {
+            CloseCelebrationOverlay();
+            SwitchToPage(6); // cosmetics page index
+        }
+
+
+        private async void OpenCommonQuestions(object? sender, RoutedEventArgs e)
+        {
+            if (_commonQuestionsOverlay == null || _commonQuestionsPanel == null) return;
+            if (_commonQuestionsOverlay.IsVisible || _isCommonQuestionsAnimating) return;
+
+            _isCommonQuestionsAnimating = true;
+            try
+            {
+                var backdrop = this.FindControl<Border>("CommonQuestionsBackdrop");
+                await AnimateOverlayOpenAsync(_commonQuestionsOverlay, _commonQuestionsPanel, backdrop);
+            }
+            finally { _isCommonQuestionsAnimating = false; }
+        }
+
+        private async void CloseCommonQuestions(object? sender, RoutedEventArgs e)
+        {
+            if (_commonQuestionsOverlay == null || _commonQuestionsPanel == null) return;
+            if (!_commonQuestionsOverlay.IsVisible || _isCommonQuestionsAnimating) return;
+
+            _isCommonQuestionsAnimating = true;
+            try
+            {
+                var backdrop = this.FindControl<Border>("CommonQuestionsBackdrop");
+                await AnimateOverlayCloseAsync(_commonQuestionsOverlay, _commonQuestionsPanel, backdrop);
+            }
+            finally { _isCommonQuestionsAnimating = false; }
         }
 
 
@@ -4194,24 +6221,78 @@ namespace LeafClient.Views
             {
                 if (System.IO.Directory.Exists(_logFolderPath))
                 {
-                    // Use ShellExecute to open the folder with the default file explorer
                     Process.Start(new ProcessStartInfo
                     {
                         FileName = _logFolderPath,
                         UseShellExecute = true,
-                        Verb = "open" // Explicitly request to open
+                        Verb = "open"
                     });
                 }
                 else
                 {
                     Console.WriteLine($"[Logs] Log folder not found: {_logFolderPath}");
-                    // Optionally, show a user-friendly message here
                 }
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[ERROR] Failed to open logs folder: {ex.Message}");
-                // Optionally, show an error message to the user
+            }
+        }
+
+        private void OpenModsFolder(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                System.IO.Directory.CreateDirectory(modsFolder);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = modsFolder,
+                    UseShellExecute = true,
+                    Verb = "open"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to open mods folder: {ex.Message}");
+            }
+        }
+
+        private void OpenShadersFolder(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var shadersFolder = System.IO.Path.Combine(_minecraftFolder, "shaderpacks");
+                System.IO.Directory.CreateDirectory(shadersFolder);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = shadersFolder,
+                    UseShellExecute = true,
+                    Verb = "open"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to open shaderpacks folder: {ex.Message}");
+            }
+        }
+
+        private void OpenResourcePacksFolder(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var resourcePacksFolder = System.IO.Path.Combine(_minecraftFolder, "resourcepacks");
+                System.IO.Directory.CreateDirectory(resourcePacksFolder);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = resourcePacksFolder,
+                    UseShellExecute = true,
+                    Verb = "open"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to open resourcepacks folder: {ex.Message}");
             }
         }
 
@@ -4228,21 +6309,20 @@ namespace LeafClient.Views
                 await throttler.WaitAsync();
                 try
                 {
-                    // Uses default 5000ms timeout from MinecraftServerChecker
                     var status = await _serverChecker.GetServerStatusAsync(s.Address, s.Port);
                     if (!string.IsNullOrEmpty(status.IconData))
                     {
                         s.IconBase64 = status.IconData;
                     }
                 }
-                catch { /* ignore */ }
+                catch {  }
                 finally
                 {
                     throttler.Release();
                 }
             });
 
-            await Task.WhenAll(tasks); // This waits for all icon warmups to finish before saving settings
+            await Task.WhenAll(tasks); 
             await _settingsService.SaveSettingsAsync(_currentSettings);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
@@ -4255,7 +6335,6 @@ namespace LeafClient.Views
         {
             try
             {
-                // Uses default 5000ms timeout from MinecraftServerChecker
                 var status = await _serverChecker.GetServerStatusAsync(server.Address, server.Port);
 
                 server.IsOnline = status.IsOnline;
@@ -4269,7 +6348,6 @@ namespace LeafClient.Views
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 }
 
-                // Update the UI on the UI thread immediately after this server's status is known
                 await Dispatcher.UIThread.InvokeAsync(() => { UpdateServerCardUI(server); });
             }
             catch (Exception ex)
@@ -4285,35 +6363,31 @@ namespace LeafClient.Views
 
         private async Task RefreshAllServerStatusesAsync()
         {
-            var tasks = _currentSettings.CustomServers.Select(async server =>
+            var allServers = _currentSettings.CustomServers.Concat(_featuredServers).ToList();
+            var tasks = allServers.Select(async server =>
             {
+                bool isFeatured = server.Id?.StartsWith("featured_") == true;
                 try
                 {
                     var status = await _serverChecker.GetServerStatusAsync(server.Address, server.Port);
 
-                    // Update ALL ServerInfo properties BEFORE UI update
                     server.IsOnline = status.IsOnline;
                     server.CurrentPlayers = status.CurrentPlayers;
                     server.MaxPlayers = status.MaxPlayers;
                     server.Motd = status.Motd;
 
-                    // Update status text and color based on online status
                     server.StatusText = status.IsOnline ? "Online" : "Offline";
                     server.StatusColor = status.IsOnline ? Brushes.Green : Brushes.Red;
 
-                    // Update icon if available
                     if (!string.IsNullOrEmpty(status.IconData))
-                    {
                         server.IconBase64 = status.IconData;
-                    }
 
-                    // Update UI on the UI thread
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        // Access UI element _serversPage.IsVisible on the UI thread
                         if (_serversPage?.IsVisible == true)
                         {
-                            UpdateServerCardUI(server);
+                            if (isFeatured) UpdateFeaturedServerCardUI(server);
+                            else UpdateServerCardUI(server);
                         }
                     });
                 }
@@ -4321,7 +6395,6 @@ namespace LeafClient.Views
                 {
                     Console.WriteLine($"[Server Status] Error checking {server.Name}: {ex.Message}");
 
-                    // Set offline status on error
                     server.IsOnline = false;
                     server.StatusText = "Offline";
                     server.StatusColor = Brushes.Red;
@@ -4329,13 +6402,12 @@ namespace LeafClient.Views
                     server.CurrentPlayers = 0;
                     server.MaxPlayers = 0;
 
-                    // Update UI on the UI thread
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        // Access UI element _serversPage.IsVisible on the UI thread
                         if (_serversPage?.IsVisible == true)
                         {
-                            UpdateServerCardUI(server);
+                            if (isFeatured) UpdateFeaturedServerCardUI(server);
+                            else UpdateServerCardUI(server);
                         }
                     });
                 }
@@ -4343,13 +6415,10 @@ namespace LeafClient.Views
 
             await Task.WhenAll(tasks);
 
-            // Save updated server data (icons, etc.)
             await _settingsService.SaveSettingsAsync(_currentSettings);
 
-            // CRITICAL: Always update the quick play bar after refreshing server statuses
             await Dispatcher.UIThread.InvokeAsync(() => RefreshQuickPlayBar());
 
-            // After statuses are refreshed, update the enabled state of all server buttons
             await UpdateServerButtonStates();
         }
 
@@ -4372,7 +6441,7 @@ namespace LeafClient.Views
                         new TextBlock
                         {
                             Text = "Operation successful:",
-                            Foreground = GetBrush("SuccessBrush"), // Assuming you have a "SuccessBrush"
+                            Foreground = GetBrush("SuccessBrush"), 
                             FontWeight = FontWeight.Bold,
                             FontSize = 16,
                             TextWrapping = TextWrapping.Wrap
@@ -4421,7 +6490,7 @@ namespace LeafClient.Views
                         new TextBlock
                         {
                             Text = "An error occurred:",
-                            Foreground = GetBrush("ErrorBrush"), // Assumes "ErrorBrush" is defined in your styles
+                            Foreground = GetBrush("ErrorBrush"), 
                             FontWeight = FontWeight.Bold,
                             FontSize = 16,
                             TextWrapping = TextWrapping.Wrap
@@ -4445,7 +6514,6 @@ namespace LeafClient.Views
                     }
                 }
             };
-            // Set the button's click event to close the dialog
             if ((dialog.Content as StackPanel)?.Children.OfType<Button>().Last() is Button okButton)
             {
                 okButton.Click += (s, e) => dialog.Close();
@@ -4558,7 +6626,6 @@ namespace LeafClient.Views
         {
             Console.WriteLine("[Account] Change Name clicked.");
 
-            // Ensure session is fresh and valid right before action
             await LoadSessionAsync();
 
             Console.WriteLine($"[Account Debug] OnChangeNameClick - _session is {(_session == null ? "NULL" : "NOT NULL")}");
@@ -4589,10 +6656,9 @@ namespace LeafClient.Views
                     string cooldownMessage = $"You cannot change your name yet. Next change available on {nameChangeStatus.GetNextChangeDateTimeFormatted()}.";
                     await ShowAccountActionErrorDialog(cooldownMessage);
                     Console.WriteLine($"[Account] Name change forbidden due to cooldown. {cooldownMessage}");
-                    return; // Exit if name change is not allowed
+                    return; 
                 }
 
-                // Show input dialog for new username
                 string? newUsername = await ShowTextInputDialog("Change Username", "Enter your new Minecraft username:", _currentSettings.SessionUsername);
 
                 if (string.IsNullOrWhiteSpace(newUsername) || newUsername == _currentSettings.SessionUsername)
@@ -4601,7 +6667,6 @@ namespace LeafClient.Views
                     return;
                 }
 
-                // Confirmation dialog
                 bool confirmed = await ShowConfirmationDialog("Confirm Name Change", $"Are you sure you want to change your username to '{newUsername}'? This can only be done once every 30 days.");
                 if (!confirmed)
                 {
@@ -4610,20 +6675,17 @@ namespace LeafClient.Views
                 }
 
                 Console.WriteLine($"[Account] Attempting to change username to: {newUsername}");
-                // Use our new service method
                 MojangApiService.PlayerProfileResponse profile = await _mojangApiService.ChangeName(_session.AccessToken, newUsername);
 
-                // Update session and settings with new username
-                _session.Username = profile.Name ?? newUsername; // Use newUsername as fallback
+                _session.Username = profile.Name ?? newUsername; 
                 _currentSettings.SessionUsername = profile.Name ?? newUsername;
-                _currentSettings.SessionUuid = profile.Id ?? _session.UUID; // Update UUID if API provides it, else keep old
+                _currentSettings.SessionUuid = profile.Id ?? _session.UUID; 
                 await _settingsService.SaveSettingsAsync(_currentSettings);
 
                 Console.WriteLine($"[Account] Username changed successfully to: {profile.Name ?? newUsername}");
                 await ShowAccountActionSuccessDialog($"Your username has been changed to '{profile.Name ?? newUsername}'.");
 
-                // Refresh UI elements
-                await LoadUserInfoAsync(); // This will refresh all account-related UI including name and skin preview
+                await LoadUserInfoAsync(); 
             }
             catch (Exception ex)
             {
@@ -4637,25 +6699,14 @@ namespace LeafClient.Views
         {
             _currentSettings.CustomServers ??= new List<ServerInfo>();
 
-            bool changesMade = false;
-            var defaults = new List<ServerInfo>
-    {
-        new ServerInfo { Id = Guid.NewGuid().ToString(), Name = "Hypixel",   Address = "mc.hypixel.net",     Port = 25565 },
-        new ServerInfo { Id = Guid.NewGuid().ToString(), Name = "2b2t",      Address = "2b2t.org",           Port = 25565 },
-        new ServerInfo { Id = Guid.NewGuid().ToString(), Name = "PvPlegacy", Address = "play.pvplegacy.net", Port = 25565 }
-    };
+            // Migrate: remove featured servers from personal list (they now live in the Featured section)
+            var featuredAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "mc.hypixel.net", "2b2t.org", "play.pvplegacy.net" };
 
-            foreach (var def in defaults)
-            {
-                if (!_currentSettings.CustomServers.Any(s =>
-                    s.Address.Equals(def.Address, StringComparison.OrdinalIgnoreCase)))
-                {
-                    _currentSettings.CustomServers.Add(def);
-                    changesMade = true;
-                }
-            }
+            int removed = _currentSettings.CustomServers.RemoveAll(s =>
+                featuredAddresses.Contains(s.Address));
 
-            if (changesMade)
+            if (removed > 0)
                 await _settingsService.SaveSettingsAsync(_currentSettings);
         }
 
@@ -4663,8 +6714,6 @@ namespace LeafClient.Views
 
         private void LoadServerData()
         {
-            // This method now only sets up the periodic server status refresh timer.
-            // Server data loading and default initialization are handled by InitializeDefaultServers() and LoadServers().
 
             _serverStatusRefreshTimer = new DispatcherTimer
             {
@@ -4675,15 +6724,12 @@ namespace LeafClient.Views
             {
                 try
                 {
-                    await RefreshAllServerStatusesAsync(); // Now refreshes statuses for the CustomServers
+                    await RefreshAllServerStatusesAsync(); 
                 }
                 catch (Exception ex)
                 {
-                    // ABSOLUTE SILENCE - NO CONSOLE, NO LOGGING
                     try
                     {
-                        // Even the console write might be triggering the ding in some cases
-                        // This is the nuclear option
                     }
                     catch { }
                 }
@@ -4695,7 +6741,6 @@ namespace LeafClient.Views
         {
             Dispatcher.UIThread.Post(() =>
             {
-                // Show banner or notification
                 var banner = this.FindControl<Border>("OfflineModeBanner");
                 if (banner != null)
                 {
@@ -4722,9 +6767,9 @@ namespace LeafClient.Views
                 return;
             }
 
-            // Use a degree of parallelism to avoid being blocked by very slow servers
-            int maxParallel = 3; // or number of servers / 2 — tune this
-            await Parallel.ForEachAsync(_currentSettings.CustomServers, new ParallelOptions { MaxDegreeOfParallelism = maxParallel }, async (server, ct) =>
+            int maxParallel = 3;
+            var allServers = _currentSettings.CustomServers.Concat(_featuredServers).ToList();
+            await Parallel.ForEachAsync(allServers, new ParallelOptions { MaxDegreeOfParallelism = maxParallel }, async (server, ct) =>
             {
                 ServerStatusResult result;
                 try
@@ -4737,17 +6782,19 @@ namespace LeafClient.Views
                     result = new ServerStatusResult { IsOnline = false, CurrentPlayers = 0, MaxPlayers = 0, Motd = "Error", IconData = "" };
                 }
 
-                // Now marshal back to UI thread to update UI elements / controls
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     server.IsOnline = result.IsOnline;
                     server.CurrentPlayers = result.CurrentPlayers;
                     server.MaxPlayers = result.MaxPlayers;
                     server.Motd = result.Motd;
-                    server.IconBase64 = result.IconData; // Assign result.IconData (from MineStat) to IconBase64 (in your model)
-                                                         // If you had 'server.IconData = result.IconData;' here, delete it.
+                    server.IconBase64 = result.IconData;
 
-                    _ = UpdateServerStatusUIAsync(server, accentBrush, hoverBackgroundBrush, accentButtonForegroundBrush, disabledForegroundBrush);
+                    bool isFeatured = server.Id?.StartsWith("featured_") == true;
+                    if (isFeatured)
+                        UpdateFeaturedServerCardUI(server);
+                    else
+                        _ = UpdateServerStatusUIAsync(server, accentBrush, hoverBackgroundBrush, accentButtonForegroundBrush, disabledForegroundBrush);
                 });
             });
         }
@@ -4755,13 +6802,12 @@ namespace LeafClient.Views
 
 
         private async Task UpdateServerStatusUIAsync(
-            LeafClient.Models.ServerInfo server, // Ensure this uses LeafClient.Models.ServerInfo
+            LeafClient.Models.ServerInfo server, 
             IBrush accentBrush,
             IBrush hoverBackgroundBrush,
             IBrush accentButtonForegroundBrush,
             IBrush disabledForegroundBrush)
         {
-            // This method now directly calls UpdateServerCardUI, which handles the UI updates for dynamic cards.
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 UpdateServerCardUI(server);
@@ -4778,7 +6824,7 @@ namespace LeafClient.Views
                 if (statusDot.Fill != color)
                     statusDot.Fill = color;
             }
-            catch { /* Silent failure - don't trigger ding */ }
+            catch {  }
         }
 
         private void UpdateStatusText(TextBlock? statusText, string text)
@@ -4790,7 +6836,7 @@ namespace LeafClient.Views
                 if (statusText.Text != text)
                     statusText.Text = text;
             }
-            catch { /* Silent failure */ }
+            catch {  }
         }
 
         private void UpdateMotdText(TextBlock? motdText, string text)
@@ -4802,7 +6848,7 @@ namespace LeafClient.Views
                 if (motdText.Text != text)
                     motdText.Text = text;
             }
-            catch { /* Silent failure */ }
+            catch {  }
         }
 
         private void UpdateJoinButton(Button? joinButton, bool isEnabled, IBrush accentBrush, IBrush hoverBackgroundBrush,
@@ -4823,7 +6869,7 @@ namespace LeafClient.Views
                 if (joinButton.Foreground != targetForeground)
                     joinButton.Foreground = targetForeground;
             }
-            catch { /* Silent failure */ }
+            catch {  }
         }
 
 
@@ -4831,10 +6877,8 @@ namespace LeafClient.Views
         {
             if (_settingsSaveBanner == null) return;
 
-            // Unconditionally make the banner visible first
             _settingsSaveBanner.IsVisible = true;
 
-            // Declare transform once, handling potential null or incorrect type
             TranslateTransform? transform = _settingsSaveBanner.RenderTransform as TranslateTransform;
             if (transform == null)
             {
@@ -4844,14 +6888,11 @@ namespace LeafClient.Views
 
             if (!AreAnimationsEnabled())
             {
-                // If animations are disabled, set to final visible state instantly
-                transform.Y = 0; // Final visible position
-                _settingsSaveBanner.Opacity = 1; // Fully opaque
-                return; // No animation needed
+                transform.Y = 0; 
+                _settingsSaveBanner.Opacity = 1; 
+                return; 
             }
 
-            // If animations are enabled, proceed with animation
-            // Set initial state for animation (hidden below, transparent)
             transform.Y = 80;
             _settingsSaveBanner.Opacity = 0;
 
@@ -4862,13 +6903,13 @@ namespace LeafClient.Views
             for (int i = 0; i <= steps; i++)
             {
                 double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
+                double eased = 1 - Math.Pow(1 - progress, 3); 
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (_settingsSaveBanner == null) return;
-                    transform.Y = 80 - (80 * eased); // 80 -> 0
-                    _settingsSaveBanner.Opacity = eased; // 0 -> 1
+                    transform.Y = 80 - (80 * eased); 
+                    _settingsSaveBanner.Opacity = eased; 
                 });
 
                 if (i < steps)
@@ -4882,20 +6923,16 @@ namespace LeafClient.Views
             TranslateTransform? transform = _settingsSaveBanner.RenderTransform as TranslateTransform;
             if (transform == null) return;
 
-            // Immediately mark as not dirty, even if animation is still playing.
-            // This is crucial for the UI to correctly detect subsequent changes.
             _settingsDirty = false;
 
             if (!AreAnimationsEnabled())
             {
-                // Jump to initial (hidden) state immediately
                 transform.Y = 80;
                 _settingsSaveBanner.Opacity = 0;
                 _settingsSaveBanner.IsVisible = false;
                 return;
             }
 
-            // Animate manually
             const int durationMs = 300;
             const int steps = 20;
             const int delayMs = durationMs / steps;
@@ -4903,13 +6940,13 @@ namespace LeafClient.Views
             for (int i = 0; i <= steps; i++)
             {
                 double progress = (double)i / steps;
-                double eased = 1 - Math.Pow(1 - progress, 3); // Cubic ease out
+                double eased = 1 - Math.Pow(1 - progress, 3); 
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (_settingsSaveBanner == null) return;
-                    transform.Y = 0 + (80 * eased); // 0 -> 80
-                    _settingsSaveBanner.Opacity = 1 - eased; // 1 -> 0
+                    transform.Y = 0 + (80 * eased); 
+                    _settingsSaveBanner.Opacity = 1 - eased; 
                 });
 
                 if (i < steps)
@@ -4921,7 +6958,7 @@ namespace LeafClient.Views
 
         private void MarkSettingsDirty()
         {
-            if (_isApplyingSettings) return;   // ignore while loading/applying
+            if (_isApplyingSettings) return;
             if (!_settingsDirty)
             {
                 _settingsDirty = true;
@@ -4937,30 +6974,22 @@ namespace LeafClient.Views
         }
 
 
-        private bool _isShuttingDown = false; // Add this flag at the top of your class with other fields
+        private bool _isShuttingDown = false; 
         private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
         {
-            // Get the global application state for window swapping
             bool isAppSwappingToLogin = (Application.Current as App)?.IsSwapToLogin ?? false;
 
-            // If a shutdown process is already initiated, let it proceed.
             if (_isShuttingDown)
             {
                 e.Cancel = false;
                 return;
             }
 
-            // Handle the case where the old MainWindow is closing because a new LoginWindow/MainWindow is taking over.
-            // This happens after a successful login following a logout, or initial startup.
-            // We should NOT trigger a full app shutdown in this scenario.
             if (isAppSwappingToLogin)
             {
                 Console.WriteLine($"[MainWindow] OnWindowClosing: Detected app is swapping windows. Cancelling close for this window.");
-                e.Cancel = false; // Allow this specific window to close
+                e.Cancel = false; 
 
-                // Reset the flag immediately after this window acknowledges the swap.
-                // This ensures subsequent window closures (e.g., if the user closes the *new* MainWindow later)
-                // behave normally and can trigger a full shutdown.
                 if (Application.Current is App app)
                 {
                     app.IsSwapToLogin = false;
@@ -4968,33 +6997,27 @@ namespace LeafClient.Views
                 return;
             }
 
-            // --- Handle Minimize to Tray ---
-            // This path is for when the user clicks the 'X' and MinimizeToTray is enabled,
-            // but it's *not* an explicit exit.
             if (_currentSettings.MinimizeToTray && !_isExitingApp)
             {
                 Console.WriteLine("[MainWindow] OnWindowClosing: Minimize to tray enabled. Hiding window.");
-                e.Cancel = true; // Prevent the window from closing immediately
+                e.Cancel = true; 
                 MinimizeToTray();
                 return;
             }
 
-            // --- Initiate Graceful Application Shutdown (Explicit User Exit or last window close) ---
-            // This path is taken if it's an explicit exit, or if it's the last window closing and
-            // not a swap, and not minimize-to-tray.
-            _isShuttingDown = true; // Mark that a shutdown is in progress
-            e.Cancel = true; // Prevent the window from closing immediately to allow async cleanup
+            _gameOutputWindow?.Close();
+            _isShuttingDown = true; 
+            e.Cancel = true; 
 
-            this.Hide(); // Hide the window while cleanup happens
+            this.Hide(); 
             Console.WriteLine("[MainWindow] Window hidden. Starting graceful application shutdown...");
 
-            // Perform asynchronous cleanup tasks
             if (_onlineCountService != null)
             {
                 try
                 {
                     Console.WriteLine("[MainWindow] Attempting to decrement online count before shutdown...");
-                    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3)); // Give it 3 seconds
+                    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3)); 
                     await _onlineCountService.UpdateCount(false, cts.Token);
                 }
                 catch (Exception ex)
@@ -5003,9 +7026,8 @@ namespace LeafClient.Views
                 }
             }
 
-            // Perform synchronous cleanup tasks
             StopRichPresence();
-            KillMinecraftProcess(); // Ensure any running game is terminated
+            KillMinecraftProcess(); 
 
             if (_trayIcon != null)
             {
@@ -5013,13 +7035,11 @@ namespace LeafClient.Views
                 _trayIcon.Dispose();
             }
 
-            // Close the log writer to flush any pending messages
             if (_logStreamWriter != null)
             {
                 try
                 {
                     Console.WriteLine("[MainWindow] Closing log writer...");
-                    // Restore original console outputs before closing the custom writer
                     Console.SetOut(_originalConsoleOut ?? new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
                     Console.SetError(_originalConsoleError ?? new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
                     _logStreamWriter.Close();
@@ -5032,7 +7052,6 @@ namespace LeafClient.Views
                 }
             }
 
-            // Finally, explicitly shut down the Avalonia application lifetime
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 Console.WriteLine("[MainWindow] Graceful shutdown complete. Terminating process.");
@@ -5041,7 +7060,6 @@ namespace LeafClient.Views
         }
 
 
-        // Add this helper in MainWindow
         private async Task<T> RunExclusiveInstall<T>(Func<Task<T>> installAction)
         {
             await _installGate.WaitAsync();
@@ -5061,13 +7079,11 @@ namespace LeafClient.Views
             {
                 _trayIcon = new TrayIcon();
 
-                // Set the icon
                 var iconStream = AssetLoader.Open(new Uri("avares://LeafClient/Assets/logo_icon.png"));
                 _trayIcon.Icon = new WindowIcon(iconStream);
                 _trayIcon.ToolTipText = "Leaf Client";
                 _trayIcon.IsVisible = false;
 
-                // Create menu
                 var trayMenu = new NativeMenu();
 
                 var homeItem = new NativeMenuItem("Home");
@@ -5106,13 +7122,11 @@ namespace LeafClient.Views
 
                 _trayIcon.Menu = trayMenu;
 
-                // Double-click to restore window
                 _trayIcon.Clicked += (s, e) => RestoreFromTray();
 
                 var trayIconsCollection = new Avalonia.Controls.TrayIcons();
-                trayIconsCollection.Add(_trayIcon); // Add the TrayIcon to the collection
+                trayIconsCollection.Add(_trayIcon); 
 
-                // Pass Application.Current and the populated TrayIcons collection
                 TrayIcon.SetIcons(Application.Current, trayIconsCollection);
             }
             catch (Exception ex)
@@ -5122,7 +7136,6 @@ namespace LeafClient.Views
         }
 
 
-        // Tray menu item handlers
         private void TrayMenuItem_Home()
         {
             RestoreFromTray();
@@ -5177,14 +7190,13 @@ namespace LeafClient.Views
             });
         }
 
-        // Method to restore window from tray
         private void RestoreFromTray()
         {
-            if (_isShuttingDown) return; // Don't try to restore if we are closing
+            if (_isShuttingDown) return; 
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (_isShuttingDown) return; // Double-check on UI thread
+                if (_isShuttingDown) return; 
 
                 try
                 {
@@ -5196,7 +7208,6 @@ namespace LeafClient.Views
                 }
                 catch (InvalidOperationException)
                 {
-                    // Window is already closed or closing, ignore.
                 }
             });
         }
@@ -5208,7 +7219,6 @@ namespace LeafClient.Views
             if (_trayIcon != null)
                 _trayIcon.IsVisible = true;
 
-            // Show banner if notifications are allowed
             if (_currentSettings.ClosingNotificationsPreference != NotificationPreference.Never)
             {
                 NotificationWindow.Show("Leaf Client", "Running in background", "Restore", () => RestoreFromTray());
@@ -5217,13 +7227,13 @@ namespace LeafClient.Views
 
 
 
-        // Helper method to kill Minecraft process
         private void KillMinecraftProcess()
         {
             if (_gameProcess != null && !_gameProcess.HasExited)
             {
                 try
                 {
+                    _userTerminatedGame = true;
                     _gameProcess.Kill();
                     _gameProcess.WaitForExit(5000);
                     Console.WriteLine("[Launcher] Minecraft process terminated.");
@@ -5237,130 +7247,430 @@ namespace LeafClient.Views
 
         private void ClearModsFolder()
         {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+
+            if (!Directory.Exists(modsFolder))
+            {
+                try { Directory.CreateDirectory(modsFolder); } catch { }
+                Console.WriteLine("[Launcher] Mods folder did not exist, created fresh.");
+                _gameOutputWindow?.AppendLog("[LaunchDiag] Mods folder did not exist, created fresh.", "INFO");
+                return;
+            }
+
+            Console.WriteLine("[Launcher] Clearing mods folder for a fresh launch...");
+            _gameOutputWindow?.AppendLog("[LaunchDiag] Clearing mods folder for a fresh launch...", "INFO");
+
+            const int maxAttempts = 3;
+            Exception? lastEx = null;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(modsFolder, true);
+                    Directory.CreateDirectory(modsFolder);
+                    Console.WriteLine($"[Launcher] Mods folder cleared successfully (attempt {attempt}).");
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] Mods folder cleared successfully (attempt {attempt}).", "INFO");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    Console.Error.WriteLine($"[Launcher ERROR] Failed to clear mods folder (attempt {attempt}/{maxAttempts}): {ex.Message}");
+                    _gameOutputWindow?.AppendLog(
+                        $"[LaunchDiag] Failed to clear mods folder (attempt {attempt}/{maxAttempts}): {ex.GetType().Name}: {ex.Message}",
+                        "ERROR");
+                    try { System.Threading.Thread.Sleep(200); } catch { }
+                }
+            }
+
+            // Retries exhausted — try to delete individual files and surface remaining leafclient jars.
             try
             {
-                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-                if (Directory.Exists(modsFolder))
+                if (!Directory.Exists(modsFolder)) Directory.CreateDirectory(modsFolder);
+
+                var remaining = Directory.GetFiles(modsFolder, "*.*", SearchOption.AllDirectories);
+                foreach (var f in remaining)
                 {
-                    Console.WriteLine("[Launcher] Clearing mods folder for a fresh launch...");
-                    Directory.Delete(modsFolder, true); // Recursively delete the folder and its contents
+                    try { File.Delete(f); } catch { /* ignore individual failures */ }
                 }
-                Directory.CreateDirectory(modsFolder); // Recreate the empty folder
-                Console.WriteLine("[Launcher] Mods folder cleared successfully.");
+
+                var stillThere = Directory.GetFiles(modsFolder, "*.jar", SearchOption.AllDirectories)
+                    .Concat(Directory.GetFiles(modsFolder, "*.jar.disabled", SearchOption.AllDirectories))
+                    .ToArray();
+
+                var stillLeaf = stillThere
+                    .Where(p => System.IO.Path.GetFileName(p).Contains("leaf", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+                if (stillLeaf.Length > 0)
+                {
+                    _gameOutputWindow?.AppendLog(
+                        $"[LaunchDiag] WARNING: {stillLeaf.Length} leafclient-like jar(s) SURVIVED the clear attempt!",
+                        "ERROR");
+                    foreach (var p in stillLeaf)
+                    {
+                        try
+                        {
+                            var fi = new FileInfo(p);
+                            _gameOutputWindow?.AppendLog(
+                                $"[LaunchDiag]   SURVIVED: {p} (size={fi.Length} bytes, mtime={fi.LastWriteTime:yyyy-MM-dd HH:mm:ss})",
+                                "ERROR");
+                        }
+                        catch
+                        {
+                            _gameOutputWindow?.AppendLog($"[LaunchDiag]   SURVIVED: {p}", "ERROR");
+                        }
+                    }
+                    ShowLaunchErrorBanner("A leafclient jar survived the mods folder clear. A stale mod may load.");
+                }
+                else if (stillThere.Length > 0)
+                {
+                    _gameOutputWindow?.AppendLog(
+                        $"[LaunchDiag] WARNING: {stillThere.Length} non-leaf jar(s) survived the mods folder clear.",
+                        "WARN");
+                }
+            }
+            catch (Exception scanEx)
+            {
+                _gameOutputWindow?.AppendLog(
+                    $"[LaunchDiag] Post-clear scan failed: {scanEx.GetType().Name}: {scanEx.Message}",
+                    "ERROR");
+            }
+
+            if (lastEx != null)
+            {
+                Console.Error.WriteLine($"[Launcher ERROR] Failed to clear mods folder after {maxAttempts} attempts: {lastEx.Message}");
+                ShowLaunchErrorBanner("Failed to clear the mods folder after retries. It might be in use.");
+            }
+        }
+
+        // =====================================================================
+        // Launch diagnostics helpers for the leafclient.jar loading pipeline.
+        // All helpers are defensive and must never throw — they only log.
+        // =====================================================================
+
+        private static string ComputeShortSha256(string filePath)
+        {
+            try
+            {
+                using var stream = File.OpenRead(filePath);
+                using var sha = SHA256.Create();
+                byte[] hash = sha.ComputeHash(stream);
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash) sb.Append(b.ToString("x2"));
+                return sb.ToString(0, Math.Min(16, sb.Length));
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Launcher ERROR] Failed to clear mods folder: {ex.Message}");
-                // Optionally, show a banner to the user if clearing fails
-                ShowLaunchErrorBanner("Failed to clear the mods folder. It might be in use.");
+                return $"hash-err:{ex.GetType().Name}";
             }
         }
 
-
-        private void InitializeLauncher()
+        private void LogJarFileInfo(string label, string path)
         {
-            var path = new MinecraftPath(_minecraftFolder);
-            // Ensure base directory structure exists
-            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(_minecraftFolder, "versions"));
-            _launcher = new MinecraftLauncher(path);
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] {label}: MISSING -> {path}", "INFO");
+                    return;
+                }
+                var fi = new FileInfo(path);
+                string hash = ComputeShortSha256(path);
+                _gameOutputWindow?.AppendLog(
+                    $"[LaunchDiag] {label}: {path} | size={fi.Length / 1024}KB | mtime={fi.LastWriteTime:yyyy-MM-dd HH:mm:ss} | sha16={hash}",
+                    "INFO");
+            }
+            catch (Exception ex)
+            {
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] {label}: EXCEPTION inspecting {path}: {ex.GetType().Name}: {ex.Message}", "ERROR");
+            }
         }
 
+        private void ScanForStaleLeafJars(string directory, string scanLabel, string? expectedJarPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] {scanLabel}: directory does not exist -> {directory}", "INFO");
+                    return;
+                }
 
+                string? normalizedExpected = null;
+                try
+                {
+                    if (!string.IsNullOrEmpty(expectedJarPath))
+                        normalizedExpected = System.IO.Path.GetFullPath(expectedJarPath);
+                }
+                catch { /* ignore */ }
+
+                // Scan only top-level AND subdirectories within THIS specific directory — never escape scope.
+                var candidates = new List<string>();
+                try
+                {
+                    candidates.AddRange(Directory.GetFiles(directory, "*leaf*.jar", SearchOption.AllDirectories));
+                }
+                catch { }
+                try
+                {
+                    candidates.AddRange(Directory.GetFiles(directory, "leafclient*.jar", SearchOption.AllDirectories));
+                }
+                catch { }
+                // Deduplicate via canonical paths.
+                var unique = candidates
+                    .Select(p => { try { return System.IO.Path.GetFullPath(p); } catch { return p; } })
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (unique.Count == 0)
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] {scanLabel}: no leafclient jars found under {directory}", "INFO");
+                    return;
+                }
+
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] {scanLabel}: found {unique.Count} leafclient-like jar(s) under {directory}", "INFO");
+                foreach (var p in unique)
+                {
+                    bool isExpected = normalizedExpected != null &&
+                                      p.Equals(normalizedExpected, StringComparison.OrdinalIgnoreCase);
+                    string tag = isExpected ? "expected" : "STALE?";
+                    try
+                    {
+                        var fi = new FileInfo(p);
+                        string hash = ComputeShortSha256(p);
+                        string level = isExpected ? "INFO" : "WARN";
+                        _gameOutputWindow?.AppendLog(
+                            $"[LaunchDiag]   [{tag}] {p} | size={fi.Length / 1024}KB | mtime={fi.LastWriteTime:yyyy-MM-dd HH:mm:ss} | sha16={hash}",
+                            level);
+                    }
+                    catch (Exception ex)
+                    {
+                        _gameOutputWindow?.AppendLog(
+                            $"[LaunchDiag]   [{tag}] {p} (inspect failed: {ex.GetType().Name}: {ex.Message})",
+                            "ERROR");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] {scanLabel}: scan failed: {ex.GetType().Name}: {ex.Message}", "ERROR");
+            }
+        }
+
+        private void LogLaunchPreBuildDiagnostics(string leafModPath, string mcVersion)
+        {
+            try
+            {
+                _gameOutputWindow?.AppendLog("[LaunchDiag] ===== PRE-BUILD JAR DIAGNOSTIC =====", "INFO");
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] leafModPath target = {leafModPath}", "INFO");
+                LogJarFileInfo("leafModPath (before build)", leafModPath);
+
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                string leafRuntimeRoot = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime");
+                string leafOfflineRoot = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    ".leafclient", "offline");
+
+                ScanForStaleLeafJars(modsFolder, "pre-build scan: .minecraft/mods", null);
+                ScanForStaleLeafJars(leafRuntimeRoot, "pre-build scan: .minecraft/leaf-runtime", null);
+                ScanForStaleLeafJars(leafOfflineRoot, "pre-build scan: .leafclient/offline", leafModPath);
+
+                _gameOutputWindow?.AppendLog("[LaunchDiag] ===== END PRE-BUILD JAR DIAGNOSTIC =====", "INFO");
+            }
+            catch (Exception ex)
+            {
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] pre-build diagnostics failed: {ex.GetType().Name}: {ex.Message}", "ERROR");
+            }
+        }
+
+        private void LogLaunchPreLaunchDiagnostics(string leafModPath)
+        {
+            try
+            {
+                _gameOutputWindow?.AppendLog("[LaunchDiag] ===== PRE-LAUNCH FINAL CHECK =====", "INFO");
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                ScanForStaleLeafJars(modsFolder, "pre-launch scan: .minecraft/mods (should be clean)", null);
+                LogJarFileInfo("leafModPath (final)", leafModPath);
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] -Dfabric.addMods target = {leafModPath}", "INFO");
+                _gameOutputWindow?.AppendLog("[LaunchDiag] ===== END PRE-LAUNCH FINAL CHECK =====", "INFO");
+            }
+            catch (Exception ex)
+            {
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] pre-launch diagnostics failed: {ex.GetType().Name}: {ex.Message}", "ERROR");
+            }
+        }
 
         private async Task LoadSessionAsync()
         {
             try
             {
-                _currentSettings = await _settingsService.LoadSettingsAsync(); // Ensure _currentSettings is up-to-date
+                _currentSettings = await _settingsService.LoadSettingsAsync();
+                LoadOwnedJson();
+                ValidateEquippedCosmetics();
 
-                if (_currentSettings.IsLoggedIn && _currentSettings.AccountType == "microsoft" &&
-                    !string.IsNullOrWhiteSpace(_currentSettings.SessionAccessToken) &&
-                    !string.IsNullOrWhiteSpace(_currentSettings.SessionUuid) &&
-                    !string.IsNullOrWhiteSpace(_currentSettings.SessionUsername))
+                if (_currentSettings.IsLoggedIn && _currentSettings.AccountType == "microsoft")
                 {
-                    // Attempt to create a session from saved Microsoft credentials
-                    _session = new MSession(
-                        _currentSettings.SessionUsername,
-                        _currentSettings.SessionAccessToken,
-                        _currentSettings.SessionUuid
-                    );
-
-                    _session.UserType = "msa"; // Tells Minecraft this is a Microsoft account
-                    _session.Xuid = _currentSettings.SessionXuid; // Required for 1.19+ online servers
-
-                    // Crucial: Re-validate the session. Access tokens can expire.
-                    // If the session is invalid, we should try to refresh it silently.
-                    if (!_session.CheckIsValid())
+                    // FAST PATH: validate the stored Minecraft access token first.
+                    // This avoids any OAuth round-trip for the common case where the token
+                    // is still valid (~24-hour window from last refresh).
+                    if (!string.IsNullOrWhiteSpace(_currentSettings.SessionAccessToken) &&
+                        !string.IsNullOrWhiteSpace(_currentSettings.SessionUsername) &&
+                        !string.IsNullOrWhiteSpace(_currentSettings.SessionUuid))
                     {
-                        Console.WriteLine("[Launch] Saved Microsoft session is invalid. Attempting silent re-authentication...");
-                        try
+                        Console.WriteLine("[Launch] Validating cached Minecraft token...");
+                        bool tokenValid = await ValidateMinecraftTokenAsync(_currentSettings.SessionAccessToken);
+                        if (tokenValid)
                         {
-                            var app = await MsalClientHelper.BuildApplicationWithCache("499c8d36-be2a-4231-9ebd-ef291b7bb64c");
-                            var loginHandler = new JELoginHandlerBuilder().Build();
+                            _session = new MSession
+                            {
+                                Username = _currentSettings.SessionUsername,
+                                UUID = _currentSettings.SessionUuid,
+                                AccessToken = _currentSettings.SessionAccessToken,
+                                Xuid = _currentSettings.SessionXuid
+                            };
+                            Console.WriteLine("[Launch] Cached token is still valid — skipping OAuth.");
+                            return;
+                        }
+                        Console.WriteLine("[Launch] Cached token expired. Attempting MSAL silent refresh...");
+                    }
 
+                    // SLOW PATH: Minecraft token expired — refresh via MSAL silent flow.
+                    // Only attempt if MSAL actually has a cached account (avoids a guaranteed
+                    // MsalUiRequiredException that produces noisy logs with no benefit).
+                    try
+                    {
+                        var app = await MsalClientHelper.BuildApplicationWithCache("499c8d36-be2a-4231-9ebd-ef291b7bb64c");
+                        var msalAccounts = (await app.GetAccountsAsync()).ToList();
+                        Console.WriteLine($"[Launch] MSAL cache contains {msalAccounts.Count} account(s).");
 
-                            var authenticator = loginHandler.CreateAuthenticatorWithNewAccount();
-
-                            authenticator.AddMsalOAuth(app, msal => msal.Silent()); // Try silent refresh first
+                        if (msalAccounts.Count > 0)
+                        {
+                            // BuildDefault() uses the same file-backed account manager as LoginWindow,
+                            // so CreateAuthenticatorWithDefaultAccount() finds the saved loginHint.
+                            var loginHandler = JELoginHandlerBuilder.BuildDefault();
+                            var authenticator = loginHandler.CreateAuthenticatorWithDefaultAccount();
+                            authenticator.AddMsalOAuth(app, msal => msal.Silent());
                             authenticator.AddXboxAuthForJE(xbox => xbox.Basic());
                             authenticator.AddForceJEAuthenticator();
 
                             var refreshedSession = await authenticator.ExecuteForLauncherAsync();
-
-                            if (refreshedSession.CheckIsValid())
+                            if (refreshedSession != null && refreshedSession.CheckIsValid())
                             {
                                 _session = refreshedSession;
                                 _currentSettings.SessionUsername = _session.Username;
                                 _currentSettings.SessionUuid = _session.UUID;
                                 _currentSettings.SessionAccessToken = _session.AccessToken;
+                                _currentSettings.SessionXuid = _session.Xuid;
                                 await _settingsService.SaveSettingsAsync(_currentSettings);
-                                Console.WriteLine("[Launch] Microsoft session successfully refreshed silently.");
+                                Console.WriteLine("[Launch] MSAL silent refresh succeeded.");
+                                return;
                             }
-                            else
-                            {
-                                Console.WriteLine("[Launch] Silent Microsoft session refresh failed. Forcing re-login.");
-                                // If silent refresh fails, it means the refresh token is also expired or invalid.
-                                // Force a full re-login by clearing the session.
-                                _currentSettings.ClearAuthOnly();
-                                await _settingsService.SaveSettingsAsync(_currentSettings);
-                                _session = null; // Mark session as null to trigger login required
-                            }
+                            Console.WriteLine("[Launch] MSAL silent refresh returned invalid session.");
                         }
-                        catch (Exception exRefresh)
+                        else
                         {
-                            Console.WriteLine($"[Launch] Error during silent Microsoft session refresh: {exRefresh.Message}");
-                            _currentSettings.ClearAuthOnly();
-                            await _settingsService.SaveSettingsAsync(_currentSettings);
-                            _session = null; // Mark session as null to trigger login required
+                            Console.WriteLine("[Launch] MSAL has no cached accounts — silent refresh skipped.");
                         }
                     }
-                }
-                else if (_currentSettings.IsLoggedIn && _currentSettings.AccountType == "offline" &&
-                         !string.IsNullOrWhiteSpace(_currentSettings.OfflineUsername))
-                {
-                    // Offline session
-                    _session = MSession.CreateOfflineSession(_currentSettings.OfflineUsername);
-                }
-                else
-                {
-                    // Not logged in or invalid settings, ensure _session is null
-                    _session = null;
-                    // Optionally, clear any stale data if IsLoggedIn is true but data is missing
-                    if (_currentSettings.IsLoggedIn)
+                    catch (Exception ex)
                     {
-                        _currentSettings.ClearAuthOnly();
-                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        Console.WriteLine($"[Launch] MSAL silent refresh failed: {ex.GetType().Name}: {ex.Message}");
                     }
+
+                    // FALLBACK: direct HTTP refresh using our own stored refresh token.
+                    // This works even if the MSAL file cache is missing/corrupted because we
+                    // captured the refresh token separately during login.
+                    if (!string.IsNullOrWhiteSpace(_currentSettings.MicrosoftRefreshToken))
+                    {
+                        Console.WriteLine("[Launch] Trying direct HTTP refresh token exchange...");
+                        var directSession = await TryDirectTokenRefreshAsync(_currentSettings.MicrosoftRefreshToken);
+                        if (directSession != null)
+                        {
+                            _session = directSession;
+                            Console.WriteLine("[Launch] Direct token refresh succeeded.");
+                            return;
+                        }
+                        Console.WriteLine("[Launch] Direct token refresh failed — refresh token may be expired.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("[Launch] No stored refresh token available (user logged in before this fix was deployed).");
+                    }
+
+                    _session = null;
+                    Console.WriteLine("[Launch] All silent authentication methods exhausted.");
+                    return;
                 }
+
+                if (_currentSettings.IsLoggedIn && _currentSettings.AccountType == "offline" &&
+                    !string.IsNullOrWhiteSpace(_currentSettings.OfflineUsername))
+                {
+                    _session = MSession.CreateOfflineSession(_currentSettings.OfflineUsername);
+                    return;
+                }
+
+                _session = null;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Launch] Failed to load or refresh session: {ex.Message}");
-                _session = null; // Ensure session is null on any error
-                _currentSettings.ClearAuthOnly(); // Clear potentially corrupt data
-                await _settingsService.SaveSettingsAsync(_currentSettings);
+                Console.WriteLine($"[Launch] Failed to load session: {ex.GetType().Name}: {ex.Message}");
+                _session = null;
             }
         }
+
+        /// <summary>
+        /// Opens LoginWindow for a transparent re-authentication when the session expires.
+        /// Returns true if the user successfully re-authenticated, false otherwise.
+        /// </summary>
+        private async Task<bool> TryInteractiveReAuthAsync()
+        {
+            try
+            {
+                Console.WriteLine("[Launch] Session expired — prompting interactive re-authentication...");
+                var tcs = new TaskCompletionSource<bool>();
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    var loginWindow = new LoginWindow();
+                    loginWindow.LoginCompleted += (success) => tcs.TrySetResult(success);
+                    loginWindow.Closed += (_, __) => tcs.TrySetResult(loginWindow.LoginSuccessful);
+                    loginWindow.Show();
+                });
+
+                bool success = await tcs.Task;
+                Console.WriteLine($"[Launch] Interactive re-auth result: {success}");
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Launch] Interactive re-auth failed: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Validates a Minecraft access token by calling the Minecraft profile API.
+        /// Returns true if the token is still accepted by Mojang's servers.
+        /// </summary>
+        private static async Task<bool> ValidateMinecraftTokenAsync(string accessToken)
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient();
+                http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                var resp = await http.GetAsync("https://api.minecraftservices.com/minecraft/profile");
+                return resp.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private Task<MSession?> TryDirectTokenRefreshAsync(string refreshToken)
+            => DirectRefreshService.TryRefreshAsync(refreshToken, _currentSettings, _settingsService);
 
         /// <summary>
         /// Helper method to upload the skin file to Mojang's servers.
@@ -5379,24 +7689,20 @@ namespace LeafClient.Views
 
                     using (var form = new MultipartFormDataContent())
                     {
-                        // 1. Variant: "classic" (Steve) or "slim" (Alex)
                         form.Add(new StringContent(variant), "variant");
 
-                        // 2. File Content
                         byte[] fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
                         var imageContent = new ByteArrayContent(fileBytes);
                         imageContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("image/png");
 
                         form.Add(imageContent, "file", "skin.png");
 
-                        // 3. Send POST
                         var response = await client.PostAsync(url, form);
 
                         if (response.IsSuccessStatusCode)
                         {
                             Console.WriteLine("[Skin Upload] Success! Skin updated.");
 
-                            // 4. Refresh UI Previews immediately
                             await RefreshAccountPanelPoseAsync();
                             if (_currentSettings.IsLoggedIn)
                             {
@@ -5418,60 +7724,48 @@ namespace LeafClient.Views
 
         private void ShowProgress(bool show, string text = "")
         {
+            // Control the container visibility
             if (_launchProgressPanel != null)
                 _launchProgressPanel.IsVisible = show;
-            if (_launchProgressText != null)
+
+            // Update text if showing
+            if (show && _launchProgressText != null)
                 _launchProgressText.Text = text;
+
+            // Mirror status into the launch overlay sub-text while it's visible
+            if (_launchAnimOverlay?.IsVisible == true && _launchAnimSubText != null)
+            {
+                _launchAnimSubText.Text = show && !string.IsNullOrEmpty(text) ? text : "Preparing your game...";
+            }
 
             if (show)
             {
-                string conciseOperation = "TASK IN PROGRESS"; // Default fallback
-                if (text.StartsWith("Downloading Minecraft"))
-                    conciseOperation = "DOWNLOADING MINECRAFT";
-                else if (text.StartsWith("Installing Fabric loader"))
-                    conciseOperation = "INSTALLING FABRIC";
-                else if (text.StartsWith("Preparing Fabric profile"))
-                    conciseOperation = "PREPARING FABRIC PROFILE";
-                else if (text.StartsWith("Installing OptiFine & OptiFabric"))
-                    conciseOperation = "INSTALLING OPTIFINE";
-                else if (text.StartsWith("Installing Fabric API"))
-                    conciseOperation = "INSTALLING FABRIC API";
-                else if (text.StartsWith("Installing Sodium")) // Added for Sodium
-                    conciseOperation = "INSTALLING SODIUM";
-                else if (text.StartsWith("Installing Lithium")) // Added for Lithium
-                    conciseOperation = "INSTALLING LITHIUM";
-                else if (text.StartsWith("Downloading OptiFine for Fabric modpack")) // Added for OptiFine pack
-                    conciseOperation = "DOWNLOADING OPTIFINE PACK";
+                _currentOperationText = text.ToUpper();
+                // Determine color based on text content for flavor
+                if (text.Contains("Fabric")) _currentOperationColor = "DeepSkyBlue";
+                else if (text.Contains("Sodium") || text.Contains("Lithium")) _currentOperationColor = "SeaGreen";
+                else _currentOperationColor = "DeepSkyBlue";
 
-
-                _currentOperationText = conciseOperation;
-                _currentOperationColor = "DeepSkyBlue"; // Progress is usually blue
-                _isInstalling = true; // Indicate that an installation is in progress
-
-                // When progress starts, the button should show the task, not "CANCEL OPERATION" yet.
-                // The "CANCEL OPERATION" will appear on hover.
-                UpdateLaunchButton(conciseOperation, "DeepSkyBlue"); // Show the current task
+                _isInstalling = true;
+                UpdateLaunchButton(_currentOperationText, _currentOperationColor);
             }
-            else // When progress is hidden
+            else
             {
-                _isInstalling = false; // Installation is no longer in progress
-                                       // When progress finishes, the button should revert to LAUNCH GAME (or other appropriate state)
-                ApplyLaunchButtonState(); // Let ApplyLaunchButtonState determine the next appropriate state
+                _isInstalling = false;
+                ApplyLaunchButtonState();
             }
         }
 
         private bool IsOptiFineForFabricSupported(string version)
         {
-            // Check if OptiFine is actually available for this version
             var supportedVersions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1", // <-- Added "1.21.3"
+    "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1", 
     "1.20.6", "1.20.5", "1.20.4", "1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5"
 };
 
             bool isSupported = supportedVersions.Contains(version);
 
-            // If the version isn't supported, disable the toggle
             if (!isSupported && _optiFineToggle != null && _optiFineToggle.IsChecked == true)
             {
                 _optiFineToggle.IsChecked = false;
@@ -5489,10 +7783,9 @@ namespace LeafClient.Views
                 using var client = new HttpClient();
                 string baseApiUrl = "https://api.modrinth.com/v2/project/BHtwz1lb/version";
 
-                // --- Attempt 1: Exact Version Match ---
                 string exactVersionUrl = $"{baseApiUrl}?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
                 var json = await client.GetStringAsync(exactVersionUrl);
-                var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(json, Json.Options);
+                var versions = JsonSerializer.Deserialize(json, JsonContext.Default.ListModrinthVersion);
 
                 if (versions != null && versions.Any())
                 {
@@ -5504,7 +7797,6 @@ namespace LeafClient.Views
                     }
                 }
 
-                // --- Attempt 2: Major.Minor Version Match ---
                 string[] mcVersionParts = mcVersion.Split('.');
                 if (mcVersionParts.Length >= 2)
                 {
@@ -5524,16 +7816,15 @@ namespace LeafClient.Views
                     }
                 }
 
-                // --- Attempt 3: Fallback to manual parsing ---
                 Console.WriteLine("[OptiFineForFabric] No direct API filter match. Falling back to manual search of all versions.");
-                json = await client.GetStringAsync(baseApiUrl); // Fetch all versions
-                var allVersions = JsonSerializer.Deserialize<List<ModrinthVersion>>(json, Json.Options);
+                json = await client.GetStringAsync(baseApiUrl); 
+                var allVersions = JsonSerializer.Deserialize(json, JsonContext.Default.ListModrinthVersion);
 
                 if (allVersions != null && allVersions.Any())
                 {
                     if (Version.TryParse(mcVersion, out Version? targetSemver))
                     {
-                        Models.ModrinthVersion? bestFallbackMatch = null; // Correctly typed
+                        Models.ModrinthVersion? bestFallbackMatch = null; 
                         Version bestFallbackSemver = new Version(0, 0);
 
                         foreach (var v in allVersions)
@@ -5547,7 +7838,7 @@ namespace LeafClient.Views
                                     if (candidateSemver <= targetSemver && candidateSemver > bestFallbackSemver)
                                     {
                                         bestFallbackSemver = candidateSemver;
-                                        bestFallbackMatch = v; // This now works
+                                        bestFallbackMatch = v; 
                                     }
                                 }
                             }
@@ -5575,25 +7866,774 @@ namespace LeafClient.Views
             }
         }
 
+        private void InitializeLauncher()
+        {
+            var path = new MinecraftPath(_minecraftFolder);
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(_minecraftFolder, "versions"));
+            _launcher = new MinecraftLauncher(path);
+        }
+
+
+        private async Task DownloadFileWithProgressAsync(string url, string destinationPath, string fileName)
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "LeafClient-Launcher");
+            client.Timeout = TimeSpan.FromMinutes(10);
+
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+            var canReportProgress = totalBytes != -1;
+
+            using var contentStream = await response.Content.ReadAsStreamAsync();
+            using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+            var totalRead = 0L;
+            var buffer = new byte[8192];
+            var isMoreToRead = true;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (_launchProgressPanel != null) _launchProgressPanel.IsVisible = true;
+                if (_launchProgressBar != null)
+                {
+                    _launchProgressBar.IsIndeterminate = !canReportProgress;
+                    _launchProgressBar.Minimum = 0;
+                    _launchProgressBar.Maximum = 100;
+                    _launchProgressBar.Value = 0;
+                }
+                if (_launchProgressText != null)
+                    _launchProgressText.Text = $"Downloading {fileName}...";
+            });
+
+            do
+            {
+                var read = await contentStream.ReadAsync(buffer, 0, buffer.Length);
+                if (read == 0)
+                {
+                    isMoreToRead = false;
+                }
+                else
+                {
+                    await fileStream.WriteAsync(buffer, 0, read);
+                    totalRead += read;
+
+                    if (canReportProgress)
+                    {
+                        var percent = (double)totalRead / totalBytes * 100;
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            if (_launchProgressBar != null) _launchProgressBar.Value = percent;
+                            if (_launchProgressText != null) _launchProgressText.Text = $"Downloading {fileName} ({percent:F0}%)";
+                        });
+                    }
+                }
+            }
+            while (isMoreToRead);
+        }
+
+        private async Task<bool> InstallSodiumIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Sodium for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/AANobbMI/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                if (string.IsNullOrWhiteSpace(response)) throw new Exception("Empty response from Modrinth API");
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                var latest = versions?.FirstOrDefault();
+
+                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Sodium files found");
+
+                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
+
+                string fileName = $"sodium-fabric-{mcVersion}.jar";
+                string sodiumPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                // USE TRACKED DOWNLOAD
+                await DownloadFileWithProgressAsync(file.url, sodiumPath, "Sodium");
+
+                Console.WriteLine($"[Sodium] Installed: {sodiumPath}");
+                await RegisterAutoInstalledMod("sodium", "Sodium", latest.versionNumber, mcVersion, fileName, file.url);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Sodium] Install failed: {ex.Message}");
+                ShowLaunchErrorBanner($"Failed to install Sodium: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallLithiumIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Lithium for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/gvQqBUqZ/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0) throw new Exception("No Lithium versions found");
+
+                var latest = versions.FirstOrDefault();
+                var downloadUrl = latest?.files?[0].url;
+
+                if (string.IsNullOrWhiteSpace(downloadUrl)) throw new Exception("Invalid download URL");
+
+                string fileName = $"lithium-{mcVersion}.jar";
+                string lithiumPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                // USE TRACKED DOWNLOAD
+                await DownloadFileWithProgressAsync(downloadUrl, lithiumPath, "Lithium");
+
+                Console.WriteLine($"[Lithium] Installed: {lithiumPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Lithium] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallFerriteCorIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching FerriteCore for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/uXXizFIs/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[FerriteCore] No version found for {mcVersion}, skipping.");
+                    return true; // Not a fatal error — just skip
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[FerriteCore] No download URL found, skipping."); return true; }
+
+                string fileName = $"ferritecore-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "FerriteCore");
+                Console.WriteLine($"[FerriteCore] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FerriteCore] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallImmediatelyFastIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching ImmediatelyFast for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/5ZwThgaL/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[ImmediatelyFast] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[ImmediatelyFast] No download URL found, skipping."); return true; }
+
+                string fileName = $"immediatelyfast-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "ImmediatelyFast");
+                Console.WriteLine($"[ImmediatelyFast] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ImmediatelyFast] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallEntityCullingIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching EntityCulling for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/NNAgCjsB/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[EntityCulling] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[EntityCulling] No download URL found, skipping."); return true; }
+
+                string fileName = $"entityculling-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "EntityCulling");
+                Console.WriteLine($"[EntityCulling] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[EntityCulling] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallModernFixIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching ModernFix for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/nmDe0x5F/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[ModernFix] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[ModernFix] No download URL found, skipping."); return true; }
+
+                string fileName = $"modernfix-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "ModernFix");
+                Console.WriteLine($"[ModernFix] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ModernFix] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task BuildAndCopyLocalModAsync(string mcVersion, string destJarPath)
+        {
+            string projectDir = _currentSettings.TestModeModProjectPath;
+            string versionFolder = System.IO.Path.Combine(projectDir, "versions", $"{mcVersion}-fabric");
+
+            if (!System.IO.Directory.Exists(versionFolder))
+                throw new Exception($"[Test Mode] No version folder found: {versionFolder}");
+
+            _gameOutputWindow?.AppendLog($"[Test Mode] Building local JAR for {mcVersion}...", "INFO");
+            ShowProgress(true, $"Building LeafClient {mcVersion}...");
+
+            // Determine gradle wrapper path and command
+            string gradlewBat = System.IO.Path.Combine(projectDir, "gradlew.bat");
+            string gradlewSh  = System.IO.Path.Combine(projectDir, "gradlew");
+
+            string fileName;
+            string arguments;
+
+            if (System.OperatingSystem.IsWindows())
+            {
+                // On Windows, .bat files cannot be launched directly with UseShellExecute=false.
+                // We must invoke cmd.exe /c to execute the batch file.
+                if (!System.IO.File.Exists(gradlewBat))
+                    throw new Exception("[Test Mode] gradlew.bat not found in project directory.");
+                fileName  = "cmd.exe";
+                arguments = $"/c \"{gradlewBat}\" :{mcVersion}-fabric:clean :{mcVersion}-fabric:remapJar";
+            }
+            else
+            {
+                if (!System.IO.File.Exists(gradlewSh))
+                    throw new Exception("[Test Mode] gradlew not found in project directory.");
+                fileName  = gradlewSh;
+                arguments = $":{mcVersion}-fabric:clean :{mcVersion}-fabric:remapJar";
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                WorkingDirectory = projectDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            // Capture build start time BEFORE the build runs so we can filter stale artifacts out later.
+            DateTime buildStartUtc = DateTime.UtcNow;
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] Gradle build start (UTC): {buildStartUtc:yyyy-MM-dd HH:mm:ss}", "INFO");
+
+            using var proc = new System.Diagnostics.Process { StartInfo = psi };
+            proc.OutputDataReceived += (_, e) => { if (e.Data != null) _gameOutputWindow?.AppendLog(e.Data, "INFO"); };
+            proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) _gameOutputWindow?.AppendLog(e.Data, "WARN"); };
+            proc.Start();
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
+            await Task.Run(() => proc.WaitForExit());
+
+            if (proc.ExitCode != 0)
+                throw new Exception($"[Test Mode] Gradle build failed with exit code {proc.ExitCode}");
+
+            // Robust jar discovery: look in build/libs AND build/devlibs, filter out dev/sources/javadoc jars,
+            // require mtime >= buildStartUtc (minus 10s tolerance), prefer the newest remapped jar.
+            string libsDir = System.IO.Path.Combine(versionFolder, "build", "libs");
+            string devLibsDir = System.IO.Path.Combine(versionFolder, "build", "devlibs");
+
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] Scanning for built jar in: {libsDir}", "INFO");
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] (also checking devlibs for visibility): {devLibsDir}", "INFO");
+
+            static string[] SafeListJars(string dir)
+            {
+                try { return Directory.Exists(dir) ? Directory.GetFiles(dir, "*.jar", SearchOption.TopDirectoryOnly) : Array.Empty<string>(); }
+                catch { return Array.Empty<string>(); }
+            }
+
+            var libsJars = SafeListJars(libsDir);
+            var devLibsJars = SafeListJars(devLibsDir);
+
+            // Log everything we found in both folders for full transparency.
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] build/libs    contains {libsJars.Length} jar(s):", "INFO");
+            foreach (var f in libsJars) LogJarFileInfo("  build/libs", f);
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] build/devlibs contains {devLibsJars.Length} jar(s):", "INFO");
+            foreach (var f in devLibsJars) LogJarFileInfo("  build/devlibs", f);
+
+            // Pick the right jar. Rules:
+            //   1. MUST be in build/libs (remapJar output), NEVER build/devlibs.
+            //   2. Name should start with "leafclient" (loom default or our override).
+            //   3. Exclude -dev.jar, -sources.jar, -javadoc.jar.
+            //   4. Prefer mtime >= buildStartUtc (fresh build product); allow a 10s tolerance
+            //      for clock drift between our UtcNow and the filesystem timestamp.
+            //   5. If multiple candidates, pick the newest.
+            var buildThresholdUtc = buildStartUtc.AddSeconds(-10);
+
+            var libsCandidates = libsJars
+                .Select(p => new FileInfo(p))
+                .Where(fi =>
+                {
+                    string name = fi.Name;
+                    if (!name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)) return false;
+                    if (name.EndsWith("-dev.jar",     StringComparison.OrdinalIgnoreCase)) return false;
+                    if (name.EndsWith("-sources.jar", StringComparison.OrdinalIgnoreCase)) return false;
+                    if (name.EndsWith("-javadoc.jar", StringComparison.OrdinalIgnoreCase)) return false;
+                    if (!name.StartsWith("leafclient", StringComparison.OrdinalIgnoreCase)) return false;
+                    return true;
+                })
+                .ToList();
+
+            var freshCandidates = libsCandidates
+                .Where(fi => fi.LastWriteTimeUtc >= buildThresholdUtc)
+                .OrderByDescending(fi => fi.LastWriteTimeUtc)
+                .ToList();
+
+            FileInfo? chosen = freshCandidates.FirstOrDefault();
+
+            if (chosen == null && libsCandidates.Count > 0)
+            {
+                // Gradle may have been "UP-TO-DATE" (incremental build). Accept the newest stale candidate
+                // but surface a prominent warning so we can detect this scenario in the logs.
+                chosen = libsCandidates.OrderByDescending(fi => fi.LastWriteTimeUtc).First();
+                _gameOutputWindow?.AppendLog(
+                    $"[LaunchDiag] WARN: No jar in build/libs was modified after build start. " +
+                    $"Accepting STALE candidate {chosen.Name} (mtime={chosen.LastWriteTime:yyyy-MM-dd HH:mm:ss}). " +
+                    $"The Gradle :clean task may have been a no-op, or the build was UP-TO-DATE.",
+                    "WARN");
+            }
+
+            if (chosen == null)
+            {
+                var libsNames   = libsJars.Length   > 0 ? string.Join(", ", libsJars.Select(System.IO.Path.GetFileName))   : "(empty)";
+                var devLibsNames = devLibsJars.Length > 0 ? string.Join(", ", devLibsJars.Select(System.IO.Path.GetFileName)) : "(empty)";
+                throw new Exception(
+                    $"[Test Mode] No remapped leafclient jar found after Gradle build for {mcVersion}.\n" +
+                    $"  build/libs:    {libsNames}\n" +
+                    $"  build/devlibs: {devLibsNames}\n" +
+                    $"  Expected a *.jar in build/libs whose name starts with 'leafclient' and does not end with '-dev.jar', '-sources.jar', or '-javadoc.jar'.");
+            }
+
+            string builtJar = chosen.FullName;
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] Chosen source jar: {builtJar}", "INFO");
+            LogJarFileInfo("source jar (chosen)", builtJar);
+
+            // Ensure destination directory exists, then delete any stale destination before copying.
+            string? destDir = System.IO.Path.GetDirectoryName(destJarPath);
+            if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+            try { if (File.Exists(destJarPath)) File.Delete(destJarPath); } catch { /* best-effort */ }
+
+            System.IO.File.Copy(builtJar, destJarPath, overwrite: true);
+
+            // Verify the copy by comparing hashes of source and destination.
+            string srcHash = ComputeShortSha256(builtJar);
+            string dstHash = ComputeShortSha256(destJarPath);
+            long srcLen = new FileInfo(builtJar).Length;
+            long dstLen = new FileInfo(destJarPath).Length;
+
+            _gameOutputWindow?.AppendLog("[LaunchDiag] ===== POST-BUILD COPY VERIFICATION =====", "INFO");
+            LogJarFileInfo("src", builtJar);
+            LogJarFileInfo("dst", destJarPath);
+
+            if (srcHash != dstHash || srcLen != dstLen)
+            {
+                _gameOutputWindow?.AppendLog(
+                    $"[LaunchDiag] ERROR: src/dst mismatch after copy! srcHash={srcHash} dstHash={dstHash} srcLen={srcLen} dstLen={dstLen}",
+                    "ERROR");
+                throw new Exception("[Test Mode] Built JAR copy verification failed (hash/size mismatch between src and dst).");
+            }
+            _gameOutputWindow?.AppendLog($"[LaunchDiag] OK: src/dst match (sha16={srcHash}, size={srcLen / 1024}KB)", "INFO");
+            _gameOutputWindow?.AppendLog("[LaunchDiag] ===== END POST-BUILD COPY VERIFICATION =====", "INFO");
+
+            var jarInfo = new System.IO.FileInfo(destJarPath);
+            string builtAt = jarInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+            long sizeKb = jarInfo.Length / 1024;
+            _gameOutputWindow?.AppendLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "INFO");
+            _gameOutputWindow?.AppendLog($"  TEST MODE BUILD READY", "INFO");
+            _gameOutputWindow?.AppendLog($"  JAR  : {destJarPath}", "INFO");
+            _gameOutputWindow?.AppendLog($"  Built: {builtAt}  ({sizeKb} KB)  sha16={dstHash}", "INFO");
+            _gameOutputWindow?.AppendLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "INFO");
+        }
+
+        private async Task<bool> InstallPhosphorIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Phosphor for {mcVersion}...");
+
+                using var client = new HttpClient();
+                // Phosphor (Modrinth: hEOCdOgW) — may only be available for older MC versions
+                var apiUrl = $"https://api.modrinth.com/v2/project/hEOCdOgW/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Phosphor] Not available for {mcVersion}, skipping.");
+                    return true; // not a failure — just not available for this version
+                }
+
+                var latest = versions.First();
+                var file = latest.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files?.First();
+                if (file == null) return true;
+
+                string fileName = $"phosphor-fabric-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+                await DownloadFileWithProgressAsync(file.url, destPath, "Phosphor");
+                Console.WriteLine($"[Phosphor] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Phosphor] Install failed (may not support this version): {ex.Message}");
+                return true; // non-fatal
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallIrisShadersIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Iris Shaders for {mcVersion}...");
+
+                using var client = new HttpClient();
+                // Iris Shaders (Modrinth: YL57xq9U)
+                var apiUrl = $"https://api.modrinth.com/v2/project/YL57xq9U/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Iris] Not available for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.First();
+                var file = latest.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files?.First();
+                if (file == null) return true;
+
+                string fileName = $"iris-fabric-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+                await DownloadFileWithProgressAsync(file.url, destPath, "Iris Shaders");
+                Console.WriteLine($"[Iris] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Iris] Install failed: {ex.Message}");
+                return true;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallDynamicLightsIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Dynamic Lights for {mcVersion}...");
+
+                using var client = new HttpClient();
+                // LambDynamicLights (Modrinth: H8CuhNKC)
+                var apiUrl = $"https://api.modrinth.com/v2/project/H8CuhNKC/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[DynamicLights] Not available for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.First();
+                var file = latest.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files?.First();
+                if (file == null) return true;
+
+                string fileName = $"lambdynamiclights-fabric-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+                await DownloadFileWithProgressAsync(file.url, destPath, "Dynamic Lights");
+                Console.WriteLine($"[DynamicLights] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DynamicLights] Install failed: {ex.Message}");
+                return true;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallBetterFpsIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching BetterFps for {mcVersion}...");
+
+                using var client = new HttpClient();
+                // Better Fps - Render Distance (Modrinth: mfzaZK3z)
+                var apiUrl = $"https://api.modrinth.com/v2/project/mfzaZK3z/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[BetterFps] Not available for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.First();
+                var file = latest.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files?.First();
+                if (file == null) return true;
+
+                string fileName = $"betterfps-fabric-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+                await DownloadFileWithProgressAsync(file.url, destPath, "BetterFps");
+                Console.WriteLine($"[BetterFps] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BetterFps] Install failed: {ex.Message}");
+                return true;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        // 4. REPLACES InstallFabricApiIfNeededAsync
+        private async Task<bool> InstallFabricApiIfNeededAsync(string mcVersion, string versionFolderName)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+            string fabricApiPath = System.IO.Path.Combine(modsFolder, $"fabric-api-{mcVersion}.jar");
+
+            try
+            {
+                if (System.IO.File.Exists(fabricApiPath) && _currentSettings.InstalledMods.Any(m => m.ModId == "fabric-api" && m.MinecraftVersion == mcVersion))
+                {
+                    return true;
+                }
+
+                ShowProgress(true, $"Fetching Fabric API for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/P7dR8mSH/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                var latest = versions?.FirstOrDefault();
+
+                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found");
+
+                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
+
+                // USE TRACKED DOWNLOAD
+                await DownloadFileWithProgressAsync(file.url, fabricApiPath, "Fabric API");
+
+                await RegisterAutoInstalledMod("fabric-api", "Fabric API", latest.versionNumber, mcVersion, $"fabric-api-{mcVersion}.jar", file.url);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Fabric API] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        // 5. REPLACES InstallOptiFineForFabricIfNeededAsync
+        private async Task<bool> InstallOptiFineForFabricIfNeededAsync(string mcVersion, string profileName, bool isFabric)
+        {
+            if (!isFabric || !_currentSettings.IsOptiFineEnabled)
+            {
+                if (!isFabric) Console.WriteLine("[OptiFine] Not Fabric profile.");
+                else ManageOptiFineForFabricMods(mcVersion, enable: false);
+                return true;
+            }
+
+            string? mrpackUrl = await GetOptiFineMrpackUrlForVersion(mcVersion);
+            if (string.IsNullOrEmpty(mrpackUrl))
+            {
+                ShowLaunchErrorBanner($"OptiFine pack not found for {mcVersion}.");
+                ManageOptiFineForFabricMods(mcVersion, enable: false);
+                return false;
+            }
+
+            string mrpackPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"OptiFineForFabric_{mcVersion}.mrpack");
+
+            try
+            {
+                // USE TRACKED DOWNLOAD
+                await DownloadFileWithProgressAsync(mrpackUrl, mrpackPath, "OptiFine Pack");
+            }
+            catch (Exception ex)
+            {
+                ShowLaunchErrorBanner($"Failed to download OptiFine pack: {ex.Message}");
+                return false;
+            }
+
+            bool success = false;
+            try
+            {
+                success = await ProcessModrinthPackInstallation(mrpackPath, System.IO.Path.Combine(_minecraftFolder, "mods"), mcVersion);
+                ManageOptiFineForFabricMods(mcVersion, enable: success);
+            }
+            catch (Exception ex)
+            {
+                ShowLaunchErrorBanner($"Error installing OptiFine pack: {ex.Message}");
+                ManageOptiFineForFabricMods(mcVersion, enable: false);
+            }
+            finally
+            {
+                if (File.Exists(mrpackPath)) File.Delete(mrpackPath);
+            }
+
+            return success;
+        }
+
+        private async Task DownloadAndInstallMod(string downloadUrl, string fileName, string modName, InstalledMod installedMod)
+        {
+            var modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            Directory.CreateDirectory(modsFolder);
+            var filePath = System.IO.Path.Combine(modsFolder, fileName);
+
+            ShowProgress(true, $"Downloading {modName}...");
+
+            try
+            {
+                await DownloadFileWithProgressAsync(downloadUrl, filePath, modName);
+                installedMod.FileName = fileName;
+                Console.WriteLine($"[Mod Install] Successfully installed {modName}");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Mod Install ERROR] Failed to download {modName}: {ex.Message}");
+                ShowLaunchErrorBanner($"Failed to download {modName}. Check your internet connection.");
+                throw;
+            }
+            finally
+            {
+                ShowProgress(false);
+            }
+        }
+
+
         private async Task<bool> DownloadFileAsync(string url, string destinationPath)
         {
             try
             {
-                using var client = new HttpClient();
-                var downloadUrl = url; // Use the URL directly as it's already a raw link
-
-                var response = await client.GetAsync(downloadUrl);
-                if (!response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine($"[DownloadFile] Failed to download from {downloadUrl}: {response.StatusCode}");
-                    Console.WriteLine($"[DownloadFile] Response content: {await response.Content.ReadAsStringAsync()}"); // Log response for debugging
-                    return false;
-                }
-
-                var fileBytes = await response.Content.ReadAsByteArrayAsync();
-
-                await System.IO.File.WriteAllBytesAsync(destinationPath, fileBytes);
-                Console.WriteLine($"[DownloadFile] Downloaded: {System.IO.Path.GetFileName(destinationPath)}");
+                await DownloadFileWithProgressAsync(url, destinationPath, System.IO.Path.GetFileName(destinationPath));
                 return true;
             }
             catch (Exception ex)
@@ -5603,9 +8643,9 @@ namespace LeafClient.Views
             }
         }
 
+
         private async Task RegisterAutoInstalledMod(string modId, string modName, string version, string mcVersion, string fileName, string url)
         {
-            // Check if this specific mod file is already tracked
             var existing = _currentSettings.InstalledMods.FirstOrDefault(m =>
                 m.ModId == modId &&
                 m.MinecraftVersion == mcVersion);
@@ -5623,81 +8663,117 @@ namespace LeafClient.Views
                     DownloadUrl = url,
                     Enabled = true,
                     InstallDate = DateTime.Now,
-                    IconUrl = ""
+                    IconUrl = "",
+                    IsAutoInstalled = true,
                 });
-                Console.WriteLine($"[Mod Tracker] Registered {modName} for MC {mcVersion} in settings.");
+                Console.WriteLine($"[Mod Tracker] Registered {modName} for MC {mcVersion} in settings (auto-installed).");
             }
             else
             {
-                // Update details if it exists (e.g. filename changed or url updated)
                 existing.FileName = fileName;
                 existing.DownloadUrl = url;
                 existing.Version = version;
-                existing.Enabled = true; // Ensure it's enabled
+                existing.Enabled = true;
+                existing.IsAutoInstalled = true; // Backfill the flag for rows saved before the field existed
             }
 
             await _settingsService.SaveSettingsAsync(_currentSettings);
         }
 
-
-        private async Task<bool> InstallSodiumIfNeededAsync(string mcVersion)
+        private async Task ApplyModPresetForLaunchAsync(string mcVersion, string fabricProfile)
         {
-            if (!_currentSettings.IsSodiumEnabled)
+            // Get the active profile and its mod preset
+            var activeProfile = _currentSettings.Profiles?.FirstOrDefault(p => p.Id == _currentSettings.ActiveProfileId)
+                             ?? _currentSettings.Profiles?.FirstOrDefault();
+            if (activeProfile == null)
             {
-                Console.WriteLine("[Sodium] Installation skipped - disabled in settings.");
-                return true;
+                Console.WriteLine("[Mod Preset] No active profile found.");
+                return;
             }
 
-            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-            System.IO.Directory.CreateDirectory(modsFolder);
+            string preset = activeProfile.ModPreset ?? "none";
+            Console.WriteLine($"[Mod Preset] Applying preset '{preset}' for MC {mcVersion}");
 
-            try
+            // Always-required performance mods — install regardless of preset
+            var alwaysRequired = new[] { "sodium", "lithium", "ferritecore", "immediatelyfast", "entityculling", "modernfix" };
+            foreach (var modKey in alwaysRequired)
             {
-                ShowProgress(true, $"Installing Sodium for Minecraft {mcVersion}...");
-
-                using var client = new HttpClient();
-                var apiUrl = $"https://api.modrinth.com/v2/project/AANobbMI/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
-                var response = await client.GetStringAsync(apiUrl);
-
-                if (string.IsNullOrWhiteSpace(response)) throw new Exception("Empty response from Modrinth API for Sodium");
-
-                var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
-                var latest = versions?.FirstOrDefault();
-
-                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No download files found for Sodium");
-
-                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
-                var downloadUrl = file.url;
-
-                if (string.IsNullOrWhiteSpace(downloadUrl)) throw new Exception("Invalid download URL for Sodium");
-
-                Console.WriteLine($"[Sodium] Downloading from: {downloadUrl}");
-                var jarBytes = await client.GetByteArrayAsync(downloadUrl);
-
-                string fileName = $"sodium-fabric-{mcVersion}.jar";
-                string sodiumPath = System.IO.Path.Combine(modsFolder, fileName);
-
-                await File.WriteAllBytesAsync(sodiumPath, jarBytes);
-                Console.WriteLine($"[Sodium] Successfully installed for {mcVersion} at {sodiumPath}");
-
-                // TRACKING FIX: Register the mod so the cleaner knows about it later
-                await RegisterAutoInstalledMod("sodium", "Sodium", latest.versionNumber, mcVersion, fileName, downloadUrl);
-
-                return true;
+                try
+                {
+                    switch (modKey)
+                    {
+                        case "sodium":        await InstallSodiumIfNeededAsync(mcVersion); break;
+                        case "lithium":       await InstallLithiumIfNeededAsync(mcVersion); break;
+                        case "ferritecore":   await InstallFerriteCorIfNeededAsync(mcVersion); break;
+                        case "immediatelyfast": await InstallImmediatelyFastIfNeededAsync(mcVersion); break;
+                        case "entityculling": await InstallEntityCullingIfNeededAsync(mcVersion); break;
+                        case "modernfix":     await InstallModernFixIfNeededAsync(mcVersion); break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Required Mod] Failed to install {modKey}: {ex.Message}");
+                }
             }
-            catch (Exception ex)
+
+            // Map presets to mod lists (sodium/lithium already installed above)
+            var presetMap = new Dictionary<string, string[]>
             {
-                Console.WriteLine($"[Sodium] Installation failed: {ex.Message}");
-                ShowLaunchErrorBanner($"Failed to install Sodium for {mcVersion}. It may not be available for this version.");
-                return false;
-            }
-            finally
+                ["none"]     = Array.Empty<string>(),
+                ["lite"]     = new[] { "fabric-api" },
+                ["balanced"] = new[] { "fabric-api", "phosphor" },
+                ["enhanced"] = new[] { "fabric-api", "phosphor", "iris", "dynamiclights", "betterfps" }
+            };
+
+            if (!presetMap.TryGetValue(preset, out var modsToInstall))
             {
-                ShowProgress(false);
+                Console.WriteLine($"[Mod Preset] Unknown preset '{preset}', defaulting to none.");
+                return;
             }
+
+            if (modsToInstall.Length == 0)
+            {
+                Console.WriteLine("[Mod Preset] No mods to install for preset 'none'.");
+                return;
+            }
+
+            // Install mods based on preset
+            foreach (var modKey in modsToInstall)
+            {
+                try
+                {
+                    switch (modKey)
+                    {
+                        case "fabric-api":
+                            Console.WriteLine("[Mod Preset] Installing Fabric API...");
+                            await InstallFabricApiIfNeededAsync(mcVersion, fabricProfile);
+                            break;
+                        case "phosphor":
+                            Console.WriteLine("[Mod Preset] Installing Phosphor...");
+                            await InstallPhosphorIfNeededAsync(mcVersion);
+                            break;
+                        case "iris":
+                            Console.WriteLine("[Mod Preset] Installing Iris Shaders...");
+                            await InstallIrisShadersIfNeededAsync(mcVersion);
+                            break;
+                        case "dynamiclights":
+                            Console.WriteLine("[Mod Preset] Installing Dynamic Lights...");
+                            await InstallDynamicLightsIfNeededAsync(mcVersion);
+                            break;
+                        case "betterfps":
+                            Console.WriteLine("[Mod Preset] Installing BetterFps...");
+                            await InstallBetterFpsIfNeededAsync(mcVersion);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Mod Preset] Failed to install {modKey}: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"[Mod Preset] Finished applying preset '{preset}'");
         }
-
-
 
         private async Task<bool> ProcessModrinthPackInstallation(string mrpackPath, string modsFolder, string mcVersion)
         {
@@ -5709,7 +8785,6 @@ namespace LeafClient.Views
 
             try
             {
-                // 1. Extract the .mrpack (which is a ZIP file) to a temporary folder
                 try
                 {
                     ShowProgress(true, $"Extracting modpack files for {mcVersion}...");
@@ -5722,7 +8797,6 @@ namespace LeafClient.Views
                     return false;
                 }
 
-                // 2. Process overrides directories if present
                 string overridesDir = System.IO.Path.Combine(tempExtractionFolder, "overrides");
                 if (System.IO.Directory.Exists(overridesDir))
                 {
@@ -5747,7 +8821,6 @@ namespace LeafClient.Views
                     Console.WriteLine("[Modpack] Finished copying 'server-overrides'.");
                 }
 
-                // 3. Parse modrinth.index.json to get actual mod files and their download URLs
                 string indexPath = System.IO.Path.Combine(tempExtractionFolder, "modrinth.index.json");
                 if (!System.IO.File.Exists(indexPath))
                 {
@@ -5757,7 +8830,7 @@ namespace LeafClient.Views
 
                 string indexJson = await System.IO.File.ReadAllTextAsync(indexPath);
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var pack = JsonSerializer.Deserialize<ModrinthPack>(indexJson, Json.Options);
+                var pack = JsonSerializer.Deserialize(indexJson, JsonContext.Default.ModrinthPack);
 
                 if (pack == null || pack.Files == null || pack.Files.Count == 0)
                 {
@@ -5765,7 +8838,7 @@ namespace LeafClient.Views
                     return false;
                 }
 
-                using (var httpClient = new HttpClient()) // Use a local HttpClient for this loop
+                using (var httpClient = new HttpClient()) 
                 {
                     foreach (var file in pack.Files)
                     {
@@ -5775,14 +8848,12 @@ namespace LeafClient.Views
                             continue;
                         }
 
-                        // Sanity check for path (important for security with modpacks)
                         if (string.IsNullOrEmpty(file.Path) || file.Path.Contains("..") || System.IO.Path.IsPathRooted(file.Path))
                         {
                             Console.Error.WriteLine($"[Modpack ERROR] Unsafe or invalid file path '{file.Path}', skipping download.");
                             continue;
                         }
 
-                        // Only download .jar files into the mods folder
                         if (!file.Path.StartsWith("mods/", StringComparison.OrdinalIgnoreCase) || !file.Path.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
                         {
                             Console.WriteLine($"[Modpack] Skipping non-mod file or non-jar file from modrinth.index.json: {file.Path}");
@@ -5797,7 +8868,7 @@ namespace LeafClient.Views
 
                         string fileName = System.IO.Path.GetFileName(file.Path);
                         string destPath = System.IO.Path.Combine(modsFolder, fileName);
-                        string downloadUrl = file.Downloads[0]; // Use the first download URL
+                        string downloadUrl = file.Downloads[0]; 
 
                         Console.WriteLine($"[Modpack] Downloading mod: {fileName} from {downloadUrl}");
                         ShowProgress(true, $"Downloading {fileName}...");
@@ -5806,7 +8877,6 @@ namespace LeafClient.Views
                         {
                             byte[] modData = await httpClient.GetByteArrayAsync(downloadUrl);
 
-                            // Optional: Hash validation
                             if (file.Hashes != null && file.Hashes.TryGetValue("sha512", out var expectedHash))
                             {
                                 using var sha512 = System.Security.Cryptography.SHA512.Create();
@@ -5816,7 +8886,7 @@ namespace LeafClient.Views
                                 if (!actualHashString.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
                                 {
                                     Console.Error.WriteLine($"[Modpack ERROR] Hash mismatch for {fileName}! Expected: {expectedHash}, Got: {actualHashString}. Skipping file.");
-                                    continue; // Skip this file due to hash mismatch
+                                    continue; 
                                 }
                                 Console.WriteLine($"[Modpack] Hash validated for {fileName}.");
                             }
@@ -5826,19 +8896,18 @@ namespace LeafClient.Views
 
                             var installedMod = new InstalledMod
                             {
-                                ModId = System.IO.Path.GetFileNameWithoutExtension(fileName), // Use filename as a simple ID for now
-                                Name = fileName, // Use filename as name for now
+                                ModId = System.IO.Path.GetFileNameWithoutExtension(fileName), 
+                                Name = fileName, 
                                 Description = "Installed from Modrinth pack",
-                                Version = "N/A", // Version is not easily extracted from .mrpack file entry
-                                MinecraftVersion = mcVersion, // Modpack is for this MC version
+                                Version = "N/A", 
+                                MinecraftVersion = mcVersion, 
                                 FileName = fileName,
                                 DownloadUrl = downloadUrl,
-                                Enabled = true, // Enabled by default
+                                Enabled = true, 
                                 InstallDate = DateTime.Now,
-                                IconUrl = "" // No icon URL in .mrpack file entry
+                                IconUrl = "" 
                             };
 
-                            // Check for existing entry to avoid duplicates or update if necessary
                             var existingMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId == installedMod.ModId && m.MinecraftVersion == installedMod.MinecraftVersion);
                             if (existingMod == null)
                             {
@@ -5847,13 +8916,12 @@ namespace LeafClient.Views
                             }
                             else
                             {
-                                // Update existing mod details (e.g., download URL, enable state)
                                 existingMod.Name = installedMod.Name;
                                 existingMod.Description = installedMod.Description;
                                 existingMod.Version = installedMod.Version;
                                 existingMod.FileName = installedMod.FileName;
                                 existingMod.DownloadUrl = installedMod.DownloadUrl;
-                                existingMod.Enabled = true; // Always enable if re-installed via pack
+                                existingMod.Enabled = true; 
                                 existingMod.InstallDate = DateTime.Now;
                                 existingMod.IconUrl = installedMod.IconUrl;
                                 Console.WriteLine($"[Modpack] Updated '{installedMod.Name}' in settings.");
@@ -5866,7 +8934,6 @@ namespace LeafClient.Views
                     }
                 }
 
-                // Save settings after all mods from the pack are processed
                 await _settingsService.SaveSettingsAsync(_currentSettings);
                 Console.WriteLine("[Modpack] Settings saved after pack installation.");
 
@@ -5880,8 +8947,7 @@ namespace LeafClient.Views
             }
             finally
             {
-                ShowProgress(false); // Hide progress bar
-                                     // Clean up the temporary extraction folder
+                ShowProgress(false); 
                 try
                 {
                     if (System.IO.Directory.Exists(tempExtractionFolder))
@@ -5921,28 +8987,25 @@ namespace LeafClient.Views
         }
 
 
-        // Add this new method to handle launching from the versions sidebar
         private async void LaunchFromVersionsSidebar(object? sender, RoutedEventArgs e)
         {
-            // 1. Switch to the Game/Launch page (index 0)
             AnimateSelectionIndicator(0);
             _currentSelectedIndex = 0;
             SwitchToPage(0);
 
-            // 2. Small delay to let the page switch animation complete
             await Task.Delay(300);
 
-            // 3. Trigger the launch button click programmatically
             var launchBtn = this.FindControl<Button>("LaunchGameButton");
             if (launchBtn != null)
             {
-                // Simulate the launch button click
                 if (_isLaunching)
                 {
                     if (_gameProcess != null && !_gameProcess.HasExited)
                     {
+                        _userTerminatedGame = true;
                         _gameProcess.Kill();
                     }
+                    _launchCancellationTokenSource?.Cancel();
                     _isLaunching = false;
                     UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
                     return;
@@ -5962,8 +9025,6 @@ namespace LeafClient.Views
 
         private async void LaunchGameToServer(ServerInfo server)
         {
-            // If a launch is already in progress, or launcher isn't ready, do nothing.
-            // This check is crucial for preventing multiple launches.
             if (_isLaunching || _launcher == null)
             {
                 Console.WriteLine("[Launch] Game is already launching or launcher is not initialized. Aborting new launch request.");
@@ -5976,19 +9037,15 @@ namespace LeafClient.Views
 
             Console.WriteLine($"[Server] Preparing to join {server.Name} at {server.Address}:{server.Port}");
 
-            // Switch to the Game/Launch page (index 0)
             AnimateSelectionIndicator(0);
             _currentSelectedIndex = 0;
             SwitchToPage(0);
 
-            // Small delay to let the page switch animation complete
             await Task.Delay(300);
 
-            // Trigger the launch button click programmatically
             var launchBtn = this.FindControl<Button>("LaunchGameButton");
             if (launchBtn != null)
             {
-                // Check if a version is selected before attempting to launch
                 var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
                 if (selectedVersionInfo == null)
                 {
@@ -6008,22 +9065,19 @@ namespace LeafClient.Views
             {
                 bool isAnyLaunchInProgress = _isLaunching || _isInstalling;
 
-                // 1. Update Quick Play buttons (always enabled, opacity based on online status or launch in progress)
                 if (_quickPlayServersContainer != null)
                 {
                     foreach (var child in _quickPlayServersContainer.Children)
                     {
                         if (child is Button qpBtn && qpBtn.Tag is ServerInfo qpServer)
                         {
-                            qpBtn.IsEnabled = true; // Quick Play buttons are ALWAYS enabled and clickable
+                            qpBtn.IsEnabled = true; 
 
-                            // Opacity: 0.3 if offline OR if a launch is in progress; otherwise 1.0
                             qpBtn.Opacity = (isAnyLaunchInProgress || !qpServer.IsOnline) ? 0.3 : 1.0;
                         }
                     }
                 }
 
-                // 2. Update Server list "JOIN" buttons (IsEnabled based on online status AND launch state)
                 if (_serversWrapPanel != null)
                 {
                     foreach (var card in _serversWrapPanel.Children.OfType<Border>())
@@ -6040,20 +9094,17 @@ namespace LeafClient.Views
                                     var server = _currentSettings.CustomServers.FirstOrDefault(s => s.Id == serverId);
                                     if (server != null)
                                     {
-                                        // Server list JOIN button is enabled only if no launch in progress AND server is online
                                         joinButton.IsEnabled = !isAnyLaunchInProgress && server.IsOnline;
-                                        // Set background/foreground for visual feedback (even when disabled by Avalonia default styling)
                                         joinButton.Background = server.IsOnline
                                             ? GetBrush("PrimaryAccentBrush")
                                             : GetBrush("HoverBackgroundBrush");
                                         joinButton.Foreground = server.IsOnline
                                             ? GetBrush("AccentButtonForegroundBrush")
                                             : GetBrush("DisabledForegroundBrush");
-                                        joinButton.Opacity = 1.0; // Server list buttons always full opacity, disabled state is visual only
+                                        joinButton.Opacity = 1.0; 
                                     }
                                     else
                                     {
-                                        // If server info is not found (e.g., deleted), ensure it's disabled
                                         joinButton.IsEnabled = false;
                                         joinButton.Background = GetBrush("HoverBackgroundBrush");
                                         joinButton.Foreground = GetBrush("DisabledForegroundBrush");
@@ -6069,19 +9120,23 @@ namespace LeafClient.Views
 
         private async Task LaunchGameAsync(string version, bool isFabric = false)
         {
-            if (_isLaunching || _launcher == null)
-            {
-                Console.WriteLine("[Launch] Game is already launching or launcher is not initialized. Aborting new launch request.");
-                return;
-            }
+            if (_isLaunching) return;
+
+            InitializeLauncher();
 
             _isLaunching = true;
+            _userTerminatedGame = false;
             _gameStartingBannerShownForCurrentLaunch = false;
             _launchFailureBannerShownForCurrentLaunch = false;
+
+            ShowLaunchAnimation();
+
             await UpdateServerButtonStates();
 
+            ShowProgress(false);
+
             _launchCancellationTokenSource = new CancellationTokenSource();
-            CancellationToken cancellationToken = _launchCancellationTokenSource.Token;
+            var cancellationToken = _launchCancellationTokenSource.Token;
 
             HideLaunchErrorBanner();
             HideLaunchFailureBanner();
@@ -6090,16 +9145,33 @@ namespace LeafClient.Views
 
             if (_session == null)
             {
-                UpdateLaunchButton("LOGIN REQUIRED", "OrangeRed");
-                ShowLaunchErrorBanner("LOGIN REQUIRED: Please log in to your Minecraft account to launch.");
-                _isLaunching = false;
-                await UpdateServerButtonStates();
-                return;
+                // For Microsoft accounts whose session expired, attempt transparent re-auth
+                // before giving up — users should never need to manually log out and back in.
+                if (_currentSettings?.IsLoggedIn == true && _currentSettings.AccountType == "microsoft")
+                {
+                    bool reAuthed = await TryInteractiveReAuthAsync();
+                    if (reAuthed)
+                    {
+                        // Re-load session from freshly saved settings after successful re-auth.
+                        await LoadSessionAsync();
+                    }
+                }
+
+                if (_session == null)
+                {
+                    HideLaunchAnimation();
+                    UpdateLaunchButton("LOGIN REQUIRED", "OrangeRed");
+                    ShowLaunchErrorBanner("Session expired. Please log out and log back in.");
+                    _isLaunching = false;
+                    await UpdateServerButtonStates();
+                    return;
+                }
             }
 
             bool isNetworkAvailable = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
             if (!isNetworkAvailable && _currentSettings.AccountType != "offline")
             {
+                HideLaunchAnimation();
                 UpdateLaunchButton("YOU'RE OFFLINE", "Gray");
                 ShowLaunchErrorBanner("No internet connection. Cannot launch online game.");
                 _isLaunching = false;
@@ -6111,221 +9183,265 @@ namespace LeafClient.Views
 
             try
             {
-                UpdateLaunchButton("PREPARING LAUNCH...", "DeepSkyBlue");
-                ClearModsFolder();
-
-                // ====================================================================================
-                // FIX: Explicitly handle Leaf Client Mod Registration AND Download here.
-                // We now use a VERSIONED filename (leafclient-1.21.4.jar) locally.
-                // This prevents SyncLauncherManagedMods from deleting the file when it cleans up
-                // entries from other versions that might have shared the generic "leafclient.jar" name.
-                // ====================================================================================
-
-                bool isModernVersion = false;
-                if (Version.TryParse(version, out Version? semVer))
+                if (_gameOutputWindow == null)
                 {
-                    isModernVersion = semVer >= new Version(1, 17);
+                    _gameOutputWindow = new GameOutputWindow();
+
+                    _gameOutputWindow.Closing += (s, args) =>
+                    {
+                        if (_gameProcess != null && !_gameProcess.HasExited)
+                        {
+                            args.Cancel = true;
+                            _gameOutputWindow.Hide();
+                        }
+                    };
+
+                    _gameOutputWindow.Closed += (s, e) => _gameOutputWindow = null;
+
+                    _gameOutputWindow.KillGameRequested += (s, e) =>
+                    {
+                        if (_gameProcess != null && !_gameProcess.HasExited)
+                        {
+                            try
+                            {
+                                _userTerminatedGame = true;
+                                _gameProcess.Kill();
+                                _gameOutputWindow?.AppendLog("Kill signal sent to game process.", "WARN");
+                            }
+                            catch (Exception ex)
+                            {
+                                _gameOutputWindow?.AppendLog($"Failed to kill process: {ex.Message}", "ERROR");
+                            }
+                        }
+                    };
                 }
 
-                string leafClientModId = "leafclient";
-                string leafClientModName = "Leaf Client";
 
-                // IMPORTANT: Append version to filename to ensure uniqueness in the mods folder
-                string leafClientJarFileName = $"leafclient-{version}.jar";
+                _gameOutputWindow.ClearLog();
+                _gameOutputWindow.SetSessionInfo(versionToLaunch, _session.Username, _logFolderPath);
+                _gameOutputWindow.Show();
+                _gameOutputWindow.Activate();
+                _gameOutputWindow.AppendLog($"Initializing launch sequence for {version}...", "INFO");
 
-                // Source URL still points to the generic name on GitHub
-                string leafClientDownloadUrl = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
+                UpdateLaunchButton("PREPARING...", "DeepSkyBlue");
+                ClearModsFolder();
 
-                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-                Directory.CreateDirectory(modsFolder);
-                string targetJarPath = System.IO.Path.Combine(modsFolder, leafClientJarFileName);
+                string leafModUrl  = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
+                string leafModPath = GetLeafOfflineJarPath(version);
 
-                if (isModernVersion)
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] Mode: {(_currentSettings.IsTestMode ? "TEST (local build)" : "NORMAL (github download)")}", "INFO");
+                LogLaunchPreBuildDiagnostics(leafModPath, version);
+
+                bool isModern = Version.TryParse(version, out var v) && v >= new Version(1, 17);
+                if (isModern)
                 {
-                    // 1. Update Settings to ensure the launcher knows about the mod
-                    var existingLeafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
-
-                    if (existingLeafClientMod == null)
-                    {
-                        var newMod = new InstalledMod
-                        {
-                            ModId = leafClientModId,
-                            Name = leafClientModName,
-                            Description = "Core Leaf Client mod.",
-                            Version = GetCurrentAppVersion().ToString(),
-                            MinecraftVersion = version,
-                            FileName = leafClientJarFileName, // Save with versioned name
-                            DownloadUrl = leafClientDownloadUrl,
-                            Enabled = true,
-                            InstallDate = DateTime.Now,
-                            IconUrl = ""
-                        };
-                        _currentSettings.InstalledMods.Add(newMod);
-                        Console.WriteLine($"[Leaf Client Mod] Registered new entry for MC {version} as {leafClientJarFileName}.");
-                    }
-                    else
-                    {
-                        existingLeafClientMod.Enabled = true;
-                        existingLeafClientMod.FileName = leafClientJarFileName; // Update to versioned name
-                        existingLeafClientMod.DownloadUrl = leafClientDownloadUrl;
-                        existingLeafClientMod.Version = GetCurrentAppVersion().ToString();
-                        Console.WriteLine($"[Leaf Client Mod] Updated entry for MC {version} to {leafClientJarFileName}.");
-                    }
-
-                    // Save immediately
-                    await _settingsService.SaveSettingsAsync(_currentSettings);
-
-                    // 2. EXPLICIT DOWNLOAD
-                    // Since ClearModsFolder() ran above, we must download it now.
-                    Console.WriteLine($"[Leaf Client Mod] Downloading core mod from GitHub: {leafClientDownloadUrl}");
                     try
                     {
-                        using (var client = new HttpClient())
+                        if (_currentSettings.IsTestMode)
                         {
-                            client.DefaultRequestHeaders.Add("User-Agent", "LeafClient-Launcher");
-
-                            var data = await client.GetByteArrayAsync(leafClientDownloadUrl);
-                            await File.WriteAllBytesAsync(targetJarPath, data);
-                            Console.WriteLine($"[Leaf Client Mod] Downloaded successfully to: {targetJarPath}");
+                            // Delete any previously downloaded JAR so the locally built one is always used
+                            if (File.Exists(leafModPath)) File.Delete(leafModPath);
+                            await BuildAndCopyLocalModAsync(version, leafModPath);
+                        }
+                        else
+                        {
+                            // Always re-download to ensure the latest published version
+                            await DownloadFileWithProgressAsync(leafModUrl, leafModPath, "Leaf Core");
+                            LogJarFileInfo("leafModPath (post-download)", leafModPath);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"[Leaf Client Mod] Failed to download core mod: {ex.Message}");
-                        ShowLaunchErrorBanner("Failed to download Leaf Client core mod. Check internet connection.");
+                        _gameOutputWindow?.AppendLog($"Failed to prepare core mod: {ex.Message}", "ERROR");
+                        ShowProgress(false);
+                        if (_currentSettings.IsTestMode)
+                        {
+                            await ShowAccountActionErrorDialog($"Developer test mode build failed — launch aborted.\n\n{ex.Message}");
+                            return;
+                        }
                     }
+                    ShowProgress(false);
                 }
-                else
-                {
-                    // Legacy version cleanup
-                    var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId.Equals(leafClientModId, StringComparison.OrdinalIgnoreCase) && m.MinecraftVersion.Equals(version, StringComparison.OrdinalIgnoreCase));
-                    if (leafClientMod != null)
-                    {
-                        _currentSettings.InstalledMods.Remove(leafClientMod);
-                        await _settingsService.SaveSettingsAsync(_currentSettings);
-                        Console.WriteLine($"[Leaf Client Mod] Removed internal mod entry for legacy version {version}.");
-                    }
-                }
-                // ====================================================================================
 
                 if (GetSelectedAddon(version).Equals("Fabric", StringComparison.OrdinalIgnoreCase))
                 {
                     versionToLaunch = await EnsureFabricProfileAsync(version);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
+
                     if (string.IsNullOrEmpty(versionToLaunch))
                     {
-                        UpdateLaunchButton("FABRIC INSTALL FAILED", "Red");
-                        ShowLaunchErrorBanner("Failed to install Fabric loader. Please try again.");
-                        _isLaunching = false;
-                        await UpdateServerButtonStates();
-                        return;
+                        throw new Exception("Fabric installation failed.");
                     }
-
-                    _currentSettings.SelectedFabricProfileName = versionToLaunch;
-                    await _settingsService.SaveSettingsAsync(_currentSettings);
 
                     if (_currentSettings.IsOptiFineEnabled)
                         await InstallOptiFineForFabricIfNeededAsync(version, versionToLaunch, true);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
 
-                    await InstallFabricApiIfNeededAsync(version, versionToLaunch);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
+                    // Apply the active profile's mod preset during launch
+                    await ApplyModPresetForLaunchAsync(version, versionToLaunch);
 
-                    if (_currentSettings.IsSodiumEnabled)
-                        await InstallSodiumIfNeededAsync(version);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
-
-                    if (_currentSettings.IsLithiumEnabled)
-                        await InstallLithiumIfNeededAsync(version);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
-
-                    // InstallUserModsAsync will see the file we just downloaded and skip re-downloading it.
+                    // Install user-managed mods from settings
                     await InstallUserModsAsync(version);
-                    if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
-                }
-                else
-                {
-                    _currentSettings.SelectedFabricProfileName = null;
-                    await _settingsService.SaveSettingsAsync(_currentSettings);
+
+                    ShowProgress(false);
                 }
 
-                if (string.IsNullOrEmpty(versionToLaunch))
-                {
-                    UpdateLaunchButton("LAUNCH FAILED", "Red");
-                    ShowLaunchErrorBanner("Failed to determine version to launch. Please check your installation.");
-                    _isLaunching = false;
-                    await UpdateServerButtonStates();
-                    return;
-                }
-
-                // FIX: Pass the base 'version' (e.g. "1.20.5"), NOT 'versionToLaunch' (e.g. "fabric-loader...").
-                // The mods are tracked by the base Minecraft version.
                 SyncLauncherManagedMods(version);
+
+                // Belt-and-suspenders: actively delete any *leaf*.jar left in the mods folder
+                // just before launch. The Leaf core mod is injected via -Dfabric.addMods, so
+                // any file matching leafclient*.jar in mods/ is ALWAYS stale and would cause
+                // Fabric to load two mods with id 'leafclient' and pick one non-deterministically.
+                try
+                {
+                    string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                    if (Directory.Exists(modsFolder))
+                    {
+                        var rogueLeafJars = Directory.GetFiles(modsFolder, "*.jar", SearchOption.TopDirectoryOnly)
+                            .Concat(Directory.GetFiles(modsFolder, "*.jar.disabled", SearchOption.TopDirectoryOnly))
+                            .Where(p =>
+                            {
+                                var n = System.IO.Path.GetFileName(p);
+                                return n.StartsWith("leafclient", StringComparison.OrdinalIgnoreCase) ||
+                                       n.StartsWith("leaf-", StringComparison.OrdinalIgnoreCase) ||
+                                       n.Equals("leaf.jar", StringComparison.OrdinalIgnoreCase);
+                            })
+                            .ToList();
+                        foreach (var rogue in rogueLeafJars)
+                        {
+                            try
+                            {
+                                File.Delete(rogue);
+                                _gameOutputWindow?.AppendLog(
+                                    $"[LaunchDiag] Deleted rogue leaf jar from mods folder: {System.IO.Path.GetFileName(rogue)}",
+                                    "WARN");
+                            }
+                            catch (Exception ex)
+                            {
+                                _gameOutputWindow?.AppendLog(
+                                    $"[LaunchDiag] FAILED to delete rogue leaf jar '{System.IO.Path.GetFileName(rogue)}': {ex.Message}",
+                                    "ERROR");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] Rogue leaf jar sweep failed: {ex.Message}", "ERROR");
+                }
+
+                // Final pre-launch check: mods folder should have no stale leafclient jars,
+                // and the leafModPath file should still match what we prepared above.
+                LogLaunchPreLaunchDiagnostics(leafModPath);
 
                 var jvmArguments = new List<MArgument>
         {
             new("-Dleaf.client=true"),
-            new("-Dleaf.version=1.1.0")
+            new("-Dleaf.version=1.1.0"),
+            new($"-Dfabric.addMods={leafModPath}"),
+            // Expose test mode to the mod so it can distinguish local vs published builds
+            new($"-Dleaf.testmode={(_currentSettings.IsTestMode ? "true" : "false")}"),
+            // Aikar's GC flags for Minecraft
+            new("-XX:+UseG1GC"),
+            new("-XX:+UnlockExperimentalVMOptions"),
+            new("-XX:G1NewSizePercent=20"),
+            new("-XX:G1ReservePercent=20"),
+            new("-XX:MaxGCPauseMillis=50"),
+            new("-XX:G1HeapRegionSize=32M"),
+            new("-XX:+DisableExplicitGC"),
+            new("-XX:+AlwaysPreTouch"),
+            new("-XX:+ParallelRefProcEnabled"),
         };
 
-                if (!string.IsNullOrWhiteSpace(_currentSettings.JvmArguments))
+                // Combine global + active-profile JVM argument overrides so per-profile
+                // tuning (e.g. a "benchmark" profile with aggressive GC flags) actually
+                // takes effect at launch.
+                var effectiveExtraJvmArgs = GetEffectiveExtraJvmArgs();
+                if (!string.IsNullOrWhiteSpace(effectiveExtraJvmArgs))
                 {
-                    var customArgs = _currentSettings.JvmArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var customArgs = effectiveExtraJvmArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     foreach (var arg in customArgs)
                         jvmArguments.Add(new MArgument(arg));
                 }
 
+                // Log the final JVM arguments list so we can see exactly what Fabric will receive.
+                try
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] ===== FINAL JVM ARGS ({jvmArguments.Count}) =====", "INFO");
+                    for (int i = 0; i < jvmArguments.Count; i++)
+                    {
+                        string? s = jvmArguments[i]?.ToString();
+                        _gameOutputWindow?.AppendLog($"[LaunchDiag]   [{i}] {s}", "INFO");
+                    }
+                    _gameOutputWindow?.AppendLog("[LaunchDiag] ===== END FINAL JVM ARGS =====", "INFO");
+                }
+                catch (Exception ex)
+                {
+                    _gameOutputWindow?.AppendLog($"[LaunchDiag] Failed to dump JVM args: {ex.GetType().Name}: {ex.Message}", "ERROR");
+                }
+
+                // Resolve profile-aware launch values. An active profile can override
+                // RAM allocation, screen resolution, and quick-join server.
+                var (resUseCustom, resWidth, resHeight) = GetEffectiveResolution();
+                var (qjAddress, qjPort) = GetEffectiveQuickJoin();
+
                 var launchOption = new MLaunchOption
                 {
                     Session = _session,
-                    MaximumRamMb = GetMaxRam(),
-                    MinimumRamMb = GetMinRam(),
-                    JvmArgumentOverrides = jvmArguments
+                    MaximumRamMb = GetEffectiveMaxRamMb(),
+                    MinimumRamMb = GetEffectiveMinRamMb(),
+                    JvmArgumentOverrides = jvmArguments,
+                    ScreenHeight = resUseCustom ? resHeight : 0,
+                    ScreenWidth  = resUseCustom ? resWidth  : 0,
+                    ServerIp     = qjAddress,
+                    ServerPort   = qjPort,
                 };
 
-                if (_currentSettings.UseCustomGameResolution)
-                {
-                    launchOption.ScreenWidth = _currentSettings.GameResolutionWidth;
-                    launchOption.ScreenHeight = _currentSettings.GameResolutionHeight;
-                }
-
-                if (_currentSettings.QuickLaunchEnabled && !string.IsNullOrWhiteSpace(_currentSettings.QuickJoinServerAddress))
-                {
-                    launchOption.ServerIp = _currentSettings.QuickJoinServerAddress;
-                    launchOption.ServerPort = int.TryParse(_currentSettings.QuickJoinServerPort, out int port) ? port : 25565;
-                }
-
-                UpdateLaunchButton("LAUNCHING GAME...", "Purple");
-
-                if (_currentSettings.LauncherVisibilityOnGameLaunch == LauncherVisibility.Hide)
-                {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        MinimizeToTray();
-                        Console.WriteLine("[Launch] Launcher minimized to tray as per setting.");
-                        NotificationWindow.Show("Game Starting", "Launcher hidden while game runs", "Restore", () => RestoreFromTray());
-                    });
-                }
+                UpdateLaunchButton("LAUNCHING...", "Purple");
+                ShowProgress(false);
 
                 var process = await _launcher.CreateProcessAsync(versionToLaunch, launchOption);
-                if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
 
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.CreateNoWindow = true;
-
                 process.EnableRaisingEvents = true;
                 process.Exited += OnGameExited;
+
+                // Track whether Leaf Client mod should be loaded for this version
+                var launchVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
+                _leafModExpected = launchVersionInfo?.IsLeafClientModSupported == true;
+                _leafModLoaded = false;
+                _lastLaunchVersion = _currentSettings.SelectedSubVersion;
+
                 process.OutputDataReceived += (s, e) =>
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                        Console.WriteLine($"[MC] {e.Data}");
+                    if (string.IsNullOrEmpty(e.Data)) return;
+                    _gameOutputWindow?.AppendLog(e.Data, "INFO");
+                    // Detect Leaf Client mod loaded — Fabric logs mod initialization
+                    if (_leafModExpected && !_leafModLoaded &&
+                        (e.Data.Contains("leafclient", StringComparison.OrdinalIgnoreCase) &&
+                         (e.Data.Contains("loaded", StringComparison.OrdinalIgnoreCase) ||
+                          e.Data.Contains("initialized", StringComparison.OrdinalIgnoreCase) ||
+                          e.Data.Contains("onInitialize", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        _leafModLoaded = true;
+                        Console.WriteLine("[Launch] Leaf Client mod successfully loaded.");
+                    }
                 };
                 process.ErrorDataReceived += (s, e) =>
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                        Console.Error.WriteLine($"[MC ERROR] {e.Data}");
+                    if (string.IsNullOrEmpty(e.Data)) return;
+                    _gameOutputWindow?.AppendLog(e.Data, "ERROR");
+                    // Also check error stream for mod load confirmation
+                    if (_leafModExpected && !_leafModLoaded &&
+                        (e.Data.Contains("leafclient", StringComparison.OrdinalIgnoreCase) &&
+                         (e.Data.Contains("loaded", StringComparison.OrdinalIgnoreCase) ||
+                          e.Data.Contains("initialized", StringComparison.OrdinalIgnoreCase) ||
+                          e.Data.Contains("onInitialize", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        _leafModLoaded = true;
+                        Console.WriteLine("[Launch] Leaf Client mod successfully loaded (from stderr).");
+                    }
                 };
 
                 process.Start();
@@ -6333,78 +9449,68 @@ namespace LeafClient.Views
                 process.BeginErrorReadLine();
                 _gameProcess = process;
 
-                _ = Task.Run(async () =>
+                // Playtime tracking: record launch time, increment counter, persist.
+                // Also increment the active profile's own LaunchCount / LastUsed so the
+                // profile card can show "last used 3 days ago" / total launches.
+                _sessionStartUtc = DateTime.UtcNow;
+                if (_currentSettings != null)
                 {
-                    try
-                    {
-                        bool isIdle = _gameProcess.WaitForInputIdle(90000);
+                    _currentSettings.LastLaunchTime  = DateTime.Now;
+                    _currentSettings.TotalLaunchCount++;
 
-                        if (isIdle && _gameProcess != null && !_gameProcess.HasExited && _gameProcess.MainWindowHandle != IntPtr.Zero)
-                        {
-                            await Dispatcher.UIThread.InvokeAsync(() =>
-                            {
-                                if (_gameProcess != null && !_gameProcess.HasExited)
-                                {
-                                    UpdateRichPresenceFromState();
-                                    UpdateLaunchButton("PLAYING ON LEAF CLIENT", "DeepSkyBlue");
-                                }
-                            });
-                        }
-                        else if (_gameProcess != null && !_gameProcess.HasExited)
-                        {
-                            Console.WriteLine("[Window Watcher] Timed out waiting for game window to become idle.");
-                        }
-                    }
-                    catch (Exception ex)
+                    var mcVer = _currentSettings.SelectedSubVersion;
+                    if (!string.IsNullOrEmpty(mcVer))
                     {
-                        Console.Error.WriteLine($"[Window Watcher ERROR] An error occurred while waiting for game window: {ex.Message}");
+                        _currentSettings.LaunchCountByVersion.TryGetValue(mcVer, out int lc);
+                        _currentSettings.LaunchCountByVersion[mcVer] = lc + 1;
                     }
-                }, cancellationToken);
+
+                    var activeProfile = GetActiveProfile();
+                    if (activeProfile != null)
+                    {
+                        activeProfile.LaunchCount++;
+                        activeProfile.LastUsed = DateTime.Now;
+                    }
+
+                    try { _ = _settingsService.SaveSettingsAsync(_currentSettings); } catch { }
+                }
+
+                // Keep animation visible briefly so the user sees "LAUNCHING MINECRAFT", then fade out
+                _ = Task.Delay(1200).ContinueWith(_ => Dispatcher.UIThread.Post(HideLaunchAnimation));
 
                 _isLaunching = false;
-                await UpdateServerButtonStates();
-            }
-            catch (OperationCanceledException)
-            {
-                Console.WriteLine("[Launch] Game launch operation was cancelled by user.");
-                UpdateLaunchButton("LAUNCH CANCELLED", "Orange");
-                _isLaunching = false;
-                _gameStartingBannerShownForCurrentLaunch = false;
-                _launchFailureBannerShownForCurrentLaunch = false;
+                UpdateLaunchButton("PLAYING ON LEAF CLIENT", "DeepSkyBlue");
                 await UpdateServerButtonStates();
 
-                _ = Task.Run(async () =>
-                {
-                    await Task.Delay(2000);
-                    if (!_isLaunching && !_isInstalling && _gameProcess == null)
-                    {
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
-                        });
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Launch ERROR] Failed to launch game: {ex.Message}");
-                UpdateLaunchButton("LAUNCH FAILED", "Red");
-                ShowLaunchErrorBanner($"Launch failed: {ex.Message}");
-
-                ShowLaunchFailureBanner("Failed to launch Minecraft. Please check logs.");
-
-                if (!this.IsVisible || _currentSettings.LauncherVisibilityOnGameLaunch == LauncherVisibility.Hide)
+                if (_currentSettings.LauncherVisibilityOnGameLaunch == LauncherVisibility.Hide)
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        RestoreFromTray();
-                        NotificationWindow.Show("Launch Failed", "Failed to start the game process.", "View Logs", () => OpenLauncherLogsFolder(null, new RoutedEventArgs()), true);
+                        MinimizeToTray();
+                        NotificationWindow.Show("Game Starting", "Launcher hidden while game runs", "Restore", () => RestoreFromTray());
                     });
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // User cancelled the launch — do not show LAUNCH FAILED
+                HideLaunchAnimation();
                 _isLaunching = false;
-                _gameStartingBannerShownForCurrentLaunch = false;
-                _launchFailureBannerShownForCurrentLaunch = false;
+                ShowProgress(false);
+                UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
                 await UpdateServerButtonStates();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Launch Error: {ex}");
+                HideLaunchAnimation();
+                UpdateLaunchButton("LAUNCH FAILED", "Red");
+                ShowLaunchErrorBanner(ex.Message);
+                _isLaunching = false;
+                ShowProgress(false);
+                await UpdateServerButtonStates();
+
+                _ = Task.Delay(3000).ContinueWith(_ => Dispatcher.UIThread.Post(() => UpdateLaunchButton("LAUNCH GAME", "SeaGreen")));
             }
             finally
             {
@@ -6413,15 +9519,13 @@ namespace LeafClient.Views
             }
         }
 
+
         private async Task ManageOptiFineForFabricMods(string mcVersion, bool enable)
         {
-            // These are the mods that are part of the OptiFine for Fabric pack
-            // We need to ensure their state in _currentSettings.InstalledMods is correct.
             string[] optifineModNames = new[] {
-        "optifine", "optifabric", "modmenu", "sodium", "iris", "lithium", "starlight"
-    }; // These are partial names/IDs, not full filenames.
+                "optifine", "optifabric", "modmenu", "sodium", "iris", "lithium", "starlight"
+            };
 
-            // Find all launcher-managed mods for the current MC version that are OptiFine-related
             var relevantMods = _currentSettings.InstalledMods
                 .Where(m => m.MinecraftVersion.Equals(mcVersion, StringComparison.OrdinalIgnoreCase) &&
                             optifineModNames.Any(name => m.Name.Contains(name, StringComparison.OrdinalIgnoreCase)))
@@ -6438,26 +9542,23 @@ namespace LeafClient.Views
                 }
             }
 
-            // Also handle the LeafClient runtime mod itself if it's considered part of this group
-            // (though it's usually managed separately)
+            // REMOVED: The block that was disabling leafclient when OptiFine was disabled.
+            /* 
             var leafClientMod = _currentSettings.InstalledMods.FirstOrDefault(m => m.ModId == "leafclient" && m.MinecraftVersion == mcVersion);
             if (leafClientMod != null && leafClientMod.Enabled != enable)
             {
-                leafClientMod.Enabled = enable; // Forcing leafclient-runtime to match OptiFine pack state
+                leafClientMod.Enabled = enable; 
                 settingsChanged = true;
                 Console.WriteLine($"[OptiFineForFabric] Setting 'Leaf Client Runtime' to enabled={enable} in settings.");
             }
-
+            */
 
             if (settingsChanged)
             {
                 await _settingsService.SaveSettingsAsync(_currentSettings);
-                // The actual file system sync will happen during SyncLauncherManagedMods in LaunchGameAsync
             }
         }
 
-
-        // MainWindow.cs — UpdateSidebarDetails(string subVersion) (REPLACE method)
         private void UpdateSidebarDetails(string subVersion)
         {
             var versionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == subVersion);
@@ -6485,6 +9586,58 @@ namespace LeafClient.Views
         {
             if (_isShuttingDown) return;
 
+            // Playtime tracking: compute session length & persist
+            // (done first so it works even if the rest of the handler bails)
+            try
+            {
+                if (_sessionStartUtc.HasValue && _currentSettings != null)
+                {
+                    long sessionSeconds = (long)(DateTime.UtcNow - _sessionStartUtc.Value).TotalSeconds;
+                    if (sessionSeconds < 0) sessionSeconds = 0;
+                    if (sessionSeconds > 86400) sessionSeconds = 86400; // clamp at 24h
+
+                    _currentSettings.CurrentSessionSeconds = sessionSeconds;
+                    _currentSettings.TotalPlaytimeSeconds += sessionSeconds;
+                    _currentSettings.LastExitTime = DateTime.Now;
+
+                    // Per-version tracking
+                    var mcVersion = _currentSettings.SelectedSubVersion;
+                    if (!string.IsNullOrEmpty(mcVersion))
+                    {
+                        _currentSettings.PlaytimeByVersion.TryGetValue(mcVersion, out long cur);
+                        _currentSettings.PlaytimeByVersion[mcVersion] = cur + sessionSeconds;
+                    }
+
+                    // Per-server tracking (if quick-join was used)
+                    var server = _currentSettings.QuickJoinServerAddress;
+                    if (!string.IsNullOrEmpty(server))
+                    {
+                        _currentSettings.PlaytimeByServer.TryGetValue(server, out long curS);
+                        _currentSettings.PlaytimeByServer[server] = curS + sessionSeconds;
+                    }
+
+                    // Per-profile tracking — accumulate time against whichever profile
+                    // was active when the game launched.
+                    var activeProfile = GetActiveProfile();
+                    if (activeProfile != null)
+                    {
+                        activeProfile.PlaytimeSeconds += sessionSeconds;
+                    }
+
+                    _sessionStartUtc = null;
+                    _ = _settingsService.SaveSettingsAsync(_currentSettings);
+                    Console.WriteLine($"[Playtime] Session: {sessionSeconds}s, total: {_currentSettings.TotalPlaytimeSeconds}s");
+
+                    // Refresh the footer stats strip now — it's visible on every page
+                    // so we want it updated immediately after the game exits.
+                    Dispatcher.UIThread.Post(RefreshPlaytimeStatsCard);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Playtime] Failed to record session: {ex.Message}");
+            }
+
             Dispatcher.UIThread.Post(async () =>
             {
                 if (_isShuttingDown) return;
@@ -6493,14 +9646,9 @@ namespace LeafClient.Views
                 {
                     try
                     {
-                        // Delete signal
                         System.IO.File.Delete(logoutSignalPath);
                         Console.WriteLine("[Launcher] Logout signal detected from game. Performing logout...");
 
-                        // Perform logout logic
-                        // We call the existing LogoutButton_Click method.
-                        // Since it hides the current window and opens LoginWindow, we should NOT proceed with
-                        // the rest of OnGameExited logic (restoring tray, banners, etc.)
                         LogoutButton_Click(null, new RoutedEventArgs());
                         return;
                     }
@@ -6512,39 +9660,77 @@ namespace LeafClient.Views
 
 
                 int exitCode = _gameProcess?.ExitCode ?? -1;
+                _gameOutputWindow?.AppendLog($"Game exited with code {exitCode}.", exitCode == 0 ? "INFO" : "ERROR");
+
+                // Auto-restart: if Leaf Client mod was expected but didn't load, and we haven't
+                // already tried restarting, kill and re-launch automatically.
+                if (exitCode != 0 && _leafModExpected && !_leafModLoaded && !_autoRestartAttempted && !_userTerminatedGame)
+                {
+                    Console.WriteLine("[Launch] Leaf Client mod failed to load. Auto-restarting...");
+                    _gameOutputWindow?.AppendLog("Leaf Client mod did not load. Auto-restarting game...", "WARN");
+                    _autoRestartAttempted = true;
+                    _gameProcess = null;
+                    _isLaunching = false;
+
+                    // Brief delay then re-launch
+                    await Task.Delay(1500);
+                    UpdateLaunchButton("RESTARTING...", "Orange");
+                    _ = LaunchGameAsync(_lastLaunchVersion ?? _currentSettings.SelectedSubVersion, true);
+                    return;
+                }
+                // Reset the auto-restart flag for next launch
+                _autoRestartAttempted = false;
 
                 if (exitCode != 0)
                 {
                     Console.Error.WriteLine($"[Launcher] Game process exited with error code: {exitCode}");
 
-                    // If the window was hidden (minimized to tray), show the banner
-                    if (!this.IsVisible)
+                    if (!_userTerminatedGame)
                     {
-                        RestoreFromTray();
-                        NotificationWindow.Show("Launch Failed", "Game exited unexpectedly.", "View Logs", () => OpenLauncherLogsFolder(null, new RoutedEventArgs()), true);
-                    }
-                    else
-                    {
-                        ShowLaunchFailureBanner("Failed to launch Minecraft. Please check logs.");
-                    }
-
-                    UpdateLaunchButton("LAUNCH FAILED", "Red");
-
-                    _ = Task.Run(async () =>
-                    {
-                        await Task.Delay(5000);
-                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        if (!this.IsVisible)
                         {
-                            if (!_isLaunching && !_isInstalling && _gameProcess == null)
+                            RestoreFromTray();
+                            NotificationWindow.Show("Launch Failed", "Game exited unexpectedly.", "View Logs", () => OpenLauncherLogsFolder(null, new RoutedEventArgs()), true);
+                        }
+                        else
+                        {
+                            ShowLaunchFailureBanner("Failed to launch Minecraft. Please check logs.");
+                        }
+
+                        UpdateLaunchButton("LAUNCH FAILED", "Red");
+
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(5000);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
                             {
-                                UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
-                                HideLaunchFailureBanner();
-                            }
+                                if (!_isLaunching && !_isInstalling && _gameProcess == null)
+                                {
+                                    UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
+                                    HideLaunchFailureBanner();
+                                }
+                            });
                         });
-                    });
+                    }
                 }
                 else
                 {
+                    // Check if game exited cleanly but Leaf mod never loaded — auto-restart once
+                    if (_leafModExpected && !_leafModLoaded && !_autoRestartAttempted && !_userTerminatedGame)
+                    {
+                        Console.WriteLine("[Launch] Game exited cleanly but Leaf Client mod was not detected. Auto-restarting...");
+                        _gameOutputWindow?.AppendLog("Leaf Client mod was not detected. Auto-restarting game...", "WARN");
+                        _autoRestartAttempted = true;
+                        _gameProcess = null;
+                        _isLaunching = false;
+
+                        await Task.Delay(1500);
+                        UpdateLaunchButton("RESTARTING...", "Orange");
+                        _ = LaunchGameAsync(_lastLaunchVersion ?? _currentSettings.SelectedSubVersion, true);
+                        return;
+                    }
+                    _autoRestartAttempted = false;
+
                     UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
                     HideLaunchFailureBanner();
 
@@ -6555,18 +9741,25 @@ namespace LeafClient.Views
                     }
                 }
 
+                _ = Task.Run(async () =>
+                {
+                    try { await ReportSessionPlaytimeAsync(); } catch (Exception ex) { Console.WriteLine($"[PlaytimeReport] {ex.Message}"); }
+                });
+
                 _gameProcess = null;
                 _isLaunching = false;
+                _isInstalling = false;
                 _gameStartingBannerShownForCurrentLaunch = false;
 
                 await UpdateServerButtonStates();
                 HideGameStartingBanner();
+                HideLaunchAnimation();
 
                 if (_currentSettings.LockGameAspectRatio)
                 {
                     try
                     {
-                        await Task.Delay(1000); // Wait for game to finish writing options.txt
+                        await Task.Delay(1000); 
 
                         string optionsPath = System.IO.Path.Combine(_minecraftFolder, "options.txt");
                         if (System.IO.File.Exists(optionsPath))
@@ -6593,12 +9786,10 @@ namespace LeafClient.Views
                             {
                                 Console.WriteLine($"[Resolution Lock] Game closed with resolution: {width}x{height}");
 
-                                // Update settings
                                 _currentSettings.GameResolutionWidth = width.Value;
                                 _currentSettings.GameResolutionHeight = height.Value;
                                 await _settingsService.SaveSettingsAsync(_currentSettings);
 
-                                // Update UI
                                 if (_gameResolutionWidthTextBox != null)
                                     _gameResolutionWidthTextBox.Text = width.Value.ToString();
                                 if (_gameResolutionHeightTextBox != null)
@@ -6614,7 +9805,6 @@ namespace LeafClient.Views
                     }
                 }
 
-                // Restore launcher window if it was hidden
                 if (_currentSettings.LauncherVisibilityOnGameLaunch == LauncherVisibility.Hide)
                 {
                     Console.WriteLine("[Launch] Game closed - restoring launcher from tray");
@@ -6626,24 +9816,107 @@ namespace LeafClient.Views
 
         private int GetMaxRam()
         {
-            if (_maxRamAllocationComboBox?.SelectedItem is ComboBoxItem item && item.Content is string text)
-            {
-                if (int.TryParse(text.Replace(" GB", ""), out int gb))
-                    return gb * 1024;
-            }
+            if (_maxRamSlider != null)
+                return (int)_maxRamSlider.Value;
             return 4096;
         }
 
         private int GetMinRam()
         {
-            if (int.TryParse(_minRamAllocationTextBox?.Text, out int mb))
-                return Math.Max(512, mb);
+            if (_minRamSlider != null)
+                return (int)_minRamSlider.Value;
             return 1024;
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // PROFILE RESOLUTION HELPERS
+        //
+        // These read from the active profile first, then fall back to global
+        // LauncherSettings. The idea is that profile fields like AllocatedMemoryGb,
+        // JvmArgumentsOverride, GameResolutionWidthOverride, etc. ACTUALLY
+        // take effect at launch time rather than being dead data.
+        // ─────────────────────────────────────────────────────────────────
+
+        private Models.LauncherProfile? GetActiveProfile()
+        {
+            if (_currentSettings?.Profiles == null || _currentSettings.Profiles.Count == 0)
+                return null;
+            return _currentSettings.Profiles.FirstOrDefault(p => p.Id == _currentSettings.ActiveProfileId)
+                ?? _currentSettings.Profiles[0];
+        }
+
+        /// <summary>
+        /// Returns the effective max-RAM in MB for launch. Prefers the active profile's
+        /// <see cref="Models.LauncherProfile.AllocatedMemoryGb"/>, falling back to the slider/global setting.
+        /// </summary>
+        private int GetEffectiveMaxRamMb()
+        {
+            var profile = GetActiveProfile();
+            if (profile != null && profile.AllocatedMemoryGb > 0)
+                return (int)Math.Round(profile.AllocatedMemoryGb * 1024.0);
+            return GetMaxRam();
+        }
+
+        private int GetEffectiveMinRamMb()
+        {
+            // Min RAM stays global — keep it simple.
+            return GetMinRam();
+        }
+
+        /// <summary>
+        /// Combines global JVM args with the active profile's override (appended after globals).
+        /// Returns a whitespace-separated string, possibly empty.
+        /// </summary>
+        private string GetEffectiveExtraJvmArgs()
+        {
+            var global = _currentSettings?.JvmArguments ?? "";
+            var profile = GetActiveProfile();
+            var overrideArgs = profile?.JvmArgumentsOverride ?? "";
+            if (string.IsNullOrWhiteSpace(global))   return overrideArgs.Trim();
+            if (string.IsNullOrWhiteSpace(overrideArgs)) return global.Trim();
+            return (global.Trim() + " " + overrideArgs.Trim()).Trim();
+        }
+
+        private (bool useCustom, int width, int height) GetEffectiveResolution()
+        {
+            var profile = GetActiveProfile();
+            if (profile?.UseCustomResolutionOverride == true)
+            {
+                return (
+                    true,
+                    profile.GameResolutionWidthOverride  ?? _currentSettings.GameResolutionWidth,
+                    profile.GameResolutionHeightOverride ?? _currentSettings.GameResolutionHeight
+                );
+            }
+            return (
+                _currentSettings?.UseCustomGameResolution ?? false,
+                _currentSettings?.GameResolutionWidth  ?? 1280,
+                _currentSettings?.GameResolutionHeight ?? 720
+            );
+        }
+
+        private (string? address, int port) GetEffectiveQuickJoin()
+        {
+            var profile = GetActiveProfile();
+            if (profile != null && !string.IsNullOrWhiteSpace(profile.QuickJoinServerAddressOverride))
+            {
+                int.TryParse(profile.QuickJoinServerPortOverride ?? "25565", out int pOv);
+                if (pOv <= 0) pOv = 25565;
+                return (profile.QuickJoinServerAddressOverride, pOv);
+            }
+
+            if (_currentSettings?.QuickLaunchEnabled == true && !string.IsNullOrWhiteSpace(_currentSettings.QuickJoinServerAddress))
+            {
+                int.TryParse(_currentSettings.QuickJoinServerPort ?? "25565", out int p);
+                if (p <= 0) p = 25565;
+                return (_currentSettings.QuickJoinServerAddress, p);
+            }
+
+            return (null, 25565);
         }
 
         private Color DarkenColor(Color color, float factor)
         {
-            // Ensure factor is between 0 and 1
             factor = Math.Clamp(factor, 0f, 1f);
 
             byte r = (byte)Math.Max(0, color.R * (1f - factor));
@@ -6657,18 +9930,14 @@ namespace LeafClient.Views
             _currentOperationText = text;
             _currentOperationColor = colorName;
 
-            // Reset flags based on the intended *terminal* state of the button text.
-            // If text indicates a non-active state, ensure flags are false.
             if (text == "LAUNCH GAME" || text.StartsWith("LAUNCH FAILED") || text == "SELECT VERSION" || text == "LOGIN REQUIRED" || text == "LAUNCH CANCELLED" || text == "YOU'RE OFFLINE" || text == "FABRIC INSTALL FAILED")
             {
                 _isLaunching = false;
                 _isInstalling = false;
             }
-            // Note: _gameProcess is managed by OnGameExited and the click handler for termination.
 
-            ApplyLaunchButtonState(); // Let ApplyLaunchButtonState resolve the final UI state
+            ApplyLaunchButtonState(); 
         }
-
 
         private void ApplyLaunchButtonState()
         {
@@ -6676,64 +9945,61 @@ namespace LeafClient.Views
             {
                 string displayText;
                 string colorName;
-                bool isButtonEnabled = true; // Default to enabled
+                bool isButtonEnabled = true;
+                bool isGameRunning = false;
 
-                // Order of priority for determining button state:
+                if (_cancelLaunchButton != null)
+                {
+                    _cancelLaunchButton.IsVisible = (_isLaunching || _isInstalling) && (_gameProcess == null || _gameProcess.HasExited);
+                }
 
-                // 1. Game running (highest priority)
                 if (_gameProcess != null && !_gameProcess.HasExited)
                 {
                     displayText = "PLAYING ON LEAF CLIENT";
                     colorName = "DeepSkyBlue";
-                    isButtonEnabled = true; // Always clickable to terminate
+                    isButtonEnabled = true;
+                    isGameRunning = true;
 
-                    ShowGameStartingBanner("Minecraft may take a few seconds to appear on your screen");
-                    HideLaunchFailureBanner(); // Ensure failure banner is hidden
+                    HideLaunchFailureBanner();
                 }
-                // 2. Launch/Install in progress (display current task, allow cancellation)
                 else if (_isLaunching || _isInstalling)
                 {
                     displayText = _currentOperationText;
                     colorName = _currentOperationColor;
-                    isButtonEnabled = true; // Enable to allow cancellation
-                    HideGameStartingBanner(); // Ensure banner is hidden if not in "PLAYING" state
-                    HideLaunchFailureBanner(); // Ensure failure banner is hidden
+                    isButtonEnabled = false;
+                    HideLaunchFailureBanner();
                 }
-                // 3. Offline (disabled, when not running/launching)
                 else if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
                 {
                     displayText = "YOU'RE OFFLINE";
                     colorName = "Gray";
-                    isButtonEnabled = false; // Cannot launch when offline
-                    HideGameStartingBanner(); // Ensure banner is hidden
-                    HideLaunchFailureBanner(); // Ensure failure banner is hidden
+                    isButtonEnabled = false;
+                    HideLaunchFailureBanner();
                 }
-                // 4. Specific terminal states (e.g., LAUNCH CANCELLED, LOGIN REQUIRED, LAUNCH FAILED)
                 else if (_currentOperationText == "LAUNCH CANCELLED" ||
                          _currentOperationText == "SELECT VERSION" ||
                          _currentOperationText == "LOGIN REQUIRED" ||
                          _currentOperationText == "FABRIC INSTALL FAILED" ||
-                         _currentOperationText.StartsWith("LAUNCH FAILED")) // Handle "LAUNCH FAILED: ..."
+                         _currentOperationText.StartsWith("LAUNCH FAILED"))
                 {
                     displayText = _currentOperationText;
                     colorName = _currentOperationColor;
-                    // MODIFIED: The button should ALWAYS be enabled in these states to allow the user to retry or re-login.
                     isButtonEnabled = true;
-                    HideGameStartingBanner(); // Ensure banner is hidden
 
-                    // If the button text is "LAUNCH FAILED", the failure banner should already be shown by OnGameExited.
-                    // We don't hide it here, but ensure its state is consistent.
-                    if (_currentOperationText.StartsWith("LAUNCH FAILED")) { /* leave failure banner visible if it was just shown */ }
-                    else { HideLaunchFailureBanner(); } // Hide if it's another terminal state
+                    if (_currentOperationText.StartsWith("LAUNCH FAILED")) { }
+                    else { HideLaunchFailureBanner(); }
                 }
-                // 5. Default "LAUNCH GAME" state
                 else
                 {
                     displayText = "LAUNCH GAME";
                     colorName = "SeaGreen";
                     isButtonEnabled = true;
-                    HideGameStartingBanner(); // Ensure banner is hidden
-                    HideLaunchFailureBanner(); // Ensure failure banner is hidden
+                    HideLaunchFailureBanner();
+                }
+
+                if (_gameWindowPendingText != null)
+                {
+                    _gameWindowPendingText.IsVisible = isGameRunning;
                 }
 
                 btn.IsEnabled = isButtonEnabled;
@@ -6771,7 +10037,6 @@ namespace LeafClient.Views
             }
         }
 
-
         private void StartRichPresenceIfEnabled()
         {
             try
@@ -6791,35 +10056,23 @@ namespace LeafClient.Views
                 Console.WriteLine($"[DRP] Failed to start: {ex.Message}");
             }
         }
-
-        // Position helper (unchanged)
-        private void PositionTooltipNextTo(Border button)
-        {
-            if (_sidebarHoverTooltip == null) return;
-
-            var origin = button.TranslatePoint(new Point(0, 0), this);
-            double top;
-
-            if (origin.HasValue)
-            {
-                top = origin.Value.Y + (button.Bounds.Height - TooltipHeight) / 2.0;
-            }
-            else
-            {
-                // Fallback if TranslatePoint not available yet
-                var index = button.Tag is string s && int.TryParse(s, out var i) ? i : 0;
-                top = index * 60 + (50 - TooltipHeight) / 2.0;
-            }
-
-            double left = SidebarWidth + GapRightOfSidebar;
-
-            Canvas.SetTop(_sidebarHoverTooltip, Math.Max(0, top));
-            Canvas.SetLeft(_sidebarHoverTooltip, left);
-        }
-
         private void OnSidebarButtonPointerEntered(object? sender, PointerEventArgs e)
         {
             if (sender is not Border b) return;
+
+            // If this is the currently-selected button, scale the green selection
+            // indicator to match the button's hover scale so they grow together.
+            // Button scales to 1.08; indicator scales to 1.10 for a 0.5px-per-side
+            // safety overshoot to fully cover the button under sub-pixel rounding
+            // (avoids a visible dark sliver along the right/bottom edges).
+            if (_selectionIndicator != null
+                && b.Tag is string tagStr
+                && int.TryParse(tagStr, out int tagIdx)
+                && tagIdx == _currentSelectedIndex)
+            {
+                _selectionIndicator.RenderTransform =
+                    Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.10)");
+            }
 
             _tooltipHideCts?.Cancel();
 
@@ -6827,9 +10080,12 @@ namespace LeafClient.Views
                 _sidebarHoverTooltipText.Text = b.Tag switch
                 {
                     "0" => "LAUNCH",
-                    "1" => "VERSIONS",
+                    "1" => "PROFILES",
                     "2" => "SERVERS",
                     "3" => "MODS",
+                    "6" => "COSMETICS",
+                    "7" => "STORE",
+                    "8" => "SCREENSHOTS",
                     "4" => "SETTINGS",
                     _ => ""
                 };
@@ -6846,13 +10102,11 @@ namespace LeafClient.Views
 
             if (!_tooltipHasShown)
             {
-                // Disable position animations for the very first appearance
-                _sidebarHoverTooltip.Transitions = new Transitions(); // no transitions
-                PositionTooltipNextTo(b);                              // place exactly
-                _sidebarHoverTooltip.IsVisible = true;                 // show
-                _sidebarHoverTooltip.Opacity = 1;                      // make opaque
+                _sidebarHoverTooltip.Transitions = new Transitions(); 
+                PositionTooltipNextTo(b);                              
+                _sidebarHoverTooltip.IsVisible = true;                 
+                _sidebarHoverTooltip.Opacity = 1;                      
 
-                // Restore original transitions for smooth following afterwards
                 var restore = new Transitions();
                 if (_savedTooltipTransitions != null)
                 {
@@ -6862,10 +10116,9 @@ namespace LeafClient.Views
                 _sidebarHoverTooltip.Transitions = restore;
 
                 _tooltipHasShown = true;
-                return; // done (no initial flicker)
+                return; 
             }
 
-            // Subsequent hovers: keep transitions enabled for smooth follow
             PositionTooltipNextTo(b);
             _sidebarHoverTooltip.IsVisible = true;
             _sidebarHoverTooltip.Opacity = 1;
@@ -6873,11 +10126,22 @@ namespace LeafClient.Views
 
         private void OnSidebarButtonPointerExited(object? sender, PointerEventArgs e)
         {
+            // Reset the selection indicator scale if we're leaving the currently-selected button.
+            if (sender is Border b
+                && _selectionIndicator != null
+                && b.Tag is string tagStr
+                && int.TryParse(tagStr, out int tagIdx)
+                && tagIdx == _currentSelectedIndex)
+            {
+                _selectionIndicator.RenderTransform =
+                    Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.0)");
+            }
+
             _tooltipHideCts?.Cancel();
             _tooltipHideCts = new CancellationTokenSource();
             var ct = _tooltipHideCts.Token;
 
-            if (!AreAnimationsEnabled()) // NEW
+            if (!AreAnimationsEnabled()) 
             {
                 if (_sidebarHoverTooltip != null)
                 {
@@ -6891,7 +10155,7 @@ namespace LeafClient.Views
             {
                 try
                 {
-                    await Task.Delay(140, ct); // grace period
+                    await Task.Delay(140, ct); 
                     if (ct.IsCancellationRequested || _sidebarHoverTooltip == null) return;
 
                     Dispatcher.UIThread.Post(() => { _sidebarHoverTooltip!.Opacity = 0; });
@@ -6922,21 +10186,20 @@ namespace LeafClient.Views
                 3 => "Mods",
                 4 => "Settings",
                 5 => "Skins",
+                6 => "Cosmetics",
+                7 => "Store",
                 _ => "Game"
             };
 
-            // --- MODIFIED: Apply username masking ---
             string detailsTop;
             if (_loggedIn && !string.IsNullOrWhiteSpace(_currentUsername))
             {
                 if (_currentSettings.ShowUsernameInDiscordRichPresence)
                 {
-                    // Show full username
                     detailsTop = $"Playing as {_currentUsername}";
                 }
                 else
                 {
-                    // Show masked username (e.g., "Z****Y")
                     string maskedUsername = MaskUsername(_currentUsername);
                     detailsTop = $"Playing as {maskedUsername}";
                 }
@@ -6945,7 +10208,6 @@ namespace LeafClient.Views
             {
                 detailsTop = "Leaf Client";
             }
-            // --- END MODIFIED ---
 
             string state = $"On {pageLabel} page";
 
@@ -6973,7 +10235,6 @@ namespace LeafClient.Views
             UpdateRichPresenceFromState();
         }
 
-        // Initialize skins page controls
         private void InitializeSkinsControls()
         {
             _skinsPage = this.FindControl<Grid>("SkinsPage");
@@ -6981,10 +10242,1031 @@ namespace LeafClient.Views
             _noSkinsMessage = this.FindControl<Border>("NoSkinsMessage");
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // COSMETICS PAGE (extracted to Views/Pages/CosmeticsPageView)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        // ── Store page (extracted to UserControl) ──
+        private LeafClient.Views.Pages.StorePageView? _storePage;
+
+
+        /// <summary>
+        /// Extracts the skin texture URL from Mojang's session server profile response.
+        /// The response has a "properties" array with a base64-encoded "textures" value.
+        /// </summary>
+        private static string? ExtractSkinUrlFromProfile(string json)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var properties = doc.RootElement.GetProperty("properties");
+                foreach (var prop in properties.EnumerateArray())
+                {
+                    if (prop.GetProperty("name").GetString() == "textures")
+                    {
+                        string base64 = prop.GetProperty("value").GetString() ?? "";
+                        string decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+                        using var texDoc = System.Text.Json.JsonDocument.Parse(decoded);
+                        return texDoc.RootElement
+                            .GetProperty("textures")
+                            .GetProperty("SKIN")
+                            .GetProperty("url")
+                            .GetString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] Failed to parse Mojang profile: {ex.Message}");
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Extracts the skin texture URL from Ashcon API response.
+        /// JSON path: textures.skin.url
+        /// </summary>
+        private static string? ExtractSkinUrlFromAshcon(string json)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                return doc.RootElement
+                    .GetProperty("textures")
+                    .GetProperty("skin")
+                    .GetProperty("url")
+                    .GetString();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] Failed to parse Ashcon response: {ex.Message}");
+            }
+            return null;
+        }
+
+        private bool IsCosmeticEquipped(string cosId, string category)
+        {
+            if (_currentSettings?.Equipped == null) return false;
+            return category switch
+            {
+                "capes" => _currentSettings.Equipped.CapeId == cosId,
+                "hats"  => _currentSettings.Equipped.HatId == cosId,
+                "wings" => _currentSettings.Equipped.WingsId == cosId,
+                "auras" => _currentSettings.Equipped.AuraId == cosId,
+                _       => false
+            };
+        }
+
+        private void LoadOwnedJson()
+        {
+            try
+            {
+                if (!System.IO.File.Exists(OwnedJsonPath)) return;
+                var json = System.IO.File.ReadAllText(OwnedJsonPath);
+                // Use source-generated context (AOT-safe — reflection serialization is disabled)
+                var ids = System.Text.Json.JsonSerializer.Deserialize(json, JsonContext.Default.ListString);
+                if (ids != null)
+                    foreach (var id in ids)
+                        _ownedCosmeticIds.Add(id);
+                Console.WriteLine($"[Owned] Loaded {_ownedCosmeticIds.Count} owned cosmetics.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Owned] Failed to load owned.json: {ex.Message}");
+            }
+        }
+
+        private void SaveOwnedJson()
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(OwnedJsonPath)!);
+                var ids = new List<string>(_ownedCosmeticIds);
+                // Use source-generated context (AOT-safe — reflection serialization is disabled)
+                var json = System.Text.Json.JsonSerializer.Serialize(ids, JsonContext.Default.ListString);
+                System.IO.File.WriteAllText(OwnedJsonPath, json);
+                Console.WriteLine("[Owned] owned.json saved.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Owned] Failed to save owned.json: {ex.Message}");
+            }
+        }
+
+        // Clear any equipped cosmetics that are not in the owned set (e.g. from a previous session)
+        private async void ValidateEquippedCosmetics()
+        {
+            if (_currentSettings?.Equipped == null) return;
+            var eq = _currentSettings.Equipped;
+            bool changed = false;
+
+            if (!string.IsNullOrEmpty(eq.CapeId)  && !_ownedCosmeticIds.Contains(eq.CapeId))  { eq.CapeId  = null; changed = true; }
+            if (!string.IsNullOrEmpty(eq.HatId)   && !_ownedCosmeticIds.Contains(eq.HatId))   { eq.HatId   = null; changed = true; }
+            if (!string.IsNullOrEmpty(eq.WingsId) && !_ownedCosmeticIds.Contains(eq.WingsId)) { eq.WingsId = null; changed = true; }
+            if (!string.IsNullOrEmpty(eq.AuraId)  && !_ownedCosmeticIds.Contains(eq.AuraId))  { eq.AuraId  = null; changed = true; }
+
+            if (changed)
+            {
+                Console.WriteLine("[Owned] Cleared equipped cosmetics that are not owned.");
+                await _settingsService.SaveSettingsAsync(_currentSettings);
+            }
+        }
+
+        // ── Synthesized sound engine ──────────────────────────────────────────
+        // Generates Minecraft note-block style WAV in-memory (sine + harmonics,
+        // near-instant attack, exponential decay) and plays it via winmm.dll.
+        // No NuGet packages, no external files — generated once and cached.
+
+        [System.Runtime.InteropServices.DllImport("winmm.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
+
+        private const uint SND_FILENAME  = 0x00020000;
+        private const uint SND_ASYNC     = 0x0001;
+        private const uint SND_NODEFAULT = 0x0002;
+
+        private static string? _celebWavPath;
+        private static string? _revealWavPath;
+
+        /// <summary>
+        /// Synthesizes a note-block style WAV. Each note is a decaying bell timbre:
+        /// fundamental + 2nd + 3rd harmonics with exponential decay envelope.
+        /// </summary>
+        private static byte[] GenerateNoteBlockWav(params (double freq, double durMs)[] notes)
+        {
+            const int rate = 44100;
+            const double tau = 0.22; // decay time constant in seconds
+
+            int totalSamples = 0;
+            foreach (var (_, d) in notes)
+                totalSamples += (int)(rate * d / 1000.0);
+            totalSamples += rate / 20; // 50 ms silence tail
+
+            var pcm = new short[totalSamples];
+            int pos = 0;
+
+            foreach (var (freq, durMs) in notes)
+            {
+                int count = (int)(rate * durMs / 1000.0);
+                for (int i = 0; i < count && pos < totalSamples; i++, pos++)
+                {
+                    double t = (double)i / rate;
+                    double attack = i < 4 ? i / 4.0 : 1.0; // 4-sample ramp (~0.09 ms)
+                    double env = attack * Math.Exp(-t / tau);
+                    double s = env * (
+                        0.70 * Math.Sin(2 * Math.PI * freq * t) +
+                        0.20 * Math.Sin(2 * Math.PI * freq * 2 * t) +
+                        0.10 * Math.Sin(2 * Math.PI * freq * 3 * t));
+                    pcm[pos] = (short)Math.Clamp(s * 28000.0, -32767, 32767);
+                }
+            }
+
+            int dataBytes = totalSamples * 2;
+            var wav = new byte[44 + dataBytes];
+            void W4(int p, int v) => System.Array.Copy(BitConverter.GetBytes(v), 0, wav, p, 4);
+            void W2(int p, short v) => System.Array.Copy(BitConverter.GetBytes(v), 0, wav, p, 2);
+            void Ws(int p, string s) { for (int i = 0; i < s.Length; i++) wav[p + i] = (byte)s[i]; }
+            Ws(0, "RIFF"); W4(4, 36 + dataBytes); Ws(8, "WAVE");
+            Ws(12, "fmt "); W4(16, 16); W2(20, 1); W2(22, 1);
+            W4(24, rate); W4(28, rate * 2); W2(32, 2); W2(34, 16);
+            Ws(36, "data"); W4(40, dataBytes);
+            for (int i = 0; i < totalSamples; i++)
+            {
+                wav[44 + i * 2]     = (byte)(pcm[i] & 0xFF);
+                wav[44 + i * 2 + 1] = (byte)((pcm[i] >> 8) & 0xFF);
+            }
+            return wav;
+        }
+
+        private static string EnsureCelebWav()
+        {
+            if (_celebWavPath != null && System.IO.File.Exists(_celebWavPath)) return _celebWavPath;
+            _celebWavPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "leafclient_sfx_celeb.wav");
+            // C5 → E5 → G5 → C6  (ascending major chord arpeggio)
+            System.IO.File.WriteAllBytes(_celebWavPath, GenerateNoteBlockWav(
+                (523.25, 85.0), (659.25, 85.0), (783.99, 85.0), (1046.50, 480.0)));
+            return _celebWavPath;
+        }
+
+        private static string EnsureRevealWav()
+        {
+            if (_revealWavPath != null && System.IO.File.Exists(_revealWavPath)) return _revealWavPath;
+            _revealWavPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "leafclient_sfx_reveal.wav");
+            // G5 → B5 → D6 → F#6  (brighter, shimmery reveal chord)
+            System.IO.File.WriteAllBytes(_revealWavPath, GenerateNoteBlockWav(
+                (783.99, 65.0), (987.77, 65.0), (1174.66, 65.0), (1479.98, 420.0)));
+            return _revealWavPath;
+        }
+
+        private static void PlayCelebrationSound()
+        {
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                try { PlaySound(EnsureCelebWav(), IntPtr.Zero, SND_FILENAME | SND_ASYNC | SND_NODEFAULT); }
+                catch { }
+            });
+        }
+
+        private static void PlayRevealSound()
+        {
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                try { PlaySound(EnsureRevealWav(), IntPtr.Zero, SND_FILENAME | SND_ASYNC | SND_NODEFAULT); }
+                catch { }
+            });
+        }
+
+        private void ShowCelebrationPanel(string id, string name, string preview, string rarity)
+        {
+            var overlay = this.FindControl<Grid>("CelebrationOverlay");
+            if (overlay == null) return;
+
+            var (rarityMain, _, _) = rarity switch
+            {
+                "Legendary" => ("#F59E0B", "#92400E", "#1A1408"),
+                "Epic"      => ("#A855F7", "#6B21A8", "#110C1A"),
+                "Rare"      => ("#3B82F6", "#1E3A8A", "#0C1320"),
+                _           => ("#6B7280", "#374151", "#0F1318")
+            };
+
+            var giftIcon        = this.FindControl<TextBlock>("CelebGiftIcon");
+            var itemRendHost    = this.FindControl<Border>("CelebItemRendererHost");
+            var itemName        = this.FindControl<TextBlock>("CelebItemName");
+            var rarityBadge     = this.FindControl<Border>("CelebRarityBadge");
+            var rarityText      = this.FindControl<TextBlock>("CelebRarityText");
+            var glowRing        = this.FindControl<Ellipse>("CelebGlowRing");
+            var glowRingOuter   = this.FindControl<Ellipse>("CelebGlowRingOuter");
+            var glowFill        = this.FindControl<Ellipse>("CelebGlowFill");
+            var unlockedBanner  = this.FindControl<Border>("CelebUnlockedBanner");
+
+            if (itemName != null)
+            {
+                itemName.Text       = name;
+                itemName.Foreground = SolidColorBrush.Parse(rarityMain);
+            }
+            if (rarityText != null)
+            {
+                rarityText.Text       = rarity.ToUpper();
+                rarityText.Foreground = SolidColorBrush.Parse(rarityMain);
+            }
+            if (rarityBadge != null)
+            {
+                var mc = Color.Parse(rarityMain);
+                rarityBadge.Background  = new SolidColorBrush(new Color(0x28, mc.R, mc.G, mc.B));
+                rarityBadge.BorderBrush = new SolidColorBrush(new Color(0x55, mc.R, mc.G, mc.B));
+            }
+            if (glowRing      != null) glowRing.Stroke      = SolidColorBrush.Parse(rarityMain);
+            if (glowRingOuter != null) glowRingOuter.Stroke = SolidColorBrush.Parse(rarityMain);
+
+            // Build a SkinRendererControl inside the host, load skin + cosmetic async
+            Controls.SkinRendererControl? celebRenderer = null;
+            if (itemRendHost != null)
+            {
+                celebRenderer = new Controls.SkinRendererControl
+                {
+                    Width  = 160,
+                    Height = 200,
+                };
+                itemRendHost.Child = celebRenderer;
+
+                var category = System.Array.Find(
+                    Views.Pages.StorePageView.StoreCatalog, c => c.Id == id).Category ?? "";
+
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var skinBytes = await FetchSkinBytesAsync().ConfigureAwait(false);
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (skinBytes != null)
+                            celebRenderer.UpdateSkinTexture(skinBytes);
+
+                        // Apply the specific cosmetic being unlocked
+                        Services.CosmeticHelpers.ApplyCosmeticPreviewToRenderer(
+                            celebRenderer, id, category, _currentSettings);
+                    });
+                });
+            }
+
+            // Reset state
+            if (giftIcon      != null) { giftIcon.IsVisible      = true;  giftIcon.Opacity      = 1; }
+            if (itemRendHost  != null) { itemRendHost.IsVisible   = false; itemRendHost.Opacity  = 0; }
+            if (unlockedBanner!= null) { unlockedBanner.IsVisible = false; unlockedBanner.Opacity= 0; }
+            if (glowRingOuter != null) { glowRingOuter.IsVisible  = false; glowRingOuter.Opacity = 0; }
+            if (glowFill      != null) { glowFill.IsVisible       = false; glowFill.Opacity      = 0; }
+            var resultPanel = this.FindControl<StackPanel>("CelebResultPanel");
+            if (resultPanel != null) { resultPanel.IsVisible = false; resultPanel.Opacity = 0; }
+            if (glowRing    != null) { glowRing.IsVisible    = false; glowRing.Opacity    = 0; }
+
+            if (overlay.RenderTransform is ScaleTransform ot) { ot.ScaleX = 0; ot.ScaleY = 0; }
+            overlay.Opacity   = 0;
+            overlay.IsVisible = true;
+
+            // Phase timings via DispatcherTimer
+            int phase = 0;
+            var timer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            double elapsed = 0;
+            bool revealSoundPlayed = false;
+
+            var panelScale = new ScaleTransform(0, 0);
+            var panel = this.FindControl<Border>("CelebPanel");
+            if (panel != null)
+            {
+                panel.RenderTransform = panelScale;
+                panel.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            }
+            var giftScale = new ScaleTransform(0, 0);
+            if (giftIcon != null)
+            {
+                giftIcon.RenderTransform = giftScale;
+                giftIcon.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            }
+            var itemScale = new ScaleTransform(0, 0);
+            if (itemRendHost != null)
+            {
+                itemRendHost.RenderTransform = itemScale;
+                itemRendHost.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            }
+
+            static double Ease(double t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            static double Bounce(double t)
+            {
+                var s = Ease(Math.Min(t, 1.0));
+                if (t > 0.75) s = 1 + Math.Sin((t - 0.75) * Math.PI / 0.25) * 0.15 * (1 - (t - 0.75) / 0.25);
+                return s;
+            }
+
+            timer.Tick += (_, _) =>
+            {
+                elapsed += 16;
+
+                // Fade in overlay only during phase 0 (elapsed resets on each phase, so guard here)
+                if (phase == 0 && elapsed <= 200)
+                    overlay.Opacity = elapsed / 200.0;
+                else
+                    overlay.Opacity = 1;
+
+                // Phase 0: Panel + gift scale in + banner fade in (0–600ms)
+                if (phase == 0)
+                {
+                    double t = Math.Min(elapsed / 600.0, 1.0);
+                    var s = Bounce(t);
+                    panelScale.ScaleX = s; panelScale.ScaleY = s;
+                    giftScale.ScaleX  = s; giftScale.ScaleY  = s;
+                    if (t >= 0.3 && unlockedBanner != null)
+                    {
+                        unlockedBanner.IsVisible = true;
+                        unlockedBanner.Opacity   = Math.Min((t - 0.3) / 0.4, 1.0);
+                    }
+                    if (t >= 1.0) { phase = 1; elapsed = 0; }
+                }
+                // Phase 1: Gift shake (0–400ms)
+                else if (phase == 1)
+                {
+                    double t = elapsed / 400.0;
+                    if (giftIcon != null)
+                    {
+                        var angle = Math.Sin(t * Math.PI * 6) * 8 * (1 - t);
+                        var rt = new RotateTransform(angle);
+                        giftIcon.RenderTransform = rt;
+                        giftIcon.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                    }
+                    if (t >= 1.0) { phase = 2; elapsed = 0; }
+                }
+                // Phase 2: Gift fade out, renderer + glow rings fade in (0–500ms)
+                else if (phase == 2)
+                {
+                    revealSoundPlayed = true;
+                    double t = Math.Min(elapsed / 500.0, 1.0);
+                    if (giftIcon != null) giftIcon.Opacity = 1 - t;
+                    if (itemRendHost != null)
+                    {
+                        itemRendHost.IsVisible = true;
+                        itemRendHost.Opacity   = t;
+                        var s = Bounce(t);
+                        itemScale.ScaleX = s; itemScale.ScaleY = s;
+                    }
+                    if (glowFill != null)
+                    {
+                        glowFill.IsVisible = true;
+                        glowFill.Opacity   = t * 0.6;
+                    }
+                    if (glowRing != null)
+                    {
+                        glowRing.IsVisible = true;
+                        glowRing.Opacity   = t * 0.85;
+                    }
+                    if (glowRingOuter != null && t > 0.2)
+                    {
+                        glowRingOuter.IsVisible = true;
+                        glowRingOuter.Opacity   = ((t - 0.2) / 0.8) * 0.45;
+                    }
+                    if (t >= 1.0)
+                    {
+                        if (giftIcon != null) giftIcon.IsVisible = false;
+                        phase = 3; elapsed = 0;
+                    }
+                }
+                // Phase 3: Result panel fade in, rings pulse (0–500ms)
+                else if (phase == 3)
+                {
+                    double t = Math.Min(elapsed / 500.0, 1.0);
+                    if (resultPanel != null) { resultPanel.IsVisible = true; resultPanel.Opacity = t; }
+                    double pulse = 1.0 + Math.Sin(elapsed / 500.0 * Math.PI) * 0.08;
+                    if (glowRing      != null) glowRing.Opacity      = 0.85 * pulse;
+                    if (glowRingOuter != null) glowRingOuter.Opacity = 0.45 * pulse;
+                    if (t >= 1.0) { timer.Stop(); }
+                }
+            };
+
+            timer.Start();
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  Randomized Explosion Celebration Animation
+        //  Types: TNT, Creeper, Bed, End Crystal
+        // ═══════════════════════════════════════════════════════════
+
+        private enum ExplosionStyle
+        {
+            LongFuse,    // TNT/Creeper: 4s fuse charge + boom
+            QuickBoom,   // Bed: brief buildup + instant boom
+            HoverRotate, // End Crystal: hover + rotate, then burst
+        }
+
+        private sealed class ExplosionConfig
+        {
+            public required string BlockBitmapUri;
+            public required string WavUri;
+            public required string WavTempFilename;
+            public required ExplosionStyle Style;
+            public required long ExplosionTargetMs;
+            public required Color GlowInner;
+            public required Color GlowMid;
+            public required Color[] ParticleColors;
+            public double BlockSize = 140; // display size inside TntBlockGroup
+        }
+
+        private static readonly ExplosionConfig[] _explosionPresets = new[]
+        {
+            // TNT — orange glow, white/gray particles, 4s fuse
+            new ExplosionConfig
+            {
+                BlockBitmapUri    = "avares://LeafClient/Assets/TNT.png",
+                WavUri            = "avares://LeafClient/Assets/MinecraftTNT.wav",
+                WavTempFilename   = "leafclient_sfx_tnt.wav",
+                Style             = ExplosionStyle.LongFuse,
+                ExplosionTargetMs = 4300,
+                GlowInner         = Color.FromArgb(0xDD, 0xFF, 0x99, 0x00),
+                GlowMid           = Color.FromArgb(0x88, 0xFF, 0x55, 0x00),
+                BlockSize         = 170,
+                ParticleColors    = new[]
+                {
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(238, 238, 238),
+                    Color.FromRgb(220, 220, 220),
+                    Color.FromRgb(200, 200, 200),
+                    Color.FromRgb(180, 180, 180),
+                },
+            },
+            // Creeper — green glow, white/gray/green particles, same 4s fuse
+            new ExplosionConfig
+            {
+                BlockBitmapUri    = "avares://LeafClient/Assets/Creeper.png",
+                WavUri            = "avares://LeafClient/Assets/MinecraftTNT.wav",
+                WavTempFilename   = "leafclient_sfx_tnt.wav",
+                Style             = ExplosionStyle.LongFuse,
+                ExplosionTargetMs = 4300,
+                GlowInner         = Color.FromArgb(0xDD, 0x88, 0xFF, 0x44),
+                GlowMid           = Color.FromArgb(0x88, 0x44, 0xCC, 0x22),
+                BlockSize         = 230,
+                ParticleColors    = new[]
+                {
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(240, 240, 240),
+                    Color.FromRgb(220, 220, 220),
+                    Color.FromRgb(180, 180, 180),
+                    Color.FromRgb(140, 220, 90),
+                    Color.FromRgb(100, 190, 70),
+                    Color.FromRgb( 70, 150, 50),
+                },
+            },
+            // Bed — red glow, red/white particles, quick ~900ms buildup
+            new ExplosionConfig
+            {
+                BlockBitmapUri    = "avares://LeafClient/Assets/Bed.png",
+                WavUri            = "avares://LeafClient/Assets/BedExplosion.wav",
+                WavTempFilename   = "leafclient_sfx_bed.wav",
+                Style             = ExplosionStyle.QuickBoom,
+                ExplosionTargetMs = 900,
+                GlowInner         = Color.FromArgb(0xDD, 0xFF, 0x33, 0x33),
+                GlowMid           = Color.FromArgb(0x88, 0xCC, 0x11, 0x11),
+                BlockSize         = 210,
+                ParticleColors    = new[]
+                {
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(255, 220, 220),
+                    Color.FromRgb(255, 140, 140),
+                    Color.FromRgb(255,  80,  80),
+                    Color.FromRgb(220,  40,  40),
+                    Color.FromRgb(180,  20,  20),
+                    Color.FromRgb(140,  10,  10),
+                },
+            },
+            // End Crystal — purple/pink glow, magenta particles, hover + rotate ~2000ms
+            new ExplosionConfig
+            {
+                BlockBitmapUri    = "avares://LeafClient/Assets/EndCrystal.png",
+                WavUri            = "avares://LeafClient/Assets/CrystalExplosion.wav",
+                WavTempFilename   = "leafclient_sfx_crystal.wav",
+                Style             = ExplosionStyle.HoverRotate,
+                ExplosionTargetMs = 2000,
+                GlowInner         = Color.FromArgb(0xDD, 0xDD, 0x77, 0xFF),
+                GlowMid           = Color.FromArgb(0x88, 0x99, 0x33, 0xCC),
+                BlockSize         = 200,
+                ParticleColors    = new[]
+                {
+                    Color.FromRgb(255, 255, 255),
+                    Color.FromRgb(255, 210, 255),
+                    Color.FromRgb(230, 140, 255),
+                    Color.FromRgb(190,  90, 230),
+                    Color.FromRgb(150,  50, 190),
+                    Color.FromRgb(110,  30, 150),
+                    Color.FromRgb( 80,  20, 110),
+                },
+            },
+        };
+
+        // Cache wav temp paths (load once per session)
+        private static readonly Dictionary<string, string> _wavCache = new();
+
+        private static string? EnsureWavAsset(string avaresUri, string tempFileName)
+        {
+            if (_wavCache.TryGetValue(avaresUri, out var cached) && System.IO.File.Exists(cached))
+                return cached;
+            var tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), tempFileName);
+            try
+            {
+                using var stream = Avalonia.Platform.AssetLoader.Open(new Uri(avaresUri));
+                using var ms = new System.IO.MemoryStream();
+                stream.CopyTo(ms);
+                System.IO.File.WriteAllBytes(tempPath, ms.ToArray());
+                _wavCache[avaresUri] = tempPath;
+                return tempPath;
+            }
+            catch { return null; }
+        }
+
+        private static void PlayWavSound(string? wavPath)
+        {
+            if (wavPath == null) return;
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                try { PlaySound(wavPath, IntPtr.Zero, SND_FILENAME | SND_ASYNC | SND_NODEFAULT); }
+                catch { }
+            });
+        }
+
+        // Each particle is a cross-shaped Control (two overlapping Borders inside a Grid).
+        private sealed class TntParticle
+        {
+            public required Control Element;
+            public double X, Y;
+            public double Vx, Vy;
+            public double Opacity;
+            public double FadeRate;
+        }
+
+        private static Control CreateCrossParticle(double size, Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            var grid  = new Grid { Width = size, Height = size };
+            grid.Children.Add(new Border
+            {
+                Width               = size,
+                Height              = size * 0.38,
+                Background          = brush,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            grid.Children.Add(new Border
+            {
+                Width               = size * 0.38,
+                Height              = size,
+                Background          = brush,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            return grid;
+        }
+
+        private List<TntParticle> CreateTntParticles(Canvas canvas, Color[] colors)
+        {
+            var rng       = new Random();
+            var particles = new List<TntParticle>();
+            double cx     = this.ClientSize.Width  / 2.0;
+            double cy     = this.ClientSize.Height / 2.0;
+
+            // Three size bands matching the Minecraft screenshot density
+            (double minSz, double maxSz, int count)[] bands =
+            [
+                (28, 52, 12),   // large chunks
+                (14, 27, 24),   // medium
+                (6,  13, 24),   // small
+            ];
+
+            foreach (var (minSz, maxSz, count) in bands)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    double angle = rng.NextDouble() * Math.PI * 2;
+                    double speed = 4.0 + rng.NextDouble() * 13.0;
+                    double size  = minSz + rng.NextDouble() * (maxSz - minSz);
+                    var    color = colors[rng.Next(colors.Length)];
+
+                    var el = CreateCrossParticle(size, color);
+                    el.RenderTransform = new RotateTransform(rng.NextDouble() * 90);
+                    el.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                    el.Opacity = 1.0;
+
+                    canvas.Children.Add(el);
+                    Canvas.SetLeft(el, cx - size / 2);
+                    Canvas.SetTop(el,  cy - size / 2);
+
+                    particles.Add(new TntParticle
+                    {
+                        Element  = el,
+                        X        = cx - size / 2,
+                        Y        = cy - size / 2,
+                        Vx       = Math.Cos(angle) * speed,
+                        Vy       = Math.Sin(angle) * speed - 2.0,
+                        Opacity  = 1.0,
+                        FadeRate = 0.010 + rng.NextDouble() * 0.016,
+                    });
+                }
+            }
+            return particles;
+        }
+
+        // Bitmap cache per asset URI
+        private static readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _bitmapCache = new();
+
+        private static Avalonia.Media.Imaging.Bitmap? LoadAssetBitmap(string avaresUri)
+        {
+            if (_bitmapCache.TryGetValue(avaresUri, out var cached)) return cached;
+            try
+            {
+                using var s = Avalonia.Platform.AssetLoader.Open(new Uri(avaresUri));
+                var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+                _bitmapCache[avaresUri] = bmp;
+                return bmp;
+            }
+            catch { return null; }
+        }
+
+        // Entry point — randomly picks one of the 4 explosion presets and runs it.
+        private async Task RunTntAnimationAsync()
+        {
+            var preset = _explosionPresets[new Random().Next(_explosionPresets.Length)];
+            await RunExplosionAnimationAsync(preset);
+        }
+
+        // Debug: Ctrl+Shift+X triggers the crash report overlay with a fake exception.
+        private void OnDebugKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+        {
+            var mods = e.KeyModifiers;
+            bool ctrlShift = mods.HasFlag(Avalonia.Input.KeyModifiers.Control)
+                          && mods.HasFlag(Avalonia.Input.KeyModifiers.Shift);
+            if (!ctrlShift) return;
+
+            if (e.Key == Avalonia.Input.Key.X)
+            {
+                Console.WriteLine("[Debug] Triggering fake crash to test crash reporter");
+                try
+                {
+                    throw new InvalidOperationException(
+                        "Debug test crash — triggered via Ctrl+Shift+X. If you see this in the crash report backend, the pipeline works end-to-end.");
+                }
+                catch (Exception ex)
+                {
+                    ShowCrashReportOverlay(ex, null);
+                }
+                e.Handled = true;
+            }
+        }
+
+        private async Task RunExplosionAnimationAsync(ExplosionConfig config)
+        {
+            var tntOverlay    = this.FindControl<Grid>("TntAnimOverlay");
+            var tntBackdrop   = this.FindControl<Rectangle>("TntBackdrop");
+            var tntFlash      = this.FindControl<Rectangle>("TntWhiteFlash");
+            var tntCanvas     = this.FindControl<Canvas>("TntParticleCanvas");
+            var tntGroup      = this.FindControl<Grid>("TntBlockGroup");
+            var tntGlow       = this.FindControl<Ellipse>("TntGlow");
+            var tntBlockFlash = this.FindControl<Rectangle>("TntBlockFlash");
+            var tntBlockImage = this.FindControl<Image>("TntBlockImage");
+
+            if (tntOverlay == null || tntGroup == null) return;
+
+            var blockBitmap = LoadAssetBitmap(config.BlockBitmapUri);
+            var wavPath     = EnsureWavAsset(config.WavUri, config.WavTempFilename);
+
+            // Reset state + swap textures + set glow color
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                tntCanvas?.Children.Clear();
+                if (tntBackdrop   != null) tntBackdrop.Opacity   = 0;
+                if (tntFlash      != null) tntFlash.Opacity      = 0;
+                if (tntGlow       != null) tntGlow.Opacity       = 0;
+                if (tntBlockFlash != null) tntBlockFlash.Opacity = 0;
+
+                if (tntBlockImage != null && blockBitmap != null)
+                {
+                    tntBlockImage.Source = blockBitmap;
+                    tntBlockImage.Width  = config.BlockSize;
+                    tntBlockImage.Height = config.BlockSize;
+                }
+                if (tntBlockFlash != null && blockBitmap != null)
+                {
+                    tntBlockFlash.Width  = config.BlockSize;
+                    tntBlockFlash.Height = config.BlockSize;
+                    // Match the Image control's default Stretch=Uniform so the mask
+                    // aligns exactly with the visible pixels of non-square textures.
+                    tntBlockFlash.OpacityMask = new ImageBrush
+                    {
+                        Source  = blockBitmap,
+                        Stretch = Stretch.Uniform,
+                    };
+                }
+
+                // Update glow color to match preset
+                if (tntGlow != null)
+                {
+                    tntGlow.Fill = new RadialGradientBrush
+                    {
+                        GradientStops =
+                        {
+                            new GradientStop(config.GlowInner, 0),
+                            new GradientStop(config.GlowMid,   0.45),
+                            new GradientStop(Color.FromArgb(0, 0, 0, 0), 1),
+                        }
+                    };
+                }
+
+                tntGroup.IsVisible             = true;
+                tntGroup.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                tntGroup.Opacity               = 0;
+                tntOverlay.IsVisible           = true;
+                tntOverlay.Opacity             = 1;
+
+                // Style-specific initial transform
+                if (config.Style == ExplosionStyle.LongFuse)
+                {
+                    tntGroup.RenderTransform = new TranslateTransform(0, 620);
+                }
+                else if (config.Style == ExplosionStyle.HoverRotate)
+                {
+                    // TransformGroup: scale (fade-in), translate (hover), rotate (spin)
+                    var tg = new TransformGroup();
+                    tg.Children.Add(new ScaleTransform(0.2, 0.2));
+                    tg.Children.Add(new TranslateTransform(0, 0));
+                    tg.Children.Add(new RotateTransform(0));
+                    tntGroup.RenderTransform = tg;
+                }
+                else // QuickBoom
+                {
+                    tntGroup.RenderTransform = new ScaleTransform(0.2, 0.2);
+                }
+            });
+
+            var globalSw = System.Diagnostics.Stopwatch.StartNew();
+
+            if (config.Style == ExplosionStyle.LongFuse)
+            {
+                // Long fuse: play WAV at t=0 (sound contains fuse sizzle + boom)
+                PlayWavSound(wavPath);
+
+                // Phase 0: slide up from below (~400ms)
+                const int slideSteps = 25;
+                for (int i = 0; i <= slideSteps; i++)
+                {
+                    double t    = (double)i / slideSteps;
+                    double ease = 1 - Math.Pow(1 - t, 3);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGroup.RenderTransform is TranslateTransform tt2)
+                            tt2.Y = 620 * (1 - ease);
+                        tntGroup.Opacity = ease;
+                        if (tntBackdrop != null) tntBackdrop.Opacity = ease * 0.80;
+                    });
+                    if (i < slideSteps) await Task.Delay(400 / slideSteps);
+                }
+
+                // Phase 1: charging flash + glow pulse (using Stopwatch for real-time)
+                bool flashOn = false;
+                while (globalSw.ElapsedMilliseconds < config.ExplosionTargetMs)
+                {
+                    long remaining = config.ExplosionTargetMs - globalSw.ElapsedMilliseconds;
+                    double progress = 1.0 - Math.Clamp((double)remaining / (config.ExplosionTargetMs - 450), 0, 1);
+
+                    double halfInterval;
+                    if (progress < 0.80)
+                        halfInterval = Math.Max(40.0, 160.0 - progress * 150.0);
+                    else
+                        halfInterval = 60.0; // slow flash near the end
+
+                    flashOn = !flashOn;
+
+                    double glowOpacity = 0.25 + progress * 0.70;
+                    double blockWhite  = flashOn ? (0.30 + progress * 0.65) : 0.0;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGlow       != null) tntGlow.Opacity       = Math.Min(1.0, glowOpacity);
+                        if (tntBlockFlash != null) tntBlockFlash.Opacity = blockWhite;
+                    });
+
+                    int waitMs = (int)Math.Min(halfInterval, Math.Max(16, remaining));
+                    await Task.Delay(waitMs);
+                }
+            }
+            else if (config.Style == ExplosionStyle.QuickBoom)
+            {
+                // Phase 0: quick scale-in (200ms)
+                const int scaleSteps = 14;
+                for (int i = 0; i <= scaleSteps; i++)
+                {
+                    double t    = (double)i / scaleSteps;
+                    double ease = 1 - Math.Pow(1 - t, 2);
+                    double scale = 0.3 + 0.7 * ease;
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGroup.RenderTransform is ScaleTransform st)
+                        {
+                            st.ScaleX = scale;
+                            st.ScaleY = scale;
+                        }
+                        tntGroup.Opacity = ease;
+                        if (tntBackdrop != null) tntBackdrop.Opacity = ease * 0.80;
+                    });
+                    if (i < scaleSteps) await Task.Delay(200 / scaleSteps);
+                }
+
+                // Phase 1: brief pulse/glow ramp-up. Play WAV right before boom so
+                // the ~few-ms wav delay lands exactly with the visual particles.
+                const long wavLeadMs = 40;
+                long playWavAt = config.ExplosionTargetMs - wavLeadMs;
+                bool wavPlayed = false;
+
+                while (globalSw.ElapsedMilliseconds < config.ExplosionTargetMs)
+                {
+                    long remaining = config.ExplosionTargetMs - globalSw.ElapsedMilliseconds;
+                    double progress = 1.0 - Math.Clamp((double)remaining / (config.ExplosionTargetMs - 200), 0, 1);
+
+                    double glowOpacity = 0.25 + progress * 0.75;
+                    double pulse       = Math.Sin(globalSw.ElapsedMilliseconds / 70.0) * 0.15 + 0.85;
+                    double blockWhite  = progress * 0.65 * pulse;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGlow       != null) tntGlow.Opacity       = Math.Min(1.0, glowOpacity);
+                        if (tntBlockFlash != null) tntBlockFlash.Opacity = blockWhite;
+                    });
+
+                    if (!wavPlayed && globalSw.ElapsedMilliseconds >= playWavAt)
+                    {
+                        PlayWavSound(wavPath);
+                        wavPlayed = true;
+                    }
+
+                    await Task.Delay(16);
+                }
+
+                if (!wavPlayed) PlayWavSound(wavPath);
+            }
+            else // HoverRotate: End Crystal — floats up/down + spins, then bursts
+            {
+                // Phase 0: fade-in with initial scale (250ms)
+                const int scaleSteps = 16;
+                for (int i = 0; i <= scaleSteps; i++)
+                {
+                    double t    = (double)i / scaleSteps;
+                    double ease = 1 - Math.Pow(1 - t, 2);
+                    double scale = 0.3 + 0.7 * ease;
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGroup.RenderTransform is TransformGroup tgA
+                            && tgA.Children.Count >= 1
+                            && tgA.Children[0] is ScaleTransform st)
+                        {
+                            st.ScaleX = scale;
+                            st.ScaleY = scale;
+                        }
+                        tntGroup.Opacity = ease;
+                        if (tntBackdrop != null) tntBackdrop.Opacity = ease * 0.80;
+                    });
+                    if (i < scaleSteps) await Task.Delay(250 / scaleSteps);
+                }
+
+                // Phase 1: hover (vertical sine) + rotate (continuous spin) +
+                // glow ramp-up. Play WAV right before the burst.
+                const long wavLeadMs = 40;
+                long playWavAt = config.ExplosionTargetMs - wavLeadMs;
+                bool wavPlayed = false;
+
+                long phase1Start = globalSw.ElapsedMilliseconds;
+
+                while (globalSw.ElapsedMilliseconds < config.ExplosionTargetMs)
+                {
+                    long remaining = config.ExplosionTargetMs - globalSw.ElapsedMilliseconds;
+                    long elapsedInPhase = globalSw.ElapsedMilliseconds - phase1Start;
+                    double progress = 1.0 - Math.Clamp((double)remaining / (config.ExplosionTargetMs - 250), 0, 1);
+
+                    // Hover: smooth sine wave on Y, amplitude 18px, slow 1600ms period
+                    double hoverY = Math.Sin(elapsedInPhase / 1600.0 * Math.PI * 2) * 18.0;
+                    // Glow + flash ramp
+                    double glowOpacity = 0.30 + progress * 0.70;
+                    double pulse       = Math.Sin(globalSw.ElapsedMilliseconds / 90.0) * 0.18 + 0.82;
+                    double blockWhite  = progress * 0.55 * pulse;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntGroup.RenderTransform is TransformGroup tgB
+                            && tgB.Children.Count >= 2)
+                        {
+                            if (tgB.Children[1] is TranslateTransform tr) tr.Y = hoverY;
+                        }
+                        if (tntGlow       != null) tntGlow.Opacity       = Math.Min(1.0, glowOpacity);
+                        if (tntBlockFlash != null) tntBlockFlash.Opacity = blockWhite;
+                    });
+
+                    if (!wavPlayed && globalSw.ElapsedMilliseconds >= playWavAt)
+                    {
+                        PlayWavSound(wavPath);
+                        wavPlayed = true;
+                    }
+
+                    await Task.Delay(16);
+                }
+
+                if (!wavPlayed) PlayWavSound(wavPath);
+            }
+
+            // Phase 2: BOOM — trigger explosion and return immediately so the
+            // celebration panel can show at the same time as the particles.
+            List<TntParticle> particles = null!;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (tntFlash  != null) tntFlash.Opacity = 1;
+                tntGroup.IsVisible = false;
+                if (tntCanvas != null) particles = CreateTntParticles(tntCanvas, config.ParticleColors);
+            });
+
+            // Run particle animation in the background — caller continues immediately.
+            _ = Task.Run(async () =>
+            {
+                const int explodeSteps = 120;
+                for (int i = 0; i <= explodeSteps; i++)
+                {
+                    double t = (double)i / explodeSteps;
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (tntFlash != null)
+                            tntFlash.Opacity = Math.Max(0.0, 1.0 - t * 5.0);
+                        if (tntBackdrop != null)
+                            tntBackdrop.Opacity = Math.Max(0.0, 0.80 * (1.0 - Math.Max(0.0, (t - 0.25) / 0.75)));
+
+                        foreach (var p in particles)
+                        {
+                            p.X  += p.Vx;
+                            p.Y  += p.Vy;
+                            p.Vy += 0.20;
+                            p.Opacity = Math.Max(0, p.Opacity - p.FadeRate);
+                            Canvas.SetLeft(p.Element, p.X);
+                            Canvas.SetTop(p.Element,  p.Y);
+                            p.Element.Opacity = p.Opacity;
+                        }
+                    });
+                    if (i < explodeSteps) await Task.Delay(16);
+                }
+
+                // Cleanup after particles finish
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    tntOverlay.IsVisible = false;
+                    tntCanvas?.Children.Clear();
+                    tntGroup.IsVisible  = true;
+                });
+            });
+        }
+
+        // EquipCosmetic, UnequipCosmetic, SaveEquippedJson, OnCosmeticTabTapped,
+        // OnPreviewLightToggle, OnCosmeticsSearchChanged moved to CosmeticsPageView.
+
         private void OpenSkinsPage(object? sender, RoutedEventArgs e)
         {
-            CloseAccountPanel(null, new RoutedEventArgs());
-            SwitchToPage(5); // New page index for skins
+            CloseAccountPanelImmediate(null, new RoutedEventArgs());
+            SwitchToPage(5); 
             LoadSkins();
         }
 
@@ -7078,13 +11360,11 @@ namespace LeafClient.Views
                 {
                     if (string.IsNullOrWhiteSpace(nameBox.Text))
                     {
-                        // Show error
                         return;
                     }
 
                     if (string.IsNullOrEmpty(selectedFilePath))
                     {
-                        // Show error
                         return;
                     }
 
@@ -7136,20 +11416,19 @@ namespace LeafClient.Views
             }
         }
 
-        // 2) MODIFY LoadSkins() so that it sets the flag while it restores selection
 
         private void LoadSkins()
         {
             if (_skinsWrapPanel == null || _noSkinsMessage == null) return;
 
             _skinsWrapPanel.Children.Clear();
-            _currentlySelectedSkinCard = null; // Reset selected card when reloading skins
+            _currentlySelectedSkinCard = null; 
 
             if (_currentSettings.CustomSkins.Count == 0)
             {
                 _noSkinsMessage.IsVisible = true;
-                _currentSettings.SelectedSkinId = null; // No skin selected if list is empty
-                _ = _settingsService.SaveSettingsAsync(_currentSettings); // Save this change
+                _currentSettings.SelectedSkinId = null; 
+                _ = _settingsService.SaveSettingsAsync(_currentSettings); 
                 return;
             }
 
@@ -7161,13 +11440,11 @@ namespace LeafClient.Views
                 _skinsWrapPanel.Children.Add(skinCard);
             }
 
-            // --- IMPORTANT PART: prevent uploads when restoring selection ---
             _isProgrammaticallySelectingSkin = true;
             try
             {
                 if (!string.IsNullOrEmpty(_currentSettings.SelectedSkinId))
                 {
-                    // This will set the visual border, but SelectSkin will early‑return
                     SelectSkin(_currentSettings.SelectedSkinId);
                 }
                 else if (_currentSettings.CustomSkins.Any())
@@ -7196,8 +11473,7 @@ namespace LeafClient.Views
                 Margin = new Thickness(0, 0, 15, 15),
                 Padding = new Thickness(15),
                 Cursor = new Cursor(StandardCursorType.Hand),
-                Tag = skin.Id, // Store the skin ID in the Tag for easy retrieval
-                               // Initialize border based on whether this skin is currently selected
+                Tag = skin.Id, 
                 BorderBrush = skin.Id == _currentSettings.SelectedSkinId ? selectedBorderBrush : Brushes.Transparent,
                 BorderThickness = new Thickness(skin.Id == _currentSettings.SelectedSkinId ? 3 : 0)
             };
@@ -7206,7 +11482,6 @@ namespace LeafClient.Views
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            // Image container
             var imageContainer = new Border
             {
                 Background = GetBrush("HoverBackgroundBrush"),
@@ -7217,7 +11492,6 @@ namespace LeafClient.Views
             Grid.SetRow(imageContainer, 0);
             grid.Children.Add(imageContainer);
 
-            // Name
             var nameText = new TextBlock
             {
                 Text = skin.Name,
@@ -7230,7 +11504,6 @@ namespace LeafClient.Views
             Grid.SetRow(nameText, 1);
             grid.Children.Add(nameText);
 
-            // Three dots menu (appears on hover)
             var menuButton = new Button
             {
                 Content = "⋮",
@@ -7250,7 +11523,6 @@ namespace LeafClient.Views
             Grid.SetRow(menuButton, 0);
             grid.Children.Add(menuButton);
 
-            // Show menu on hover
             card.PointerEntered += (s, e) =>
             {
                 menuButton.IsVisible = true;
@@ -7259,7 +11531,6 @@ namespace LeafClient.Views
 
             card.PointerExited += (s, e) =>
             {
-                // Only hide if the flyout is not open
                 if (menuButton.Flyout == null || !menuButton.Flyout.IsOpen)
                 {
                     menuButton.Opacity = 0;
@@ -7267,14 +11538,12 @@ namespace LeafClient.Views
                 }
             };
 
-            // Handle clicking the card to select it
             card.PointerPressed += (s, e) =>
             {
-                // Check if the left mouse button was pressed
                 if (e.GetCurrentPoint(s as Control).Properties.IsLeftButtonPressed)
                 {
                     SelectSkin(skin.Id);
-                    e.Handled = true; // Prevent other handlers from processing this click
+                    e.Handled = true; 
                 }
             };
 
@@ -7282,7 +11551,6 @@ namespace LeafClient.Views
 
             card.Child = grid;
 
-            // If this is the currently selected skin, store its card reference
             if (skin.Id == _currentSettings.SelectedSkinId)
             {
                 _currentlySelectedSkinCard = card;
@@ -7291,14 +11559,12 @@ namespace LeafClient.Views
             return card;
         }
 
-        // 3) MODIFY SelectSkin(string skinId) to skip Mojang upload when called during LoadSkins()
 
         private async void SelectSkin(string skinId)
         {
 
             if (_isProgrammaticallySelectingSkin)
             {
-                // 1. Visual selection logic
                 if (_currentlySelectedSkinCard != null)
                 {
                     _currentlySelectedSkinCard.BorderBrush = Brushes.Transparent;
@@ -7311,7 +11577,7 @@ namespace LeafClient.Views
 
                 if (newSelectedCard != null)
                 {
-                    newSelectedCard.BorderBrush = new SolidColorBrush(Color.FromRgb(50, 205, 50)); // SeaGreen
+                    newSelectedCard.BorderBrush = new SolidColorBrush(Color.FromRgb(50, 205, 50)); 
                     newSelectedCard.BorderThickness = new Thickness(3);
                     _currentlySelectedSkinCard = newSelectedCard;
                 }
@@ -7319,13 +11585,10 @@ namespace LeafClient.Views
                 _currentSettings.SelectedSkinId = skinId;
                 await _settingsService.SaveSettingsAsync(_currentSettings);
 
-                // Do NOT call Mojang API, do NOT show status banner
                 return;
             }
 
-            // --- ORIGINAL USER‑INTENTIONAL FLOW BELOW (kept as‑is) ---
 
-            // 1. Visual Selection Logic (UI)
             if (_currentlySelectedSkinCard != null)
             {
                 _currentlySelectedSkinCard.BorderBrush = Brushes.Transparent;
@@ -7337,16 +11600,14 @@ namespace LeafClient.Views
 
             if (card != null)
             {
-                card.BorderBrush = new SolidColorBrush(Color.FromRgb(50, 205, 50)); // SeaGreen
+                card.BorderBrush = new SolidColorBrush(Color.FromRgb(50, 205, 50)); 
                 card.BorderThickness = new Thickness(3);
                 _currentlySelectedSkinCard = card;
             }
 
-            // 2. Save to Settings
             _currentSettings.SelectedSkinId = skinId;
             await _settingsService.SaveSettingsAsync(_currentSettings);
 
-            // 3. OFFLINE CHECK
             if (_currentSettings.AccountType == "offline")
             {
                 Console.WriteLine("[Skin Upload] Skipped: User is in Offline Mode.");
@@ -7354,7 +11615,6 @@ namespace LeafClient.Views
                 return;
             }
 
-            // 4. Find Skin File Info
             var selectedSkin = _currentSettings.CustomSkins.FirstOrDefault(s => s.Id == skinId);
             if (selectedSkin == null || !System.IO.File.Exists(selectedSkin.FilePath))
             {
@@ -7363,7 +11623,6 @@ namespace LeafClient.Views
                 return;
             }
 
-            // 5. Validate Session & Upload
             Console.WriteLine("[Skin Upload] Verifying session...");
 
             await LoadSessionAsync();
@@ -7397,7 +11656,6 @@ namespace LeafClient.Views
                     return;
                 }
 
-                // Show loading indicator
                 var loadingText = new TextBlock
                 {
                     Text = "⏳",
@@ -7407,11 +11665,8 @@ namespace LeafClient.Views
                 };
                 container.Child = loadingText;
 
-                // Use the skin file path directly to render it
-                // We'll use a random pose for variety
                 var pose = _skinRenderService.GetRandomLargePoseName();
 
-                // Create a temporary identifier for the skin (use the skin ID)
                 var renderedBitmap = await _skinRenderService.LoadSkinImageFromFileAsync(
                     skin.FilePath,
                     pose,
@@ -7431,7 +11686,6 @@ namespace LeafClient.Views
                 }
                 else
                 {
-                    // Fallback to raw PNG if rendering fails
                     var bitmap = new Avalonia.Media.Imaging.Bitmap(skin.FilePath);
                     var image = new Image
                     {
@@ -7566,7 +11820,6 @@ namespace LeafClient.Views
                     skin.Name = nameBox.Text;
                     skin.ModifiedDate = DateTime.Now;
 
-                    // If a new file was selected, replace the old one
                     if (!string.IsNullOrEmpty(selectedFilePath))
                     {
                         try
@@ -7606,7 +11859,6 @@ namespace LeafClient.Views
         {
             try
             {
-                // If the deleted skin was the currently selected one, clear selection
                 if (_currentSettings.SelectedSkinId == skin.Id)
                 {
                     _currentSettings.SelectedSkinId = null;
@@ -7621,7 +11873,7 @@ namespace LeafClient.Views
                 }
 
                 await _settingsService.SaveSettingsAsync(_currentSettings);
-                LoadSkins(); // Reloads skins and handles potential new auto-selection
+                LoadSkins(); 
             }
             catch (Exception ex)
             {
@@ -7637,9 +11889,8 @@ namespace LeafClient.Views
             _launchErrorBanner.IsVisible = true;
             _launchErrorBanner.Opacity = 1;
 
-            if (!AreAnimationsEnabled()) // NEW
+            if (!AreAnimationsEnabled()) 
             {
-                // No animation, just show and then hide after delay
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(5000);
@@ -7648,14 +11899,13 @@ namespace LeafClient.Views
                         if (_launchErrorBanner != null)
                         {
                             _launchErrorBanner.IsVisible = false;
-                            _launchErrorBanner.Opacity = 0; // Ensure it's fully hidden
+                            _launchErrorBanner.Opacity = 0; 
                         }
                     });
                 });
                 return;
             }
 
-            // Auto-hide after 5 seconds
             _ = Task.Run(async () =>
             {
                 await Task.Delay(3500);
@@ -7664,7 +11914,6 @@ namespace LeafClient.Views
                     if (_launchErrorBanner != null)
                     {
                         _launchErrorBanner.Opacity = 0;
-                        // Hide completely after opacity animation
                         _ = Task.Delay(300).ContinueWith(_ =>
                         {
                             Dispatcher.UIThread.Post(() => _launchErrorBanner.IsVisible = false);
@@ -7678,14 +11927,13 @@ namespace LeafClient.Views
         {
             if (_launchErrorBanner == null) return;
 
-            if (!AreAnimationsEnabled()) // NEW
+            if (!AreAnimationsEnabled()) 
             {
                 _launchErrorBanner.Opacity = 0;
                 _launchErrorBanner.IsVisible = false;
                 return;
             }
             _launchErrorBanner.Opacity = 0;
-            // Hide completely after opacity animation
             _ = Task.Delay(300).ContinueWith(_ =>
             {
                 Dispatcher.UIThread.Post(() => _launchErrorBanner.IsVisible = false);
@@ -7703,7 +11951,7 @@ namespace LeafClient.Views
 
             if (_quickPlayTooltip == null) return;
 
-            if (!AreAnimationsEnabled()) // NEW
+            if (!AreAnimationsEnabled()) 
             {
                 PositionQuickPlayTooltipAbove(btn);
                 _quickPlayTooltip.IsVisible = true;
@@ -7738,7 +11986,7 @@ namespace LeafClient.Views
             _quickPlayTooltipHideCts = new CancellationTokenSource();
             var ct = _quickPlayTooltipHideCts.Token;
 
-            if (!AreAnimationsEnabled()) // NEW
+            if (!AreAnimationsEnabled()) 
             {
                 if (_quickPlayTooltip != null)
                 {
@@ -7752,7 +12000,7 @@ namespace LeafClient.Views
             {
                 try
                 {
-                    await Task.Delay(140, ct); // Grace period
+                    await Task.Delay(140, ct); 
                     if (ct.IsCancellationRequested || _quickPlayTooltip == null) return;
 
                     Dispatcher.UIThread.Post(() => { _quickPlayTooltip!.Opacity = 0; });
@@ -7770,35 +12018,1008 @@ namespace LeafClient.Views
         {
             if (_quickPlayTooltip == null) return;
 
-            // Get the button's position relative to the main window
             var origin = button.TranslatePoint(new Point(0, 0), this);
             if (!origin.HasValue) return;
 
             const double tooltipHeight = 26;
             const double gapAboveButton = 8;
 
-            // Calculate tooltip width (use MinWidth if bounds aren't ready yet)
             double tooltipWidth = _quickPlayTooltip.Bounds.Width > 0
                 ? _quickPlayTooltip.Bounds.Width
-                : 80; // MinWidth fallback
+                : 80; 
 
-            // Center horizontally on the button
             double buttonCenterX = origin.Value.X + (button.Bounds.Width / 2.0);
             double left = buttonCenterX - (tooltipWidth / 2.0);
 
-            // Position ABOVE the button (subtract from Y position)
             double top = origin.Value.Y - tooltipHeight - gapAboveButton;
 
-            Canvas.SetLeft(_quickPlayTooltip, Math.Max(0, left)); // Ensure it doesn't go off-screen left
-            Canvas.SetTop(_quickPlayTooltip, Math.Max(0, top));   // Ensure it doesn't go off-screen top
+            Canvas.SetLeft(_quickPlayTooltip, Math.Max(0, left)); 
+            Canvas.SetTop(_quickPlayTooltip, Math.Max(0, top));   
 
             Console.WriteLine($"[QuickPlay Tooltip] Button at ({origin.Value.X}, {origin.Value.Y}), Tooltip at ({left}, {top})");
         }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PROFILE EDITOR OVERLAY
+        // ─────────────────────────────────────────────────────────────────────────
+
+        private void ShowProfileOverlay(LauncherProfile? profile)
+        {
+            _po_EditingProfile = profile;
+            _po_ActiveTab = 0;
+            _po_ShowAllVersionsFlag = false;
+            var savedPreset = profile?.ModPreset ?? "balanced";
+            _po_SelectedPreset = savedPreset == "none" ? "balanced" : savedPreset;
+            _po_SelectedVersion = profile?.MinecraftVersion ?? "1.21.4";
+
+            if (_po_TitleText != null)
+                _po_TitleText.Text = profile == null ? "New Profile" : $"Edit — {profile.Name}";
+
+            // Update avatar letter
+            if (_po_AvatarLetter != null)
+            {
+                string name = profile?.Name ?? "N";
+                _po_AvatarLetter.Text = !string.IsNullOrWhiteSpace(name) ? name.Trim().Substring(0, 1).ToUpperInvariant() : "N";
+            }
+
+            if (_po_NameBox != null)
+                _po_NameBox.Text = profile?.Name ?? "";
+
+            if (_po_MemSlider != null)
+                _po_MemSlider.Value = profile?.AllocatedMemoryGb ?? 3.0;
+
+            if (_po_MemLabel != null)
+                _po_MemLabel.Text = $"{(profile?.AllocatedMemoryGb ?? 3.0):0.0} GB";
+
+            if (_po_ShowAllVersions != null)
+                _po_ShowAllVersions.IsChecked = false;
+
+            PO_PopulateAccountDropdown(profile?.AccountSetting ?? "active");
+            PO_PopulateVersionDropdown();
+            PO_SelectVersion(_po_SelectedVersion);
+            PO_UpdateSupportBanner(_po_SelectedVersion);
+            PO_UpdateModsSupportBanner(_po_SelectedVersion);
+            PO_ApplyPresetHighlight(_po_SelectedPreset);
+
+            // ── Advanced tab: populate override fields + stats ──
+            if (_po_DescriptionBox != null)
+                _po_DescriptionBox.Text = profile?.Description ?? "";
+            if (_po_IconEmojiBox != null)
+                _po_IconEmojiBox.Text = profile?.IconEmoji ?? "";
+            if (_po_JvmArgsBox != null)
+                _po_JvmArgsBox.Text = profile?.JvmArgumentsOverride ?? "";
+            if (_po_UseCustomResolutionToggle != null)
+                _po_UseCustomResolutionToggle.IsChecked = profile?.UseCustomResolutionOverride ?? false;
+            if (_po_ResWidthBox != null)
+                _po_ResWidthBox.Text = profile?.GameResolutionWidthOverride?.ToString() ?? "";
+            if (_po_ResHeightBox != null)
+                _po_ResHeightBox.Text = profile?.GameResolutionHeightOverride?.ToString() ?? "";
+            if (_po_QuickJoinAddressBox != null)
+                _po_QuickJoinAddressBox.Text = profile?.QuickJoinServerAddressOverride ?? "";
+            if (_po_QuickJoinPortBox != null)
+                _po_QuickJoinPortBox.Text = profile?.QuickJoinServerPortOverride ?? "";
+
+            if (_po_StatLaunches != null)
+                _po_StatLaunches.Text = (profile?.LaunchCount ?? 0).ToString();
+            if (_po_StatPlaytime != null)
+                _po_StatPlaytime.Text = FormatPlaytimeShort(profile?.PlaytimeSeconds ?? 0);
+            if (_po_StatLastUsed != null)
+            {
+                if (profile != null && profile.LastUsed != DateTime.MinValue)
+                {
+                    var ago = DateTime.Now - profile.LastUsed;
+                    _po_StatLastUsed.Text = ago.TotalDays >= 1 ? $"{(int)ago.TotalDays}d ago"
+                                         :  ago.TotalHours >= 1 ? $"{(int)ago.TotalHours}h ago"
+                                         :  $"{(int)Math.Max(1, ago.TotalMinutes)}m ago";
+                }
+                else
+                {
+                    _po_StatLastUsed.Text = "never";
+                }
+            }
+
+            PO_SwitchTab(0);
+
+            if (_profileEditorOverlay != null) _profileEditorOverlay.IsVisible = true;
+            if (_mainContentGrid != null)
+                _mainContentGrid.Effect = new BlurEffect { Radius = 7 };
+        }
+
+        private void HideProfileOverlay()
+        {
+            if (_profileEditorOverlay != null) _profileEditorOverlay.IsVisible = false;
+            if (_mainContentGrid != null) _mainContentGrid.Effect = null;
+        }
+
+        private async void PO_SwitchTab(int idx)
+        {
+            var panels = new[] { _po_TabIdentity, _po_TabPerformance, _po_TabMods, _po_TabAdvanced };
+            var navBtns = new[] { _po_NavBtnGeneral, _po_NavBtnPerformance, _po_NavBtnMods, _po_NavBtnAdvanced };
+
+            // Fade out current tab
+            if (_po_ActiveTab != idx && panels[_po_ActiveTab] != null)
+                panels[_po_ActiveTab]!.Opacity = 0;
+
+            // Update nav button styles
+            foreach (var (btn, i) in navBtns.Select((b, i) => (b, i)))
+            {
+                if (btn == null) continue;
+                btn.Classes.Remove("PONavActive");
+                if (i == idx) btn.Classes.Add("PONavActive");
+            }
+
+            // Slide the nav indicator vertically (54px height + 8px spacing = 62px per step)
+            const double navStep = 62;
+            if (_po_NavIndicator != null)
+                _po_NavIndicator.Margin = new Thickness(0, idx * navStep, 0, 0);
+            if (_po_NavActiveBar != null)
+                _po_NavActiveBar.Margin = new Thickness(-2, 15 + idx * navStep, 0, 0);
+
+            if (_po_ActiveTab != idx)
+            {
+                await System.Threading.Tasks.Task.Delay(120);
+
+                // Toggle visibility
+                foreach (var (p, i) in panels.Select((p, i) => (p, i)))
+                {
+                    if (p == null) continue;
+                    p.IsVisible = i == idx;
+                    if (i == idx) p.Opacity = 0;
+                }
+
+                _po_ActiveTab = idx;
+
+                await System.Threading.Tasks.Task.Delay(30);
+                if (panels[idx] != null)
+                    panels[idx]!.Opacity = 1;
+            }
+            else
+            {
+                _po_ActiveTab = idx;
+            }
+        }
+
+        // ── Skin-head helpers ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Downloads a Minecraft player-head from mc-heads.net using a UUID or username.
+        /// Result is cached; null is cached on failure so we don't retry endlessly.
+        /// </summary>
+        private async Task<Bitmap?> LoadSkinHeadAsync(string identifier)
+        {
+            if (_skinHeadCache.TryGetValue(identifier, out var cached))
+                return cached;
+
+            try
+            {
+                // mc-heads.net accepts both UUID and username, returns a PNG face render
+                var url = $"https://mc-heads.net/avatar/{identifier}/48";
+                var bytes = await _httpClient.GetByteArrayAsync(url);
+                using var ms = new MemoryStream(bytes);
+                var bmp = new Bitmap(ms);
+                _skinHeadCache[identifier] = bmp;
+                return bmp;
+            }
+            catch
+            {
+                _skinHeadCache[identifier] = null;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Creates an avatar Border sized <paramref name="size"/>×<paramref name="size"/>.
+        /// Shows a letter placeholder immediately, then asynchronously swaps in the real
+        /// Minecraft skin-head face for any account that has a UUID or username.
+        /// </summary>
+        private Border MakeSkinHeadAvatarBorder(AccountEntry? acct, int size, int cornerRadius,
+                                                 string? fallbackInitial = null, string? fallbackAccentHex = null)
+        {
+            // Prefer UUID for lookup; fall back to username (works for online accounts via mc-heads.net)
+            string? identifier = !string.IsNullOrWhiteSpace(acct?.Uuid) ? acct!.Uuid
+                               : !string.IsNullOrWhiteSpace(acct?.Username) ? acct!.Username
+                               : null;
+
+            bool isMicrosoft = acct?.AccountType == "microsoft";
+            string initial = fallbackInitial
+                ?? (string.IsNullOrWhiteSpace(acct?.Username) ? "?" : acct!.Username[0].ToString().ToUpper());
+            string accent = fallbackAccentHex ?? (isMicrosoft ? "#7C3AED" : "#374151");
+
+            // Solid background for placeholder
+            var avatarBorder = new Border
+            {
+                Width = size, Height = size,
+                CornerRadius = new CornerRadius(cornerRadius),
+                Background = new SolidColorBrush(Color.Parse(accent)),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                ClipToBounds = true
+            };
+
+            // Placeholder: letter initial
+            avatarBorder.Child = new TextBlock
+            {
+                Text = initial,
+                Foreground = Brushes.White,
+                FontSize = size * 0.45,
+                FontWeight = FontWeight.Bold,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            // Kick off async download and swap for any account we have an identifier for
+            if (identifier != null)
+            {
+                var capturedIdentifier = identifier;
+                _ = Task.Run(async () =>
+                {
+                    var bmp = await LoadSkinHeadAsync(capturedIdentifier);
+                    if (bmp != null)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            avatarBorder.Background = Brushes.Transparent;
+                            var img = new Image
+                            {
+                                Source = bmp,
+                                Width = size,
+                                Height = size,
+                                Stretch = Avalonia.Media.Stretch.UniformToFill
+                            };
+                            RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.None);
+                            avatarBorder.Child = img;
+                        });
+                    }
+                });
+            }
+
+            return avatarBorder;
+        }
+
+        // ── Account combo-item ─────────────────────────────────────────────────
+
+        private ComboBoxItem MakeAccountComboItem(string label, string tag,
+                                                   AccountEntry? acct = null,
+                                                   string? initial = null, string? accentHex = null)
+        {
+            var content = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10 };
+
+            // Avatar: real skin head for Microsoft accounts, letter initial otherwise
+            var avatar = MakeSkinHeadAvatarBorder(acct, 26, 7, initial, accentHex);
+            content.Children.Add(avatar);
+
+            content.Children.Add(new TextBlock
+            {
+                Text = label,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                FontSize = 13
+            });
+
+            return new ComboBoxItem { Content = content, Tag = tag };
+        }
+
+        private void PO_PopulateAccountDropdown(string selectedSetting)
+        {
+            if (_po_AccountCombo == null) return;
+            _po_AccountCombo.Items.Clear();
+
+            // First option: "Use active account" with a star avatar (no account entry)
+            _po_AccountCombo.Items.Add(MakeAccountComboItem("Use active account", "active",
+                acct: null, initial: "★", accentHex: "#374151"));
+
+            // Add all saved accounts — Microsoft ones will get real skin head
+            var accounts = _currentSettings?.SavedAccounts ?? new List<AccountEntry>();
+            foreach (var acct in accounts)
+            {
+                string label = acct.AccountType == "microsoft"
+                    ? $"{acct.Username}  (Microsoft)"
+                    : $"{acct.Username}  (Offline)";
+                _po_AccountCombo.Items.Add(MakeAccountComboItem(label, acct.Id, acct: acct));
+            }
+
+            // Select the matching item
+            bool found = false;
+            foreach (var item in _po_AccountCombo.Items.OfType<ComboBoxItem>())
+            {
+                if (item.Tag?.ToString() == selectedSetting)
+                {
+                    _po_AccountCombo.SelectedItem = item;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && _po_AccountCombo.ItemCount > 0)
+                _po_AccountCombo.SelectedIndex = 0;
+        }
+
+        private void PO_PopulateVersionDropdown()
+        {
+            if (_po_VersionCombo == null) return;
+            _po_VersionCombo.SelectionChanged -= OnPO_VersionChanged;
+            _po_VersionCombo.Items.Clear();
+
+            IEnumerable<VersionInfo> versions = _po_ShowAllVersionsFlag
+                ? _allVersions
+                : _allVersions.Where(v => _po_RecommendedVersions.Contains(v.FullVersion));
+
+            foreach (var v in versions.OrderByDescending(v => Version.TryParse(v.FullVersion, out var parsed) ? parsed : new Version(0, 0)))
+            {
+                var item = new ComboBoxItem { Content = v.FullVersion, Tag = v.FullVersion };
+                _po_VersionCombo.Items.Add(item);
+            }
+
+            _po_VersionCombo.SelectionChanged += OnPO_VersionChanged;
+            PO_SelectVersion(_po_SelectedVersion);
+        }
+
+        private void PO_SelectVersion(string version)
+        {
+            if (_po_VersionCombo == null) return;
+            foreach (var item in _po_VersionCombo.Items.OfType<ComboBoxItem>())
+            {
+                if (item.Tag?.ToString() == version)
+                {
+                    _po_VersionCombo.SelectedItem = item;
+                    return;
+                }
+            }
+            if (_po_VersionCombo.ItemCount > 0)
+                _po_VersionCombo.SelectedIndex = 0;
+        }
+
+        private void PO_UpdateSupportBanner(string version)
+        {
+            if (_po_SupportBanner == null) return;
+            var info = _allVersions.FirstOrDefault(v => v.FullVersion == version);
+            _po_SupportBanner.IsVisible = true;
+
+            bool isFull   = info?.IsLeafClientModSupported == true;
+            bool isFabric = Version.TryParse(version, out var sv) && sv >= new Version(1, 14);
+
+            string bgHex, dotHex, titleHex, titleText, subText;
+            if (isFull)
+            {
+                bgHex = "#0B1E0F"; dotHex = "#4CAF50"; titleHex = "#56D060";
+                titleText = "Full Support";
+                subText   = "All launcher features, mods and shaders are available.";
+            }
+            else if (isFabric)
+            {
+                bgHex = "#1A1500"; dotHex = "#FFC107"; titleHex = "#FFD040";
+                titleText = "Partial Support";
+                subText   = "Fabric mods work but some launcher features may be limited.";
+            }
+            else
+            {
+                bgHex = "#1A0800"; dotHex = "#FF5722"; titleHex = "#FF7040";
+                titleText = "Vanilla Only";
+                subText   = "No Fabric mod support on this version — vanilla gameplay only.";
+            }
+
+            _po_SupportBanner.Background = SolidColorBrush.Parse(bgHex);
+            _po_SupportBanner.BorderBrush = SolidColorBrush.Parse(dotHex);
+            _po_SupportBanner.BorderThickness = new Thickness(0, 0, 0, 0);
+
+            // Dot + its container
+            if (_po_SupportDot != null)
+            {
+                _po_SupportDot.Fill = SolidColorBrush.Parse(dotHex);
+                // Tint the container border (parent of the dot) with 20% alpha version of dot color
+                if (_po_SupportDot.Parent is Border dotContainer)
+                {
+                    try
+                    {
+                        var dc = Color.Parse(dotHex);
+                        dotContainer.Background = new SolidColorBrush(
+                            Color.FromArgb(50, dc.R, dc.G, dc.B));
+                    }
+                    catch { /* leave default */ }
+                }
+            }
+
+            if (_po_SupportTitle != null)
+            {
+                _po_SupportTitle.Text       = titleText;
+                _po_SupportTitle.Foreground = SolidColorBrush.Parse(titleHex);
+            }
+            if (_po_SupportSub != null)
+                _po_SupportSub.Text = subText;
+        }
+
+        private void PO_UpdateModsSupportBanner(string version)
+        {
+            if (_po_ModsSupportBanner == null || _po_ModsSupportText == null) return;
+            bool isFabric = Version.TryParse(version, out var sv) && sv >= new Version(1, 14);
+            if (isFabric)
+            {
+                _po_ModsSupportBanner.Background = SolidColorBrush.Parse("#0D2010");
+                _po_ModsSupportText.Text = $"Minecraft {version} supports Fabric mods";
+                _po_ModsSupportText.Foreground = SolidColorBrush.Parse("#4CAF50");
+            }
+            else
+            {
+                _po_ModsSupportBanner.Background = SolidColorBrush.Parse("#1A1500");
+                _po_ModsSupportText.Text = $"Minecraft {version} — vanilla only, Fabric mods not available";
+                _po_ModsSupportText.Foreground = SolidColorBrush.Parse("#FFC107");
+            }
+        }
+
+        private void PO_PopulatePresetBadges()
+        {
+            void FillBadges(WrapPanel? panel, string[] mods, string bgHex, string fgHex)
+            {
+                if (panel == null) return;
+                panel.Children.Clear();
+                foreach (var mod in mods)
+                {
+                    var b = new Border
+                    {
+                        CornerRadius = new CornerRadius(5),
+                        Padding = new Thickness(7, 3),
+                        Margin = new Thickness(0, 0, 5, 4)
+                    };
+                    try { b.Background = SolidColorBrush.Parse(bgHex); } catch { b.Background = GetBrush("HoverBackgroundBrush"); }
+                    IBrush fg;
+                    try { fg = SolidColorBrush.Parse(fgHex); } catch { fg = GetBrush("SecondaryForegroundBrush"); }
+                    b.Child = new TextBlock { Text = mod, FontSize = 10, Foreground = fg };
+                    panel.Children.Add(b);
+                }
+            }
+
+            FillBadges(_po_BadgesBalanced, _po_PresetMods["balanced"], "#1E1030", "#B080FF");
+            FillBadges(_po_BadgesEnhanced, _po_PresetMods["enhanced"], "#0D2018", "#60DDA0");
+            FillBadges(_po_BadgesLite,     _po_PresetMods["lite"],     "#1E1E08", "#D4C84A");
+        }
+
+        private void PO_ApplyPresetHighlight(string preset)
+        {
+            var cards = new Dictionary<string, Border?>
+            {
+                ["balanced"] = _po_PresetBalanced,
+                ["enhanced"] = _po_PresetEnhanced,
+                ["lite"]     = _po_PresetLite
+            };
+            foreach (var kvp in cards)
+            {
+                if (kvp.Value == null) continue;
+                if (kvp.Key == preset)
+                {
+                    kvp.Value.BorderBrush     = SolidColorBrush.Parse("#9333EA");
+                    kvp.Value.BorderThickness = new Thickness(2);
+                    kvp.Value.Background      = SolidColorBrush.Parse("#150D20");
+                }
+                else
+                {
+                    kvp.Value.BorderThickness = new Thickness(1.5);
+                    kvp.Value.BorderBrush     = SolidColorBrush.Parse("#1C2A38");
+                    kvp.Value.Background      = SolidColorBrush.Parse("#0F1A24");
+                }
+            }
+        }
+
+        // ── Overlay event handlers ──
+
+        private void OnPO_NameChanged(object? sender, TextChangedEventArgs e)
+        {
+            if (_po_AvatarLetter != null && _po_NameBox != null)
+            {
+                string name = _po_NameBox.Text?.Trim() ?? "";
+                _po_AvatarLetter.Text = !string.IsNullOrWhiteSpace(name) ? name.Substring(0, 1).ToUpperInvariant() : "N";
+            }
+        }
+
+        private void OnProfileOverlayTabClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string t && int.TryParse(t, out int idx))
+                PO_SwitchTab(idx);
+        }
+
+        private void OnPO_VersionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_po_VersionCombo?.SelectedItem is ComboBoxItem item && item.Tag is string ver)
+            {
+                _po_SelectedVersion = ver;
+                PO_UpdateSupportBanner(ver);
+                PO_UpdateModsSupportBanner(ver);
+            }
+        }
+
+        private void OnPO_ShowAllVersionsToggle(object? sender, RoutedEventArgs e)
+        {
+            _po_ShowAllVersionsFlag = _po_ShowAllVersions?.IsChecked == true;
+            PO_PopulateVersionDropdown();
+        }
+
+        private void OnPO_MemoryChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            double val = Math.Round(e.NewValue * 2) / 2.0;
+            if (_po_MemLabel != null) _po_MemLabel.Text = $"{val:0.0} GB";
+        }
+
+        private void OnPO_PresetTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is Border b && b.Tag is string preset)
+            {
+                _po_SelectedPreset = preset;
+                PO_ApplyPresetHighlight(preset);
+            }
+        }
+
+        private void OnProfileOverlayClose(object? sender, RoutedEventArgs e)  => HideProfileOverlay();
+        private void OnProfileOverlayCancel(object? sender, RoutedEventArgs e) => HideProfileOverlay();
+
+        private async void OnProfileOverlaySave(object? sender, RoutedEventArgs e)
+        {
+            string name = _po_NameBox?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(name)) name = "New Profile";
+
+            double memory = _po_MemSlider != null ? Math.Round(_po_MemSlider.Value * 2) / 2.0 : 3.0;
+
+            string[] accentColors = { "#7B2CBF", "#00C853", "#2196F3", "#FF5722", "#E91E63", "#009688", "#FF9800" };
+            string accent = _po_EditingProfile?.AccentColor
+                ?? accentColors[new Random().Next(accentColors.Length)];
+
+            var profile = new LauncherProfile
+            {
+                Id                = _po_EditingProfile?.Id ?? Guid.NewGuid().ToString(),
+                Name              = name,
+                MinecraftVersion  = _po_SelectedVersion,
+                AccountSetting    = _po_AccountCombo?.SelectedItem is ComboBoxItem ai ? ai.Tag?.ToString() ?? "active" : "active",
+                JavaSetting       = _po_JavaCombo?.SelectedItem is ComboBoxItem ji ? ji.Tag?.ToString() ?? "bundled" : "bundled",
+                AllocatedMemoryGb = memory,
+                ModPreset         = _po_SelectedPreset,
+                AccentColor       = accent,
+                CreatedDate       = _po_EditingProfile?.CreatedDate ?? DateTime.Now,
+
+                // Preserve fields not exposed in the editor yet + runtime counters
+                CustomJavaPath  = _po_EditingProfile?.CustomJavaPath,
+                LaunchCount     = _po_EditingProfile?.LaunchCount ?? 0,
+                PlaytimeSeconds = _po_EditingProfile?.PlaytimeSeconds ?? 0,
+                LastUsed        = _po_EditingProfile?.LastUsed ?? DateTime.MinValue,
+
+                // ── Advanced-tab override fields (editable) ──
+                Description                    = _po_DescriptionBox?.Text?.Trim() ?? "",
+                IconEmoji                      = _po_IconEmojiBox?.Text?.Trim() ?? "",
+                JvmArgumentsOverride           = NullIfBlank(_po_JvmArgsBox?.Text),
+                UseCustomResolutionOverride    = _po_UseCustomResolutionToggle?.IsChecked == true
+                    ? true
+                    : (bool?)null,
+                GameResolutionWidthOverride    = ParseNullableInt(_po_ResWidthBox?.Text),
+                GameResolutionHeightOverride   = ParseNullableInt(_po_ResHeightBox?.Text),
+                QuickJoinServerAddressOverride = NullIfBlank(_po_QuickJoinAddressBox?.Text),
+                QuickJoinServerPortOverride    = NullIfBlank(_po_QuickJoinPortBox?.Text),
+            };
+
+            // If the resolution toggle is off, clear the override dimensions so the
+            // launcher falls back to global settings.
+            if (profile.UseCustomResolutionOverride != true)
+            {
+                profile.GameResolutionWidthOverride  = null;
+                profile.GameResolutionHeightOverride = null;
+            }
+
+            if (_currentSettings.Profiles == null)
+                _currentSettings.Profiles = new List<LauncherProfile>();
+
+            if (_po_EditingProfile == null)
+            {
+                _currentSettings.Profiles.Add(profile);
+                if (_currentSettings.ActiveProfileId == null)
+                    _currentSettings.ActiveProfileId = profile.Id;
+            }
+            else
+            {
+                int idx = _currentSettings.Profiles.FindIndex(p => p.Id == _po_EditingProfile.Id);
+                if (idx >= 0) _currentSettings.Profiles[idx] = profile;
+            }
+
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+            HideProfileOverlay();
+            RefreshProfilesPage();
+            UpdateLaunchVersionText();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PROFILES PAGE
+        // ─────────────────────────────────────────────────────────────────────────
+
+        private void RefreshProfilesPage()
+        {
+            if (_profilesListPanel == null || _noProfilesMessage == null) return;
+
+            _profilesListPanel.Children.Clear();
+
+            var profiles = _currentSettings.Profiles;
+            if (profiles == null || profiles.Count == 0)
+            {
+                _noProfilesMessage.IsVisible = true;
+                return;
+            }
+
+            _noProfilesMessage.IsVisible = false;
+            foreach (var profile in profiles)
+            {
+                var card = BuildProfileCard(profile);
+                _profilesListPanel.Children.Add(card);
+            }
+
+            UpdateLaunchVersionText();
+        }
+
+
+
+        private Border BuildProfileCard(LauncherProfile profile)
+        {
+            bool isActive = _currentSettings.ActiveProfileId == profile.Id;
+
+            // Parse accent color safely
+            IBrush accentBrush;
+            Color accentColor;
+            try
+            {
+                accentColor = Color.Parse(profile.AccentColor ?? "#7B2CBF");
+                accentBrush = new SolidColorBrush(accentColor);
+            }
+            catch
+            {
+                accentColor = Color.Parse("#7B2CBF");
+                accentBrush = GetBrush("PrimaryAccentBrush");
+            }
+
+            // Subtle tinted background for active card
+            IBrush cardBg;
+            if (isActive)
+            {
+                var tinted = Color.FromArgb(22, accentColor.R, accentColor.G, accentColor.B);
+                cardBg = new SolidColorBrush(tinted);
+            }
+            else
+            {
+                cardBg = GetBrush("CardBackgroundColor");
+            }
+
+            // ── Outer card ──
+            var card = new Border
+            {
+                Background = cardBg,
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(0),
+                Margin = new Thickness(0, 0, 0, 10),
+                Tag = profile.Id,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                ClipToBounds = true,
+                BorderBrush = isActive ? accentBrush : GetBrush("PrimaryBorderBrush"),
+                BorderThickness = isActive ? new Thickness(1.5) : new Thickness(1)
+            };
+
+            // ── Root grid: 3 rows — content | separator | action bar ──
+            var rootGrid = new Grid();
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // ════════════════════ ROW 0 — main content ════════════════════
+            var contentGrid = new Grid { Margin = new Thickness(18, 16, 18, 14) };
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });        // avatar
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // info
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });        // checkmark / set-active
+            Grid.SetRow(contentGrid, 0);
+            rootGrid.Children.Add(contentGrid);
+
+            // ── Avatar ──
+            string initials = string.IsNullOrWhiteSpace(profile.Name) ? "?" : profile.Name[0].ToString().ToUpper();
+            var avatarBorder = new Border
+            {
+                Width = 54, Height = 54,
+                CornerRadius = new CornerRadius(14),
+                Margin = new Thickness(0, 0, 16, 0),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops =
+                    {
+                        new GradientStop(accentColor, 0),
+                        new GradientStop(Color.FromArgb(170, accentColor.R, accentColor.G, accentColor.B), 1)
+                    }
+                }
+            };
+            if (isActive)
+            {
+                avatarBorder.BoxShadow = new BoxShadows(new BoxShadow
+                {
+                    Blur = 16,
+                    Color = Color.FromArgb(90, accentColor.R, accentColor.G, accentColor.B)
+                });
+            }
+            avatarBorder.Child = new TextBlock
+            {
+                Text = initials,
+                Foreground = Brushes.White,
+                FontSize = 22,
+                FontWeight = FontWeight.Black,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center
+            };
+            Grid.SetColumn(avatarBorder, 0);
+            contentGrid.Children.Add(avatarBorder);
+
+            // ── Info stack ──
+            var infoStack = new StackPanel
+            {
+                Spacing = 4,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            // Name row (name + ACTIVE pill)
+            var nameRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+            nameRow.Children.Add(new TextBlock
+            {
+                Text = profile.Name,
+                Foreground = GetBrush("PrimaryForegroundBrush"),
+                FontWeight = FontWeight.Bold,
+                FontSize = 15,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            });
+            if (isActive)
+            {
+                var activePill = new Border
+                {
+                    Background = accentBrush,
+                    CornerRadius = new CornerRadius(20),
+                    Padding = new Thickness(8, 2),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+                activePill.Child = new TextBlock
+                {
+                    Text = "ACTIVE",
+                    Foreground = Brushes.White,
+                    FontSize = 9,
+                    FontWeight = FontWeight.Bold,
+                    LetterSpacing = 1
+                };
+                nameRow.Children.Add(activePill);
+            }
+            infoStack.Children.Add(nameRow);
+
+            // Account type line
+            string accountTypeLabel = _currentSettings?.AccountType switch
+            {
+                "microsoft" => "Microsoft Account",
+                "local"     => "Local / Offline",
+                _           => "Local / Offline"
+            };
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = accountTypeLabel,
+                Foreground = GetBrush("SecondaryForegroundBrush"),
+                FontSize = 11,
+                Margin = new Thickness(0, 1, 0, 4)
+            });
+
+            // Badges row
+            var badgesRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 5 };
+
+            void AddBadge(string text, string bgHex, string fgHex)
+            {
+                var b = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 3) };
+                try { b.Background = SolidColorBrush.Parse(bgHex); } catch { b.Background = GetBrush("HoverBackgroundBrush"); }
+                IBrush fg;
+                try { fg = SolidColorBrush.Parse(fgHex); } catch { fg = GetBrush("SecondaryForegroundBrush"); }
+                b.Child = new TextBlock { Text = text, FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = fg };
+                badgesRow.Children.Add(b);
+            }
+
+            AddBadge($"MC {profile.MinecraftVersion}", "#161C2E", "#7AABFF");
+            string presetLabel = profile.ModPreset switch
+            {
+                "balanced" => "⚡ Balanced",
+                "enhanced" => "🚀 Enhanced",
+                "lite"     => "🌿 Lite",
+                _          => "◯ Vanilla"
+            };
+            AddBadge(presetLabel, "#1C1830", "#A880FF");
+            AddBadge($"{profile.AllocatedMemoryGb:0.#} GB RAM", "#0F2218", "#5DDFA0");
+
+            // Per-profile stats badges: only shown once the profile has actually been used
+            if (profile.LaunchCount > 0)
+            {
+                AddBadge($"🎮 {profile.LaunchCount} launches", "#1A1520", "#F0A4FF");
+                if (profile.PlaytimeSeconds > 0)
+                {
+                    AddBadge($"⏱ {FormatPlaytimeShort(profile.PlaytimeSeconds)}", "#201A10", "#F5C56B");
+                }
+            }
+
+            infoStack.Children.Add(badgesRow);
+
+            Grid.SetColumn(infoStack, 1);
+            contentGrid.Children.Add(infoStack);
+
+            // ── Right col: checkmark circle (active) or "Set Active" button ──
+            var rightCol = new StackPanel
+            {
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new Thickness(12, 0, 0, 0)
+            };
+
+            if (isActive)
+            {
+                // Checkmark circle
+                var checkCircle = new Border
+                {
+                    Width = 34, Height = 34,
+                    CornerRadius = new CornerRadius(17),
+                    Background = accentBrush
+                };
+                checkCircle.Child = new TextBlock
+                {
+                    Text = "✓",
+                    Foreground = Brushes.White,
+                    FontSize = 16,
+                    FontWeight = FontWeight.Bold,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center
+                };
+                rightCol.Children.Add(checkCircle);
+            }
+            else
+            {
+                var setBtn = new Button
+                {
+                    Content = "Set Active",
+                    Background = GetBrush("HoverBackgroundBrush"),
+                    Foreground = GetBrush("PrimaryForegroundBrush"),
+                    BorderBrush = GetBrush("PrimaryBorderBrush"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(14, 7),
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                setBtn.Click += (_, _) => OnSetActiveProfile(profile);
+                rightCol.Children.Add(setBtn);
+            }
+
+            Grid.SetColumn(rightCol, 2);
+            contentGrid.Children.Add(rightCol);
+
+            // ════════════════════ ROW 1 — separator ════════════════════
+            var separator = new Border
+            {
+                Height = 1,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                Background = isActive ? new SolidColorBrush(Color.FromArgb(50, accentColor.R, accentColor.G, accentColor.B))
+                                      : GetBrush("PrimaryBorderBrush"),
+                Margin = new Thickness(18, 0)
+            };
+            Grid.SetRow(separator, 1);
+            rootGrid.Children.Add(separator);
+
+            // ════════════════════ ROW 2 — action bar ════════════════════
+            var actionBar = new Grid { Margin = new Thickness(8, 6, 8, 8) };
+            actionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            actionBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetRow(actionBar, 2);
+            rootGrid.Children.Add(actionBar);
+
+            // Edit button (left, text)
+            var editBtn = new Button
+            {
+                Content = "✎  Edit",
+                Background = Brushes.Transparent,
+                Foreground = GetBrush("SecondaryForegroundBrush"),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 7),
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                Cursor = new Cursor(StandardCursorType.Hand),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+            };
+            editBtn.Click += (_, _) => OnEditProfile(profile);
+            Grid.SetColumn(editBtn, 0);
+            actionBar.Children.Add(editBtn);
+
+            // Icon button group (right side)
+            var iconGroup = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 2,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            Button MakeIconBtn(string icon, string tooltip, IBrush fg, Action onClick)
+            {
+                var btn = new Button
+                {
+                    Content = icon,
+                    Background = Brushes.Transparent,
+                    Foreground = fg,
+                    BorderThickness = new Thickness(0),
+                    CornerRadius = new CornerRadius(8),
+                    Width = 34, Height = 34,
+                    FontSize = 14,
+                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalContentAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                    Cursor = new Cursor(StandardCursorType.Hand)
+                };
+                ToolTip.SetTip(btn, tooltip);
+                btn.Click += (_, _) => onClick();
+                return btn;
+            }
+
+            iconGroup.Children.Add(MakeIconBtn("📁", "Open profile folder", GetBrush("SecondaryForegroundBrush"), () =>
+            {
+                try
+                {
+                    string folderPath = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        ".minecraft", "profiles", profile.Id);
+                    System.IO.Directory.CreateDirectory(folderPath);
+                    System.Diagnostics.Process.Start("explorer.exe", folderPath);
+                }
+                catch { }
+            }));
+
+            iconGroup.Children.Add(MakeIconBtn("🗑", "Delete profile", SolidColorBrush.Parse("#FF6B6B"), () => OnDeleteProfile(profile)));
+
+            Grid.SetColumn(iconGroup, 1);
+            actionBar.Children.Add(iconGroup);
+
+            card.Child = rootGrid;
+            return card;
+        }
+
+        private void OnNewProfileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            ShowProfileOverlay(null);
+        }
+
+        // Pointer-pressed variant used by the new Border-based "NEW PROFILE" pill.
+        private void OnNewProfileClickBorder(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        {
+            e.Handled = true;
+            ShowProfileOverlay(null);
+        }
+
+        private void OnEditProfile(LeafClient.Models.LauncherProfile profile)
+        {
+            ShowProfileOverlay(profile);
+        }
+
+        private async void OnDeleteProfile(LeafClient.Models.LauncherProfile profile)
+        {
+            _currentSettings.Profiles.RemoveAll(p => p.Id == profile.Id);
+            if (_currentSettings.ActiveProfileId == profile.Id)
+                _currentSettings.ActiveProfileId = _currentSettings.Profiles.Count > 0
+                    ? _currentSettings.Profiles[0].Id : null;
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+            RefreshProfilesPage();
+        }
+
+        private async void OnSetActiveProfile(LeafClient.Models.LauncherProfile profile)
+        {
+            _currentSettings.ActiveProfileId = profile.Id;
+            _currentSettings.SelectedSubVersion = profile.MinecraftVersion;
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+            RefreshProfilesPage();
+            UpdateLaunchVersionText();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
 
         private void LoadServers()
         {
             if (_serversWrapPanel == null || _noServersMessage == null) return;
 
+            // Featured servers
+            LoadFeaturedServers();
+
+            // Personal servers
             _serversWrapPanel.Children.Clear();
 
             if (_currentSettings.CustomServers.Count == 0)
@@ -7814,14 +13035,349 @@ namespace LeafClient.Views
                     _serversWrapPanel.Children.Add(serverCard);
                 }
             }
-            // After creating/loading server cards, update their button states
-            _ = UpdateServerButtonStates(); // Fire and forget for UI update
+            _ = UpdateServerButtonStates();
+        }
+
+        private void LoadFeaturedServers()
+        {
+            if (_featuredServersPanel == null) return;
+            _featuredServersPanel.Children.Clear();
+
+            var grid = new Grid { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var configs = new[]
+            {
+                (_featuredServers[0], Color.Parse("#2B1A5A"), Color.Parse("#1A1040"), Color.Parse("#7B2CBF"), 1),
+                (_featuredServers[1], Color.Parse("#3A1E00"), Color.Parse("#1A0D00"), Color.Parse("#B87020"), 2),
+                (_featuredServers[2], Color.Parse("#4A0000"), Color.Parse("#1A0000"), Color.Parse("#CC2222"), 3),
+            };
+
+            int col = 0;
+            foreach (var (server, startColor, endColor, glowColor, rank) in configs)
+            {
+                var gradient = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                };
+                gradient.GradientStops.Add(new GradientStop(startColor, 0));
+                gradient.GradientStops.Add(new GradientStop(endColor, 1));
+
+                var card = CreateFeaturedServerCard(server, gradient, glowColor, rank);
+                Grid.SetColumn(card, col);
+                grid.Children.Add(card);
+                col += 2;
+            }
+
+            _featuredServersPanel.Children.Add(grid);
+        }
+
+        private Border CreateFeaturedServerCard(ServerInfo server, LinearGradientBrush gradient, Color glowColor, int rank)
+        {
+            // Rank accent brush — used only for the rank badge and the box-shadow
+            // glow that tints the card from underneath. The card body itself is
+            // pure glass to match the MainWindow aesthetic.
+            var rankAccentBrush = new SolidColorBrush(Color.FromArgb(220, glowColor.R, glowColor.G, glowColor.B));
+
+            // Green gradient matching the LAUNCH GAME button / selection indicator.
+            // Every JOIN button uses this so the brand color stays consistent across
+            // all three cards instead of bleeding the per-rank red/orange/purple.
+            LinearGradientBrush MakeJoinBrush()
+            {
+                var b = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                };
+                b.GradientStops.Add(new GradientStop(Color.Parse("#5CCF6B"), 0));
+                b.GradientStops.Add(new GradientStop(Color.Parse("#2E8B4A"), 1));
+                return b;
+            }
+
+            var card = new Border
+            {
+                Background = new SolidColorBrush(Color.Parse("#CC060C14")),
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(20),
+                Tag = server.Id,
+                BorderBrush = new SolidColorBrush(Color.Parse("#30FFFFFF")),
+                BorderThickness = new Thickness(1),
+                // First shadow: rank-colored glow underneath the card — subtle
+                // but gives each card a distinct tint (purple/orange/red) without
+                // the old high-saturation gradient fill.
+                // Second shadow: soft dark drop shadow for depth.
+                BoxShadow = new BoxShadows(
+                    new BoxShadow
+                    {
+                        Color = Color.FromArgb(85, glowColor.R, glowColor.G, glowColor.B),
+                        Blur = 30, OffsetX = 0, OffsetY = 8, IsInset = false
+                    },
+                    new[]
+                    {
+                        new BoxShadow
+                        {
+                            Color = Color.FromArgb(120, 0, 0, 0),
+                            Blur = 20, OffsetX = 0, OffsetY = 6, IsInset = false
+                        },
+                    }),
+                ClipToBounds = false
+            };
+
+            var outerStack = new StackPanel { Spacing = 0 };
+
+            // ── Row 1: Icon + Name/Address + Rank badge ──────────────────────
+            var topGrid = new Grid();
+            topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });          // icon
+            topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // info
+            topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });          // rank badge
+
+            // Icon — glass-tinted holder matching the rest of the launcher.
+            var iconBorder = new Border
+            {
+                Width = 60, Height = 60,
+                CornerRadius = new CornerRadius(12),
+                ClipToBounds = true,
+                Background = new SolidColorBrush(Color.Parse("#1AFFFFFF")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#25FFFFFF")),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 14, 0),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
+            };
+            var serverIcon = new Image
+            {
+                Name = $"FeaturedIcon_{server.Id}",
+                Width = 60, Height = 60,
+                Stretch = Avalonia.Media.Stretch.UniformToFill
+            };
+            iconBorder.Child = serverIcon;
+            Grid.SetColumn(iconBorder, 0);
+            topGrid.Children.Add(iconBorder);
+
+            // Name + address
+            var infoStack = new StackPanel { Spacing = 3, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = server.Name,
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.ExtraBold,
+                FontSize = 20,
+                Margin = new Thickness(0, 2, 0, 0),
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
+            });
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = server.Address,
+                Foreground = new SolidColorBrush(Color.Parse("#99FFFFFF")),
+                FontSize = 12,
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
+            });
+            Grid.SetColumn(infoStack, 1);
+            topGrid.Children.Add(infoStack);
+
+            // Rank badge (top-right) — the only place per-rank color lives.
+            var rankBadge = new Border
+            {
+                Background = rankAccentBrush,
+                CornerRadius = new CornerRadius(20),
+                Width = 34, Height = 34,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                BoxShadow = new BoxShadows(new BoxShadow
+                {
+                    Color = Color.FromArgb(140, glowColor.R, glowColor.G, glowColor.B),
+                    Blur = 14, OffsetX = 0, OffsetY = 0, IsInset = false
+                })
+            };
+            rankBadge.Child = new TextBlock
+            {
+                Text = $"#{rank}",
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.ExtraBold,
+                FontSize = 12,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            Grid.SetColumn(rankBadge, 2);
+            topGrid.Children.Add(rankBadge);
+
+            outerStack.Children.Add(topGrid);
+
+            // ── Row 2: MOTD ─────────────────────────────────────────────────
+            var motdText = new TextBlock
+            {
+                Name = $"FeaturedMotd_{server.Id}",
+                Text = "",
+                Foreground = new SolidColorBrush(Color.Parse("#B2FFFFFF")),
+                FontSize = 12,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                Margin = new Thickness(0, 14, 0, 0),
+                MinHeight = 36,
+                LineHeight = 17
+            };
+            outerStack.Children.Add(motdText);
+
+            // ── Row 3: Separator ─────────────────────────────────────────────
+            outerStack.Children.Add(new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(Color.Parse("#20FFFFFF")),
+                Margin = new Thickness(0, 14, 0, 14)
+            });
+
+            // ── Row 4: Status bar (dot + status | players) ──────────────────
+            var footerGrid = new Grid();
+            footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var statusRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            var dot = new Ellipse
+            {
+                Name = $"FeaturedDot_{server.Id}",
+                Width = 9, Height = 9,
+                Fill = new SolidColorBrush(Color.Parse("#6B7280")),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            statusRow.Children.Add(dot);
+            var statusTxt = new TextBlock
+            {
+                Name = $"FeaturedStatus_{server.Id}",
+                Text = "Checking...",
+                Foreground = new SolidColorBrush(Color.Parse("#E6FFFFFF")),
+                FontSize = 13, FontWeight = FontWeight.SemiBold
+            };
+            statusRow.Children.Add(statusTxt);
+            Grid.SetColumn(statusRow, 0);
+            footerGrid.Children.Add(statusRow);
+
+            var playerRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            playerRow.Children.Add(new TextBlock
+            {
+                Text = "👤", FontSize = 12,
+                Foreground = new SolidColorBrush(Color.Parse("#99FFFFFF")),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            });
+            playerRow.Children.Add(new TextBlock
+            {
+                Name = $"FeaturedPlayers_{server.Id}",
+                Text = "—",
+                Foreground = new SolidColorBrush(Color.Parse("#CCFFFFFF")),
+                FontSize = 12, FontWeight = FontWeight.SemiBold,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            });
+            Grid.SetColumn(playerRow, 1);
+            footerGrid.Children.Add(playerRow);
+            outerStack.Children.Add(footerGrid);
+
+            // ── Row 5: JOIN button ───────────────────────────────────────────
+            // Thicker vertical padding (was 11, now 16) + brand-green gradient.
+            // The GlowGreen class provides the green DropShadowEffect glow
+            // (8-blur at rest, 30-blur on hover), so no manual BoxShadow is
+            // needed here — and Button doesn't even expose BoxShadow anyway.
+            var joinBtn = new Button
+            {
+                Name = $"FeaturedJoin_{server.Id}",
+                Content = "JOIN SERVER",
+                Background = MakeJoinBrush(),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(0, 13),
+                MinHeight = 0,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                FontWeight = FontWeight.Bold,
+                FontSize = 14,
+                Cursor = new Cursor(StandardCursorType.Hand),
+                IsEnabled = false,
+                Margin = new Thickness(0, 18, 0, 0),
+            };
+            joinBtn.Classes.Add("ColorBtn");
+            joinBtn.Classes.Add("LiftBtn");
+            joinBtn.Classes.Add("GlowGreen");
+            joinBtn.Click += (s, e) => JoinServer(server);
+            outerStack.Children.Add(joinBtn);
+
+            card.Child = outerStack;
+            return card;
+        }
+
+        private void UpdateFeaturedServerCardUI(ServerInfo server)
+        {
+            if (_featuredServersPanel == null) return;
+
+            var outerGrid = _featuredServersPanel.Children.OfType<Grid>().FirstOrDefault();
+            if (outerGrid == null) return;
+
+            var card = outerGrid.Children.OfType<Border>()
+                .FirstOrDefault(b => b.Tag as string == server.Id);
+            if (card?.Child is not StackPanel outerStack) return;
+
+            // Row 0: topGrid (icon + info + rank)
+            var topGrid = outerStack.Children.OfType<Grid>().FirstOrDefault();
+            if (topGrid != null)
+            {
+                // Icon (column 0)
+                var iconBorder = topGrid.Children.OfType<Border>().FirstOrDefault(b => Grid.GetColumn(b) == 0);
+                if (iconBorder?.Child is Image img && !string.IsNullOrEmpty(server.IconBase64))
+                {
+                    try
+                    {
+                        var data = server.IconBase64;
+                        var comma = data.IndexOf(',');
+                        if (comma > 0) data = data.Substring(comma + 1);
+                        var bytes = Convert.FromBase64String(data);
+                        using var ms = new MemoryStream(bytes);
+                        img.Source = new Avalonia.Media.Imaging.Bitmap(ms);
+                    }
+                    catch { }
+                }
+            }
+
+            // Row 1: MOTD TextBlock (first plain TextBlock in outerStack)
+            var motd = outerStack.Children.OfType<TextBlock>().FirstOrDefault();
+            if (motd != null)
+                motd.Text = string.IsNullOrEmpty(server.Motd) ? server.Address : server.Motd;
+
+            // Row 3: footerGrid
+            var footerGrid = outerStack.Children.OfType<Grid>().Skip(1).FirstOrDefault();
+            if (footerGrid != null)
+            {
+                // Status row (column 0) — dot + text
+                var statusRow = footerGrid.Children.OfType<StackPanel>()
+                    .FirstOrDefault(sp => Grid.GetColumn(sp) == 0);
+                if (statusRow != null)
+                {
+                    var dot = statusRow.Children.OfType<Ellipse>().FirstOrDefault();
+                    if (dot != null) dot.Fill = server.IsOnline ? new SolidColorBrush(Color.Parse("#4CAF50")) : Brushes.Red;
+
+                    var txt = statusRow.Children.OfType<TextBlock>().FirstOrDefault();
+                    if (txt != null) txt.Text = server.IsOnline ? "Online" : "Offline";
+                }
+
+                // Players row (column 1)
+                var playerRow = footerGrid.Children.OfType<StackPanel>()
+                    .FirstOrDefault(sp => Grid.GetColumn(sp) == 1);
+                if (playerRow != null)
+                {
+                    var playerTxt = playerRow.Children.OfType<TextBlock>().Skip(1).FirstOrDefault();
+                    if (playerTxt != null)
+                        playerTxt.Text = server.IsOnline ? $"{server.CurrentPlayers}/{server.MaxPlayers}" : "—";
+                }
+            }
+
+            // Row 4: JOIN button
+            var joinBtn = outerStack.Children.OfType<Button>().FirstOrDefault();
+            if (joinBtn != null) joinBtn.IsEnabled = server.IsOnline;
         }
 
 
 
 
-        // MainWindow.cs
         private Border CreateServerCard(ServerInfo server)
         {
             var card = new Border
@@ -7831,15 +13387,14 @@ namespace LeafClient.Views
                 Padding = new Thickness(20),
                 Margin = new Thickness(0, 0, 0, 15),
                 Tag = server.Id,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch // Ensure the card stretches
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch 
             };
 
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // This column takes all available space
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); 
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Server Icon (existing code - no changes needed here)
             var iconBorder = new Border
             {
                 Width = 48,
@@ -7870,12 +13425,11 @@ namespace LeafClient.Views
             Grid.SetColumn(iconBorder, 0);
             grid.Children.Add(iconBorder);
 
-            // Server Info
             var infoStack = new StackPanel
             {
                 Spacing = 5,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch // Ensure infoStack stretches
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch 
             };
 
             var nameText = new TextBlock
@@ -7919,19 +13473,18 @@ namespace LeafClient.Views
                 Foreground = GetBrush("SecondaryForegroundBrush"),
                 FontSize = 10,
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch // Ensure MOTD text stretches
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch 
             };
             infoStack.Children.Add(motdText);
 
             Grid.SetColumn(infoStack, 1);
             grid.Children.Add(infoStack);
 
-            // Action Buttons
             var actionStack = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
                 Spacing = 10,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right // This is correct
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right 
             };
 
             var joinButton = new Button
@@ -7948,25 +13501,26 @@ namespace LeafClient.Views
                 IsEnabled = false,
                 Opacity = 1.0
             };
+            joinButton.Classes.Add("ColorBtn");
+            joinButton.Classes.Add("LiftBtn");
+            joinButton.Classes.Add("GlowAccent");
             joinButton.Click += (s, e) => JoinServer(server);
             actionStack.Children.Add(joinButton);
 
-            // MODIFIED: Explicitly create TextBlock for content and center it
             var menuButton = new Button
             {
-                FontSize = 20, // This applies to the TextBlock content
+                FontSize = 20, 
                 Width = 40,
                 Height = 40,
                 Background = GetBrush("HoverBackgroundBrush"),
                 CornerRadius = new CornerRadius(8),
                 Cursor = new Cursor(StandardCursorType.Hand),
-                // Explicitly set content alignment for the button itself
                 HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                 VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                Content = new TextBlock // Wrap the '⋮' in a TextBlock
+                Content = new TextBlock 
                 {
                     Text = "⋮",
-                    Foreground = GetBrush("PrimaryForegroundBrush"), // Ensure correct color
+                    Foreground = GetBrush("PrimaryForegroundBrush"), 
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
                 }
@@ -8064,7 +13618,6 @@ namespace LeafClient.Views
                 statusText.Foreground = Brushes.Orange;
                 saveButton.IsEnabled = false;
 
-                // Validate server using MrServer
                 var status = await _serverChecker.GetServerStatusAsync(addressBox.Text, port);
 
                 server.Name = nameBox.Text;
@@ -8101,10 +13654,8 @@ namespace LeafClient.Views
             await _settingsService.SaveSettingsAsync(_currentSettings);
             LoadServers();
             RefreshQuickPlayBar();
-            // Trigger a full refresh of all server statuses after deleting a server
             await RefreshAllServerStatusesAsync();
         }
-        // Add this helper method inside your MainWindow class in MainWindow.axaml.cs
         private async void ShowOfflineDialog(string serverName)
         {
             var dialog = new Window
@@ -8147,7 +13698,6 @@ namespace LeafClient.Views
                 }
             };
 
-            // Set the button's click event to close the dialog
             if ((dialog.Content as StackPanel)?.Children.OfType<Button>().Last() is Button okButton)
             {
                 okButton.Click += (s, e) => dialog.Close();
@@ -8156,7 +13706,6 @@ namespace LeafClient.Views
             await dialog.ShowDialog(this);
         }
 
-        // Add this new helper method inside your MainWindow class in MainWindow.axaml.cs
         private async void ShowGameAlreadyLaunchingDialog()
         {
             var dialog = new Window
@@ -8199,7 +13748,6 @@ namespace LeafClient.Views
                 }
             };
 
-            // Set the button's click event to close the dialog
             if ((dialog.Content as StackPanel)?.Children.OfType<Button>().Last() is Button okButton)
             {
                 okButton.Click += (s, e) => dialog.Close();
@@ -8210,21 +13758,18 @@ namespace LeafClient.Views
 
         private void JoinServer(ServerInfo server)
         {
-            // First, check if a game is already launching/running
             if (_isLaunching || _isInstalling)
             {
                 ShowGameAlreadyLaunchingDialog();
-                return; // Stop here, game is already launching
+                return; 
             }
 
-            // If no game is launching, then check server online status
             if (!server.IsOnline)
             {
                 ShowOfflineDialog(server.Name);
-                return; // Don't proceed with launch if offline
+                return; 
             }
 
-            // If online and no launch in progress, proceed to launch the game to the server
             LaunchGameToServer(server);
         }
 
@@ -8239,14 +13784,12 @@ namespace LeafClient.Views
                 return;
             }
 
-            // The card's child is a Grid, get it
             if (!(card.Child is Grid grid))
             {
                 Console.WriteLine($"[UI Update] Grid not found in card for {server.Name}");
                 return;
             }
 
-            // Find the info StackPanel (it's in column 1)
             var infoStack = grid.Children.OfType<StackPanel>()
                 .FirstOrDefault(sp => Grid.GetColumn(sp) == 1);
 
@@ -8256,20 +13799,17 @@ namespace LeafClient.Views
                 return;
             }
 
-            // Get the status stack (it's the second child of infoStack)
             var statusStack = infoStack.Children.OfType<StackPanel>()
                 .FirstOrDefault(sp => sp.Orientation == Avalonia.Layout.Orientation.Horizontal);
 
             if (statusStack != null)
             {
-                // Update status dot (first child - Ellipse)
                 var statusDot = statusStack.Children.OfType<Ellipse>().FirstOrDefault();
                 if (statusDot != null)
                 {
                     statusDot.Fill = server.IsOnline ? Brushes.Green : Brushes.Red;
                 }
 
-                // Update status text (second child - TextBlock)
                 var statusText = statusStack.Children.OfType<TextBlock>().FirstOrDefault();
                 if (statusText != null)
                 {
@@ -8284,9 +13824,8 @@ namespace LeafClient.Views
                 }
             }
 
-            // Update MOTD (third child of infoStack)
             var motdText = infoStack.Children.OfType<TextBlock>()
-                .Skip(1) // Skip the name TextBlock
+                .Skip(1) 
                 .FirstOrDefault();
 
             if (motdText != null)
@@ -8294,7 +13833,6 @@ namespace LeafClient.Views
                 motdText.Text = string.IsNullOrEmpty(server.Motd) ? "No description" : server.Motd;
             }
 
-            // Find action stack (column 2) and update join button
             var actionStack = grid.Children.OfType<StackPanel>()
                 .FirstOrDefault(sp => Grid.GetColumn(sp) == 2);
 
@@ -8313,7 +13851,6 @@ namespace LeafClient.Views
                 }
             }
 
-            // Update server icon (in column 0, inside a Border)
             var iconBorder = grid.Children.OfType<Border>()
                 .FirstOrDefault(b => Grid.GetColumn(b) == 0);
 
@@ -8324,7 +13861,6 @@ namespace LeafClient.Views
                 {
                     try
                     {
-                        // Clean the base64 string (remove data URI prefix if present)
                         var base64Data = server.IconBase64;
                         if (base64Data.StartsWith("data:image"))
                         {
@@ -8342,7 +13878,6 @@ namespace LeafClient.Views
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[UI Update] Error updating icon for {server.Name}: {ex.Message}");
-                        // Icon update failed, but don't crash - just skip it
                     }
                 }
 
@@ -8361,31 +13896,32 @@ namespace LeafClient.Views
 
                 quickPlayContainer.Children.Clear();
 
-                foreach (var server in _currentSettings.CustomServers)
+                // Show featured servers first, then user's custom servers
+                var allQPServers = _featuredServers.Concat(_currentSettings.CustomServers);
+
+                foreach (var server in allQPServers)
                 {
                     var serverButton = new Button
                     {
                         Classes = { "IconButton" },
                         Width = 50,
                         Height = 40,
-                        Tag = server, // Store ServerInfo in Tag
-                        IsEnabled = true, // Quick Play buttons are always enabled (unless a launch is in progress)
-                        Opacity = 1.0 // Initial opacity, will be updated by UpdateServerButtonStates
+                        Tag = server, 
+                        IsEnabled = true, 
+                        Opacity = 1.0 
                     };
 
                     serverButton.Click += (s, e) => JoinServer(server);
 
-                    // Add hover events for tooltip
                     serverButton.PointerEntered += OnQuickPlayServerPointerEntered;
                     serverButton.PointerExited += OnQuickPlayServerPointerExited;
 
-                    var icon = new Image { Width = 32, Height = 32 };
+                    var icon = new Image { Width = 29, Height = 29 };
 
                     if (!string.IsNullOrEmpty(server.IconBase64))
                     {
                         try
                         {
-                            // Clean the base64 string (remove data URI prefix if present)
                             var base64Data = server.IconBase64;
                             if (base64Data.StartsWith("data:image"))
                             {
@@ -8415,19 +13951,18 @@ namespace LeafClient.Views
 
                     var roundedIconBorder = new Border
                     {
-                        CornerRadius = new CornerRadius(8), // Adjust this value for desired roundness
-                        ClipToBounds = true, // Crucial for clipping the image to the rounded corners
-                        Background = Brushes.Transparent, // Ensure no background interferes
+                        CornerRadius = new CornerRadius(8), 
+                        ClipToBounds = true, 
+                        Background = Brushes.Transparent, 
                         Child = icon
                     };
 
-                    serverButton.Content = roundedIconBorder; // Set the Border as the button's content
+                    serverButton.Content = roundedIconBorder; 
                     quickPlayContainer.Children.Add(serverButton);
                 }
 
-                Console.WriteLine($"[QuickPlay] Refreshed bar with {_currentSettings.CustomServers.Count} servers");
-                // After creating/recreating quick play buttons, update their states
-                _ = UpdateServerButtonStates(); // Fire and forget for UI update
+                Console.WriteLine($"[QuickPlay] Refreshed bar with {_featuredServers.Count + _currentSettings.CustomServers.Count} servers");
+                _ = UpdateServerButtonStates(); 
             });
         }
 
@@ -8444,7 +13979,6 @@ namespace LeafClient.Views
 
             var panel = new StackPanel { Margin = new Thickness(20), Spacing = 15 };
 
-            // Server Name
             panel.Children.Add(new TextBlock
             {
                 Text = "Server Name",
@@ -8457,7 +13991,6 @@ namespace LeafClient.Views
             };
             panel.Children.Add(nameBox);
 
-            // Server Address
             panel.Children.Add(new TextBlock
             {
                 Text = "Server Address",
@@ -8471,7 +14004,6 @@ namespace LeafClient.Views
             };
             panel.Children.Add(addressBox);
 
-            // Server Port
             panel.Children.Add(new TextBlock
             {
                 Text = "Port (optional, default: 25565)",
@@ -8485,7 +14017,6 @@ namespace LeafClient.Views
             };
             panel.Children.Add(portBox);
 
-            // Status text
             var statusText = new TextBlock
             {
                 Text = "",
@@ -8494,7 +14025,6 @@ namespace LeafClient.Views
             };
             panel.Children.Add(statusText);
 
-            // Buttons
             var buttonPanel = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -8530,7 +14060,6 @@ namespace LeafClient.Views
                 statusText.Foreground = Brushes.Orange;
                 addButton.IsEnabled = false;
 
-                // Validate server using MrServer
                 var serverStatus = await _serverChecker.GetServerStatusAsync(addressBox.Text, port);
 
                 if (!serverStatus.IsOnline)
@@ -8554,7 +14083,6 @@ namespace LeafClient.Views
                 dialog.Close();
                 LoadServers();
                 RefreshQuickPlayBar();
-                // Trigger a full refresh of all server statuses after adding a server
                 await RefreshAllServerStatusesAsync();
             };
 
@@ -8619,12 +14147,12 @@ namespace LeafClient.Views
 
             var textBox = new TextBox
             {
-                AcceptsReturn = true, // Allow multiline input
+                AcceptsReturn = true, 
                 VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Top,
                 TextWrapping = TextWrapping.Wrap,
-                Height = 200, // Make it taller for easier editing
+                Height = 200, 
                 Watermark = "e.g., -Xmx2G -Xms1G -XX:+UseG1GC",
-                Text = _currentSettings.JvmArguments // Load existing arguments
+                Text = _currentSettings.JvmArguments 
             };
 
             var stackPanel = (dialog.Content as StackPanel);
@@ -8651,7 +14179,7 @@ namespace LeafClient.Views
             {
                 _currentSettings.JvmArguments = textBox.Text.Trim();
                 await _settingsService.SaveSettingsAsync(_currentSettings);
-                MarkSettingsDirty(); // Mark settings as dirty to show the banner
+                MarkSettingsDirty(); 
                 dialog.Close();
             };
 
@@ -8672,95 +14200,39 @@ namespace LeafClient.Views
             });
         }
 
+        // PointerPressed variant used by the redesigned About overlay — the
+        // gradient "VIEW GITHUB" pill is a Border, not a Button, so we need
+        // the PointerPressed signature.
+        private void OpenDeveloperGitHubBorder(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/voidZiAD",
+                UseShellExecute = true
+            });
+            e.Handled = true;
+        }
+
         private bool AreAnimationsEnabled()
         {
             return _currentSettings.AnimationsEnabled;
         }
 
-        private async Task<bool> InstallLithiumIfNeededAsync(string mcVersion)
-        {
-            // Check if we should install Lithium based on settings
-            if (!_currentSettings.IsLithiumEnabled)
-            {
-                Console.WriteLine("[Lithium] Lithium installation skipped - disabled in settings");
-                return true;
-            }
-
-            // IMPORTANT: Use the global .minecraft/mods folder
-            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-            Directory.CreateDirectory(modsFolder);
-
-            try
-            {
-                ShowProgress(true, $"Installing Lithium for Minecraft {mcVersion}...");
-
-                using var client = new HttpClient();
-                var apiUrl = $"https://api.modrinth.com/v2/project/gvQqBUqZ/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
-                var response = await client.GetStringAsync(apiUrl);
-
-                if (string.IsNullOrWhiteSpace(response))
-                {
-                    throw new Exception("Empty response from Modrinth API");
-                }
-
-                var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
-                if (versions == null || versions.Count == 0)
-                {
-                    throw new Exception($"No Lithium versions found for Minecraft {mcVersion}");
-                }
-
-                var latest = versions.FirstOrDefault();
-                if (latest?.files == null || latest.files.Count == 0)
-                {
-                    throw new Exception("No download files found for Lithium");
-                }
-
-                var downloadUrl = latest.files[0].url;
-                if (string.IsNullOrWhiteSpace(downloadUrl))
-                {
-                    throw new Exception("Invalid download URL for Lithium");
-                }
-
-                Console.WriteLine($"[Lithium] Downloading from: {downloadUrl}");
-
-                var jarBytes = await client.GetByteArrayAsync(downloadUrl);
-                if (jarBytes == null || jarBytes.Length == 0)
-                {
-                    throw new Exception("Downloaded file is empty");
-                }
-
-                string fileName = $"lithium-{mcVersion}.jar";
-                string lithiumPath = System.IO.Path.Combine(modsFolder, fileName);
-
-                await File.WriteAllBytesAsync(lithiumPath, jarBytes);
-                Console.WriteLine($"[Lithium] Successfully installed for {mcVersion} at {lithiumPath}");
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Lithium] Installation failed: {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    Console.WriteLine($"[Lithium] Inner exception: {ex.InnerException.Message}");
-                }
-                return false;
-            }
-            finally
-            {
-                ShowProgress(false);
-            }
-        }
-
-
         private void WireSettingsDirtyHandlers()
         {
-            // Toggles
-            if (_enablePrayerTimeReminderToggle != null) { _enablePrayerTimeReminderToggle.Checked += (_, __) => MarkSettingsDirty(); _enablePrayerTimeReminderToggle.Unchecked += (_, __) => MarkSettingsDirty(); }
-            if (_prayerTimeCountryComboBox != null) { _prayerTimeCountryComboBox.SelectionChanged += (_, __) => MarkSettingsDirty(); } // UPDATED: Added SelectionChanged handler
-            if (_prayerTimeCityTextBox != null) { _prayerTimeCityTextBox.PropertyChanged += (s, e) => { if (e.Property == TextBox.TextProperty) MarkSettingsDirty(); }; }
-            if (_prayerCalculationMethodComboBox != null) { _prayerCalculationMethodComboBox.SelectionChanged += (_, __) => MarkSettingsDirty(); }
-            if (_prayerReminderMinutesBeforeSlider != null) { _prayerReminderMinutesBeforeSlider.PropertyChanged += (s, e) => { if (e.Property == Slider.ValueProperty) MarkSettingsDirty(); }; }
+            if (_natureThemeToggle != null)
+            {
+                _natureThemeToggle.Checked += (_, __) =>
+                {
+                    MarkSettingsDirty();
+                    UpdateNatureThemeState();
+                };
+                _natureThemeToggle.Unchecked += (_, __) =>
+                {
+                    MarkSettingsDirty();
+                    UpdateNatureThemeState();
+                };
+            }
             if (_gameResolutionWidthTextBox != null) _gameResolutionWidthTextBox.PropertyChanged += (s, e) =>
             {
                 if (e.Property == TextBox.TextProperty) MarkSettingsDirty();
@@ -8790,44 +14262,39 @@ namespace LeafClient.Views
             {
                 _optiFineToggle.Checked += async (_, __) =>
                 {
-                    if (_isApplyingSettings) return; // Prevent saving while settings are initially loading
+                    if (_isApplyingSettings) return;
                     _currentSettings.IsOptiFineEnabled = true;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
                 _optiFineToggle.Unchecked += async (_, __) =>
                 {
-                    if (_isApplyingSettings) return; // Prevent saving while settings are initially loading
+                    if (_isApplyingSettings) return;
                     _currentSettings.IsOptiFineEnabled = false;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
             }
-            if (_lithiumToggle != null)
+            if (_testModeToggle != null)
             {
-                _lithiumToggle.Checked += async (_, __) =>
+                _testModeToggle.Checked += async (_, __) =>
                 {
                     if (_isApplyingSettings) return;
-                    _currentSettings.IsLithiumEnabled = true;
+                    _currentSettings.IsTestMode = true;
+                    if (_testModePathPanel != null) _testModePathPanel.IsVisible = true;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
-                _lithiumToggle.Unchecked += async (_, __) =>
+                _testModeToggle.Unchecked += async (_, __) =>
                 {
                     if (_isApplyingSettings) return;
-                    _currentSettings.IsLithiumEnabled = false;
+                    _currentSettings.IsTestMode = false;
+                    if (_testModePathPanel != null) _testModePathPanel.IsVisible = false;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
             }
-            if (_sodiumToggle != null)
+            if (_testModePathBox != null)
             {
-                _sodiumToggle.Checked += async (_, __) =>
+                _testModePathBox.LostFocus += async (_, __) =>
                 {
-                    if (_isApplyingSettings) return;
-                    _currentSettings.IsSodiumEnabled = true;
-                    await _settingsService.SaveSettingsAsync(_currentSettings);
-                };
-                _sodiumToggle.Unchecked += async (_, __) =>
-                {
-                    if (_isApplyingSettings) return;
-                    _currentSettings.IsSodiumEnabled = false;
+                    _currentSettings.TestModeModProjectPath = _testModePathBox.Text ?? _currentSettings.TestModeModProjectPath;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
             }
@@ -8843,7 +14310,7 @@ namespace LeafClient.Views
                     if (_isApplyingSettings) return;
                     _currentSettings.MinimizeToTray = true;
                     await _settingsService.SaveSettingsAsync(_currentSettings);
-                    MarkSettingsDirty(); // if you still want the "Save" banner visual
+                    MarkSettingsDirty();
                 };
                 _minimizeToTrayToggle.Unchecked += async (_, __) =>
                 {
@@ -8868,12 +14335,12 @@ namespace LeafClient.Views
                 _animationsEnabledToggle.Checked += (_, __) =>
                 {
                     MarkSettingsDirty();
-                    OnAnimationsEnabledChanged(); // Apply immediately
+                    OnAnimationsEnabledChanged();
                 };
                 _animationsEnabledToggle.Unchecked += (_, __) =>
                 {
                     MarkSettingsDirty();
-                    OnAnimationsEnabledChanged(); // Apply immediately
+                    OnAnimationsEnabledChanged();
                 };
             }
             if (_autoJumpToggle != null)
@@ -8922,14 +14389,15 @@ namespace LeafClient.Views
                 _highContrastToggle.Unchecked += (_, __) => MarkSettingsDirty();
             }
 
-            // TextBoxes
-            if (_minRamAllocationTextBox != null)
+            if (_minRamSlider != null)
             {
-                _minRamAllocationTextBox.PropertyChanged += (s, e) =>
-                {
-                    if (e.Property == TextBox.TextProperty) MarkSettingsDirty();
-                };
+                _minRamSlider.ValueChanged += (s, e) => MarkSettingsDirty();
             }
+            if (_maxRamSlider != null)
+            {
+                _maxRamSlider.ValueChanged += (s, e) => MarkSettingsDirty();
+            }
+
             if (_quickJoinServerAddressTextBox != null)
             {
                 _quickJoinServerAddressTextBox.PropertyChanged += (s, e) =>
@@ -8945,7 +14413,6 @@ namespace LeafClient.Views
                 };
             }
 
-            // Sliders
             if (_mouseSensitivitySlider != null)
             {
                 _mouseSensitivitySlider.PropertyChanged += (s, e) =>
@@ -8989,10 +14456,6 @@ namespace LeafClient.Views
                 };
             }
 
-            // ComboBoxes
-            if (_maxRamAllocationComboBox != null)
-                _maxRamAllocationComboBox.SelectionChanged += (_, __) => MarkSettingsDirty();
-
             if (_renderCloudsComboBox != null)
                 _renderCloudsComboBox.SelectionChanged += (_, __) => MarkSettingsDirty();
 
@@ -9016,7 +14479,6 @@ namespace LeafClient.Views
             }
         }
 
-        // Add this method to close the banner
         private void CloseSkinStatusBanner(object? sender, RoutedEventArgs e)
         {
             if (_skinStatusBanner != null)
@@ -9025,24 +14487,21 @@ namespace LeafClient.Views
             }
         }
 
-        // Add this method to show the banner with different messages
         private void ShowSkinStatusBanner(string message, SkinBannerStatus status = SkinBannerStatus.Info)
         {
             if (_skinStatusBanner == null || _skinStatusBannerText == null) return;
 
-            // Set background color based on status
             _skinStatusBanner.Background = status switch
             {
-                SkinBannerStatus.Success => new SolidColorBrush(Color.FromRgb(34, 139, 34)), // Green
-                SkinBannerStatus.Error => new SolidColorBrush(Color.FromRgb(220, 38, 38)), // Red
-                SkinBannerStatus.Warning => new SolidColorBrush(Color.FromRgb(234, 179, 8)), // Yellow/Orange
-                _ => new SolidColorBrush(Color.FromRgb(42, 42, 42)) // Default gray
+                SkinBannerStatus.Success => new SolidColorBrush(Color.FromRgb(34, 139, 34)), 
+                SkinBannerStatus.Error => new SolidColorBrush(Color.FromRgb(220, 38, 38)), 
+                SkinBannerStatus.Warning => new SolidColorBrush(Color.FromRgb(234, 179, 8)), 
+                _ => new SolidColorBrush(Color.FromRgb(42, 42, 42)) 
             };
 
             _skinStatusBannerText.Text = message;
             _skinStatusBanner.IsVisible = true;
 
-            // Auto-hide after 5 seconds for success/error messages, keep warning visible
             if (status != SkinBannerStatus.Warning)
             {
                 _ = Task.Run(async () =>
@@ -9059,7 +14518,6 @@ namespace LeafClient.Views
             }
         }
 
-        // Add this enum near the top of your class (after the fields section)
         private enum SkinBannerStatus
         {
             Success,
@@ -9099,7 +14557,8 @@ namespace LeafClient.Views
             {
                 _maxFpsSlider.ValueChanged += (s, e) =>
                 {
-                    _optionsService.SetInt("maxFps", (int)e.NewValue);
+                    // 0 in the launcher UI means "Unlimited"; Minecraft uses 260 for that.
+                    _optionsService.SetInt("maxFps", (int)e.NewValue == 0 ? 260 : (int)e.NewValue);
                     _optionsService.Save();
                 };
             }
@@ -9189,6 +14648,46 @@ namespace LeafClient.Views
                     }
                 };
             }
+            if (_highContrastToggle != null)
+            {
+                _highContrastToggle.Checked += (s, e) => { _optionsService.SetBool("highContrast", true); _optionsService.Save(); };
+                _highContrastToggle.Unchecked += (s, e) => { _optionsService.SetBool("highContrast", false); _optionsService.Save(); };
+            }
+            if (_playerHatToggle != null)
+            {
+                _playerHatToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_hat", true); _optionsService.Save(); };
+                _playerHatToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_hat", false); _optionsService.Save(); };
+            }
+            if (_playerCapeToggle != null)
+            {
+                _playerCapeToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_cape", true); _optionsService.Save(); };
+                _playerCapeToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_cape", false); _optionsService.Save(); };
+            }
+            if (_playerJacketToggle != null)
+            {
+                _playerJacketToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_jacket", true); _optionsService.Save(); };
+                _playerJacketToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_jacket", false); _optionsService.Save(); };
+            }
+            if (_playerLeftSleeveToggle != null)
+            {
+                _playerLeftSleeveToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_left_sleeve", true); _optionsService.Save(); };
+                _playerLeftSleeveToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_left_sleeve", false); _optionsService.Save(); };
+            }
+            if (_playerRightSleeveToggle != null)
+            {
+                _playerRightSleeveToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_right_sleeve", true); _optionsService.Save(); };
+                _playerRightSleeveToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_right_sleeve", false); _optionsService.Save(); };
+            }
+            if (_playerLeftPantToggle != null)
+            {
+                _playerLeftPantToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_left_pants_leg", true); _optionsService.Save(); };
+                _playerLeftPantToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_left_pants_leg", false); _optionsService.Save(); };
+            }
+            if (_playerRightPantToggle != null)
+            {
+                _playerRightPantToggle.Checked += (s, e) => { _optionsService.SetBool("modelPart_right_pants_leg", true); _optionsService.Save(); };
+                _playerRightPantToggle.Unchecked += (s, e) => { _optionsService.SetBool("modelPart_right_pants_leg", false); _optionsService.Save(); };
+            }
         }
 
         private IBrush GetBrush(string key, IBrush? fallback = null)
@@ -9224,7 +14723,6 @@ namespace LeafClient.Views
             var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == subVersion);
             string activeLoader = selectedVersionInfo?.Loader ?? "Vanilla";
 
-            // Fabric is only available for 1.14 and above
             bool isFabricCompatible = Version.TryParse(subVersion, out Version? semver) &&
                                       semver >= new Version(1, 14);
 
@@ -9241,7 +14739,6 @@ namespace LeafClient.Views
 
             if (_addonVanillaButton != null)
             {
-                // Hide the toggle buttons if only Vanilla is available (incompatible with Fabric)
                 _addonVanillaButton.IsVisible = isFabricCompatible;
                 if (_addonVanillaButton.Content is Border vanillaBorder)
                 {
@@ -9255,119 +14752,19 @@ namespace LeafClient.Views
                 _versionLoader.Text = activeLoader;
         }
 
-
-
-        private async Task<bool> InstallOptiFineForFabricIfNeededAsync(string mcVersion, string profileName, bool isFabric)
-        {
-            if (!isFabric)
-            {
-                Console.WriteLine("[OptiFineForFabric] Not installing: Not a Fabric profile.");
-                return false;
-            }
-
-            if (!_currentSettings.IsOptiFineEnabled)
-            {
-                Console.WriteLine("[OptiFineForFabric] Not installing: OptiFine toggle is off. Ensuring mods are disabled.");
-                ManageOptiFineForFabricMods(mcVersion, enable: false);
-                return true;
-            }
-
-            // Get the .mrpack URL
-            string? mrpackUrl = await GetOptiFineMrpackUrlForVersion(mcVersion);
-            if (string.IsNullOrEmpty(mrpackUrl))
-            {
-                Console.Error.WriteLine($"[OptiFineForFabric ERROR] No .mrpack available for Minecraft {mcVersion}. Skipping installation.");
-                ShowLaunchErrorBanner($"OptiFine for Fabric is not available for Minecraft {mcVersion}.");
-                ManageOptiFineForFabricMods(mcVersion, enable: false); // Ensure any old mods are disabled
-                return false;
-            }
-
-            // Define the path for the downloaded .mrpack file in a temporary location
-            string mrpackPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"OptiFineForFabric_{mcVersion}.mrpack");
-
-            // Check if the .mrpack already exists and its hash matches (optional but good for efficiency)
-            // For now, we'll always re-download to ensure the latest version based on the URL.
-            // You could add logic here to check if the file exists and its hash matches before downloading.
-
-            // Download the .mrpack file
-            try
-            {
-                Console.WriteLine($"[OptiFineForFabric] Downloading .mrpack from {mrpackUrl} to {mrpackPath}");
-                ShowProgress(true, $"Downloading OptiFine for Fabric modpack for {mcVersion}...");
-                using var client = new HttpClient();
-                byte[] mrpackBytes = await client.GetByteArrayAsync(mrpackUrl);
-                await File.WriteAllBytesAsync(mrpackPath, mrpackBytes);
-                Console.WriteLine($"[OptiFineForFabric] Successfully downloaded .mrpack to {mrpackPath}");
-                ShowProgress(false); // Hide download progress
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[OptiFineForFabric ERROR] Failed to download .mrpack from {mrpackUrl}: {ex.Message}");
-                ShowLaunchErrorBanner($"Failed to download OptiFine for Fabric pack: {ex.Message}");
-                return false;
-            }
-
-            // Now, process the downloaded .mrpack
-            bool installationSuccess = false;
-            try
-            {
-                // Call the new helper method to handle extraction, overrides, and mod downloads
-                installationSuccess = await ProcessModrinthPackInstallation(mrpackPath, System.IO.Path.Combine(_minecraftFolder, "mods"), mcVersion);
-
-                if (installationSuccess)
-                {
-                    Console.WriteLine("[OptiFineForFabric] Modpack processing completed successfully.");
-                    // Ensure mods are enabled after installation
-                    ManageOptiFineForFabricMods(mcVersion, enable: true);
-                }
-                else
-                {
-                    Console.Error.WriteLine("[OptiFineForFabric ERROR] Modpack processing failed.");
-                    ShowLaunchErrorBanner($"Failed to install OptiFine for Fabric modpack for {mcVersion}. Check logs.");
-                    ManageOptiFineForFabricMods(mcVersion, enable: false); // Disable any partial installs
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[OptiFineForFabric ERROR] Unexpected error during modpack processing: {ex.Message}");
-                ShowLaunchErrorBanner($"An unexpected error occurred during OptiFine for Fabric installation: {ex.Message}");
-                ManageOptiFineForFabricMods(mcVersion, enable: false); // Disable any partial installs
-            }
-            finally
-            {
-                // Ensure the temporary .mrpack file is deleted, regardless of success or failure
-                try
-                {
-                    if (File.Exists(mrpackPath))
-                    {
-                        File.Delete(mrpackPath);
-                        Console.WriteLine($"[OptiFineForFabric] Deleted temporary .mrpack file: {mrpackPath}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[OptiFineForFabric ERROR] Failed to delete temporary .mrpack file {mrpackPath}: {ex.Message}");
-                }
-            }
-
-            return installationSuccess;
-        }
-
         private async void OnAddonFabricClick(object? sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(_currentSettings.SelectedSubVersion)) return;
 
-            // Find the version info object and update its loader in memory
             var versionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
             if (versionInfo != null)
             {
                 versionInfo.Loader = "Fabric";
             }
 
-            // Save the selection and update the UI
             await SaveSelectedAddon(_currentSettings.SelectedSubVersion, "Fabric");
             UpdateAddonSelectionUI(_currentSettings.SelectedSubVersion);
-            UpdateLaunchVersionText(); // Update the main launch button text
+            UpdateLaunchVersionText(); 
         }
 
 
@@ -9375,7 +14772,6 @@ namespace LeafClient.Views
         {
             if (string.IsNullOrWhiteSpace(_currentSettings.SelectedSubVersion)) return;
 
-            // Find the version info object and update its loader in memory
             var versionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
             if (versionInfo != null)
             {
@@ -9384,9 +14780,8 @@ namespace LeafClient.Views
 
             await SaveSelectedAddon(_currentSettings.SelectedSubVersion, "Vanilla");
             UpdateAddonSelectionUI(_currentSettings.SelectedSubVersion);
-            UpdateLaunchVersionText(); // Update the main launch button text
+            UpdateLaunchVersionText(); 
 
-            // Disable OptiFineForFabric mods when switching to Vanilla
             if (IsOptiFineForFabricSupported(_currentSettings.SelectedSubVersion))
             {
                 ManageOptiFineForFabricMods(_currentSettings.SelectedSubVersion, false);
@@ -9394,14 +14789,79 @@ namespace LeafClient.Views
         }
 
 
-        // Navigate to Settings from Versions sidebar button
         private void OpenSettingsFromVersions(object? sender, RoutedEventArgs e)
         {
             _currentSelectedIndex = 4;
             SwitchToPage(4);
         }
 
-        // Navigate to Settings from top-right menu
+        // ── Cosmetic preview baker (dev tool) ──────────────────────────────
+        // Renders every cosmetic into 4 PNG angles (front/back/angled-L/R)
+        // via SkinRendererControl.RenderFrame and writes them to the user's
+        // Desktop.  Intended for producing banner/marketing artwork — not a
+        // runtime-loaded asset.  Handler is wired up in Settings → About.
+        private async void OnBakeCosmeticPreviewsClick(object? sender, RoutedEventArgs e)
+        {
+            var btn        = this.FindControl<Button>("BakeCosmeticPreviewsButton");
+            var btnText    = this.FindControl<TextBlock>("BakeCosmeticPreviewsButtonText");
+            var statusText = this.FindControl<TextBlock>("BakeCosmeticPreviewsStatus");
+
+            if (btn == null || btnText == null || statusText == null) return;
+            if (!btn.IsEnabled) return;
+
+            btn.IsEnabled = false;
+            btnText.Text  = "BAKING...";
+            statusText.IsVisible = true;
+            statusText.Text = "Fetching your Minecraft skin...";
+
+            try
+            {
+                // Fetch the currently-logged-in user's skin via Mojang's public
+                // session server (UUID path) with a minotar.net fallback.  This
+                // same method is used by the 3D store preview, so it works on
+                // any machine where the user is signed in to a Minecraft
+                // account — not just the developer's PC.
+                byte[]? userSkin = null;
+                try { userSkin = await FetchSkinBytesAsync(); }
+                catch (Exception ex) { Console.WriteLine($"[Bake] Failed to fetch user skin: {ex.Message}"); }
+
+                statusText.Text = userSkin != null
+                    ? "Rendering cosmetic previews on your skin — this can take a few seconds..."
+                    : "Rendering cosmetic previews (skin fetch failed; using fallback mannequin)...";
+
+                var result = await LeafClient.Services.CosmeticPreviewBaker.BakeAllAsync(
+                    userSkinBytes: userSkin,
+                    log: line => Console.WriteLine(line));
+
+                statusText.Text =
+                    $"Done — {result.ImagesWritten} PNGs written to {result.OutputDirectory}" +
+                    (result.Skipped > 0 ? $"  ({result.Skipped} skipped)" : "") +
+                    (result.Errors.Count > 0 ? $"  ({result.Errors.Count} errors)" : "");
+
+                // Open the output folder in Explorer so the user can grab the
+                // files immediately.
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = result.OutputDirectory,
+                        UseShellExecute = true,
+                    });
+                }
+                catch { /* best effort */ }
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = $"Failed: {ex.Message}";
+                Console.WriteLine($"[Bake] Failed: {ex}");
+            }
+            finally
+            {
+                btnText.Text  = "BAKE COSMETIC PREVIEWS";
+                btn.IsEnabled = true;
+            }
+        }
+
         private void OpenSettingsFromMenu(object? sender, RoutedEventArgs e)
         {
             _currentSelectedIndex = 4;
@@ -9414,8 +14874,28 @@ namespace LeafClient.Views
             _launchOnStartupToggle = this.FindControl<ToggleSwitch>("LaunchOnStartupToggle");
             _minimizeToTrayToggle = this.FindControl<ToggleSwitch>("MinimizeToTrayToggle");
             _discordRichPresenceToggle = this.FindControl<ToggleSwitch>("DiscordRichPresenceToggle");
-            _minRamAllocationTextBox = this.FindControl<TextBox>("MinRamAllocationTextBox");
-            _maxRamAllocationComboBox = this.FindControl<ComboBox>("MaxRamAllocationComboBox");
+            _minRamSlider = this.FindControl<Slider>("MinRamSlider");
+            _minRamValueText = this.FindControl<TextBlock>("MinRamValueText");
+            if (_minRamSlider != null)
+            {
+                _minRamSlider.ValueChanged += (s, e) =>
+                {
+                    if (_minRamValueText != null) _minRamValueText.Text = $"{e.NewValue:F0} MB";
+                    MarkSettingsDirty();
+                };
+            }
+
+            _maxRamSlider = this.FindControl<Slider>("MaxRamSlider");
+            _maxRamValueText = this.FindControl<TextBlock>("MaxRamValueText");
+            if (_maxRamSlider != null)
+            {
+                _maxRamSlider.ValueChanged += (s, e) =>
+                {
+                    double gb = e.NewValue / 1024.0;
+                    if (_maxRamValueText != null) _maxRamValueText.Text = $"{gb:0.##} GB";
+                    MarkSettingsDirty();
+                };
+            }
             _quickJoinServerAddressTextBox = this.FindControl<TextBox>("QuickJoinServerAddressTextBox");
             _quickJoinServerPortTextBox = this.FindControl<TextBox>("QuickJoinServerPortTextBox");
             _quickLaunchEnabledToggle = this.FindControl<ToggleSwitch>("QuickLaunchEnabledToggle");
@@ -9442,9 +14922,8 @@ namespace LeafClient.Views
             _maxFpsSlider = this.FindControl<Slider>("MaxFpsSlider");
             if (_maxFpsSlider != null)
             {
-                // Set min/max values for the slider. Max should be the highest finite FPS you want to show.
                 _maxFpsSlider.Minimum = 0;
-                _maxFpsSlider.Maximum = 300; // Or a higher value like 500, depends on your UI design.
+                _maxFpsSlider.Maximum = 260;
 
                 _maxFpsSlider.ValueChanged += (s, e) =>
                 {
@@ -9476,6 +14955,7 @@ namespace LeafClient.Views
             _playerRightPantToggle = this.FindControl<ToggleSwitch>("PlayerRightPantToggle");
             _playerMainHandComboBox = this.FindControl<ComboBox>("PlayerMainHandComboBox");
             _themeComboBox = this.FindControl<ComboBox>("ThemeComboBox");
+            _natureThemeToggle = this.FindControl<ToggleSwitch>("NatureThemeToggle");
             if (_themeComboBox != null)
             {
                 _themeComboBox.SelectionChanged += OnThemeChanged;
@@ -9507,11 +14987,10 @@ namespace LeafClient.Views
                 var largePose = _skinRenderService.GetRandomLargePoseName();
                 _lastSmallPose = smallPose;
 
-                // Use uuid if available; SkinRenderService will still prefer uuid in the URL
                 var id = username ?? uuid ?? "Player";
 
                 var smallBitmap = await _skinRenderService.LoadSkinImageAsync(id, smallPose, "bust", uuid);
-                var largeBitmap = await _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid); // Ensure "full" is used here
+                var largeBitmap = await _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid); 
 
                 if (_playingAsImage != null && smallBitmap != null)
                     _playingAsImage.Source = smallBitmap;
@@ -9531,12 +15010,10 @@ namespace LeafClient.Views
         {
             try
             {
-                // Ensure session is current before reading username/uuid
                 await LoadSessionAsync();
 
                 var settings = await _settingsService.LoadSettingsAsync();
 
-                // Prefer session; fall back to saved settings; never fall back to "Player" unless truly offline
                 var username = _session?.Username ?? settings.SessionUsername;
                 var uuid = _session?.UUID ?? settings.SessionUuid;
 
@@ -9552,7 +15029,6 @@ namespace LeafClient.Views
                 if (_playingAsUsername != null)
                     _playingAsUsername.Text = (username ?? "Player").ToUpper();
 
-                // IMPORTANT: pass uuid if available so SkinRenderService uses it
                 await UpdateSkinPreviewsAsync(username ?? "Player", uuid);
 
                 UpdateRichPresenceFromState();
@@ -9568,102 +15044,124 @@ namespace LeafClient.Views
         {
             try
             {
-                Console.WriteLine("[MainWindow] Starting proper logout process...");
+                Console.WriteLine("[MainWindow] Starting logout process...");
 
-                // Set the IsSwapToLogin flag in the App instance
-                if (Application.Current is App app)
-                {
-                    app.IsSwapToLogin = true;
-                }
+                string activeId = _currentSettings?.ActiveAccountId ?? "";
 
-                // PROPERLY clear session data
-                _currentSettings.IsLoggedIn = false;
-                _currentSettings.AccountType = null;
-                _currentSettings.SessionUsername = null;
-                _currentSettings.SessionUuid = null;
-                _currentSettings.SessionAccessToken = null;
-                _currentSettings.SessionXuid = null;
-                _currentSettings.OfflineUsername = null;
+                // Remove the current account from saved accounts
+                _currentSettings?.SavedAccounts.RemoveAll(a => a.Id == activeId);
 
-                // Save settings FIRST
-                await _settingsService.SaveSettingsAsync(_currentSettings);
-                Console.WriteLine("[MainWindow] Settings saved with logged out state");
-
-                // Reset state
-                _loggedIn = false;
-                _currentUsername = null;
-                _lastSmallPose = null;
-                _session = null;
-
-                // Stop services
-                StopRichPresence();
+                // Clear the current session via service
                 await _sessionService.LogoutAsync();
 
-                // Get the desktop lifetime
-                if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                // Check if there are other accounts to switch to
+                var remaining = _currentSettings?.SavedAccounts;
+                if (remaining != null && remaining.Count > 0)
                 {
-                    Console.WriteLine("[MainWindow] Hiding MainWindow and creating LoginWindow...");
+                    // Switch to the first remaining account
+                    var next = remaining[0];
+                    Console.WriteLine($"[MainWindow] Switching to account: {next.Username} ({next.AccountType})");
 
-                    // HIDE the MainWindow immediately
-                    this.Hide();
-
-                    // Create login window
-                    var loginWindow = new LoginWindow();
-
-                    // Set up login completion handler
-                    loginWindow.LoginCompleted += (success) =>
+                    if (_currentSettings != null)
                     {
-                        Console.WriteLine($"[MainWindow] Login completed with success: {success}");
-                        if (success)
-                        {
-                            // Login successful - create new main window
-                            Dispatcher.UIThread.Post(() =>
-                            {
-                                var newMainWindow = new MainWindow();
-                                newMainWindow.Show();
-                                desktop.MainWindow = newMainWindow;
-                                loginWindow.Close();
+                        _currentSettings.IsLoggedIn = true;
+                        _currentSettings.AccountType = next.AccountType;
+                        _currentSettings.SessionUsername = next.Username;
+                        _currentSettings.SessionUuid = next.Uuid;
+                        _currentSettings.SessionAccessToken = next.AccessToken;
+                        _currentSettings.SessionXuid = next.Xuid;
+                        _currentSettings.ActiveAccountId = next.Id;
+                        _currentSettings.OfflineUsername = next.AccountType == "offline" ? next.Username : null;
 
-                                // Close the old (hidden) main window
-                                this.Close(); // This will trigger OnWindowClosing for the OLD MainWindow
-                            });
-                        }
-                    };
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                    }
 
-                    // Handle login window closing without successful login
-                    loginWindow.Closed += (_, __) =>
+                    // Refresh the session
+                    _session = next.AccountType == "offline"
+                        ? MSession.CreateOfflineSession(next.Username)
+                        : new MSession(next.Username, next.AccessToken ?? "", next.Uuid ?? "");
+
+                    _loggedIn = true;
+                    _currentUsername = next.Username;
+
+                    // Refresh UI
+                    PopulateAccountsListPanel();
+                    await LoadUserInfoAsync();
+                    Console.WriteLine("[MainWindow] Switched to next account successfully");
+                }
+                else
+                {
+                    // No accounts left - show LoginWindow
+                    Console.WriteLine("[MainWindow] No accounts remaining, showing LoginWindow...");
+
+                    if (Application.Current is App app)
                     {
-                        Console.WriteLine($"[MainWindow] LoginWindow closed - LoginSuccessful: {loginWindow.LoginSuccessful}");
+                        app.IsSwapToLogin = true;
+                    }
 
-                        // If login was not successful, shut down the app (close the hidden MainWindow too)
-                        if (!loginWindow.LoginSuccessful)
+                    if (_currentSettings != null)
+                    {
+                        _currentSettings.IsLoggedIn = false;
+                        _currentSettings.AccountType = null;
+                        _currentSettings.SessionUsername = null;
+                        _currentSettings.SessionUuid = null;
+                        _currentSettings.SessionAccessToken = null;
+                        _currentSettings.SessionXuid = null;
+                        _currentSettings.OfflineUsername = null;
+                        _currentSettings.ActiveAccountId = null;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                    }
+
+                    _loggedIn = false;
+                    _currentUsername = null;
+                    _lastSmallPose = null;
+                    _session = null;
+
+                    StopRichPresence();
+
+                    if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                    {
+                        this.Hide();
+
+                        var loginWindow = new LoginWindow();
+
+                        loginWindow.LoginCompleted += (success) =>
                         {
-                            Console.WriteLine("[MainWindow] No successful login - shutting down application");
-                            // Close the hidden MainWindow first
-                            Dispatcher.UIThread.Post(() =>
+                            Console.WriteLine($"[MainWindow] Login completed with success: {success}");
+                            if (success)
                             {
-                                this.Close(); // This will trigger shutdown since it's the last window
-                            });
-                        }
-                    };
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    var newMainWindow = new MainWindow();
+                                    newMainWindow.Show();
+                                    desktop.MainWindow = newMainWindow;
+                                    loginWindow.Close();
+                                    this.Close();
+                                });
+                            }
+                        };
 
-                    // Set as main window and show
-                    desktop.MainWindow = loginWindow;
-                    loginWindow.Show();
-                    loginWindow.Activate();
+                        loginWindow.Closed += (_, __) =>
+                        {
+                            if (!loginWindow.LoginSuccessful)
+                            {
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    this.Close();
+                                });
+                            }
+                        };
 
-                    Console.WriteLine("[MainWindow] LoginWindow shown, MainWindow hidden");
+                        desktop.MainWindow = loginWindow;
+                        loginWindow.Show();
+                        loginWindow.Activate();
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MainWindow] Error during logout: {ex.Message}");
                 Console.WriteLine($"[MainWindow] Stack trace: {ex.StackTrace}");
-            }
-            finally
-            {
-                // The IsSwapToLogin flag in App instance now manages the global state.
-                // No need to reset _isLoggingOut here.
             }
         }
 
@@ -9678,10 +15176,8 @@ namespace LeafClient.Views
 
         private async void AnimateBannersOnLoad()
         {
-            // --- MODIFIED: Check EnableNewContentIndicators ---
             if (!AreAnimationsEnabled() || !_currentSettings.EnableNewContentIndicators)
             {
-                // Use class fields directly
                 if (_promoBanner != null) { _promoBanner.Opacity = 1; if (_promoBanner.RenderTransform is TranslateTransform ttPromo) ttPromo.Y = 0; _promoBanner.IsVisible = true; }
                 if (_launchSection != null) { _launchSection.Opacity = 1; if (_launchSection.RenderTransform is TranslateTransform ttLaunch) ttLaunch.Y = 0; _launchSection.IsVisible = true; }
                 if (_newsSectionGrid != null) { _newsSectionGrid.Opacity = 1; if (_newsSectionGrid.RenderTransform is TranslateTransform ttNews) ttNews.Y = 0; _newsSectionGrid.IsVisible = true; }
@@ -9689,7 +15185,6 @@ namespace LeafClient.Views
             }
 
             await Task.Delay(100);
-            // Use class fields directly
             if (_promoBanner != null) { _promoBanner.Opacity = 1; if (_promoBanner.RenderTransform is TranslateTransform ttPromo) ttPromo.Y = 0; }
             await Task.Delay(150);
             if (_launchSection != null) { _launchSection.Opacity = 1; if (_launchSection.RenderTransform is TranslateTransform ttLaunch) ttLaunch.Y = 0; }
@@ -9724,12 +15219,11 @@ namespace LeafClient.Views
         {
             if (_particleLayer == null || _launchSection == null) return;
 
-            // If animations are disabled, stop and clear particles
             if (!AreAnimationsEnabled())
             {
                 _particleCts?.Cancel();
                 _particles.Clear();
-                _particleLayer?.Children.Clear(); // Use null-conditional operator here
+                _particleLayer?.Children.Clear(); 
                 return;
             }
             _particleCts?.Cancel();
@@ -9787,14 +15281,6 @@ namespace LeafClient.Views
             public Ellipse Shape; public double X; public double Y; public double Speed; public double Drift;
         }
 
-        private async void LoadFriendsAsync()
-        {
-            if (_friendsLoadingPanel != null) _friendsLoadingPanel.IsVisible = true;
-            if (_noFriendsMessage != null) _noFriendsMessage.IsVisible = false;
-            await Task.Delay(3000);
-            if (_friendsLoadingPanel != null) _friendsLoadingPanel.IsVisible = false;
-            if (_noFriendsMessage != null) _noFriendsMessage.IsVisible = true;
-        }
 
         private void OnNavButtonClick(object? sender, PointerPressedEventArgs e)
         {
@@ -9803,6 +15289,16 @@ namespace LeafClient.Views
                 AnimateSelectionIndicator(index);
                 _currentSelectedIndex = index;
                 SwitchToPage(index);
+
+                // The pointer is still over the just-clicked button, and it's now the
+                // selected one — so the indicator needs to match the button's hover
+                // scale right away. Without this, the indicator sits at 1.0 while the
+                // button is at 1.08 (visible gap) until the user un-hovers and re-hovers.
+                if (_selectionIndicator != null && border.IsPointerOver)
+                {
+                    _selectionIndicator.RenderTransform =
+                        Avalonia.Media.Transformation.TransformOperations.Parse("scale(1.10)");
+                }
             }
         }
 
@@ -9812,7 +15308,6 @@ namespace LeafClient.Views
             {
                 ShowProgress(true, $"Verifying Minecraft {version}...");
 
-                // Get the required files list without triggering install
                 var files = await _launcher.ExtractFiles(version);
                 bool allFilesPresent = files.All(f => System.IO.File.Exists(f.Path));
 
@@ -9823,7 +15318,6 @@ namespace LeafClient.Views
                     return true;
                 }
 
-                // Not all files present. Run InstallAsync to fetch missing ones.
                 await _launcher.InstallAsync(version);
                 ShowProgress(false);
 
@@ -9840,90 +15334,172 @@ namespace LeafClient.Views
         }
 
 
+        // Fade + subtle upward slide for every page transition.
+        // Call this right after setting a page's IsVisible = true.
+        private void AnimatePageIn(Avalonia.Controls.Control? page)
+        {
+            if (page == null) return;
+
+            // Wire up transitions once per page (idempotent).
+            if (page.Transitions == null || page.Transitions.Count == 0)
+            {
+                page.Transitions = new Avalonia.Animation.Transitions
+                {
+                    new Avalonia.Animation.DoubleTransition
+                    {
+                        Property = Avalonia.Visual.OpacityProperty,
+                        Duration = TimeSpan.FromMilliseconds(240),
+                        Easing = new Avalonia.Animation.Easings.CubicEaseOut()
+                    },
+                    new Avalonia.Animation.TransformOperationsTransition
+                    {
+                        Property = Avalonia.Visual.RenderTransformProperty,
+                        Duration = TimeSpan.FromMilliseconds(280),
+                        Easing = new Avalonia.Animation.Easings.CubicEaseOut()
+                    }
+                };
+            }
+
+            // Start state: invisible + 14px below target.
+            page.Opacity = 0;
+            page.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("translate(0px, 14px)");
+
+            // Next UI tick: animate to final state (transitions play over the interpolation).
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                page.Opacity = 1;
+                page.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("translate(0px, 0px)");
+            }, Avalonia.Threading.DispatcherPriority.Render);
+        }
+
         private async void SwitchToPage(int index)
         {
-            // Hide all pages
+            // Skins (5) is a hidden overlay-style page reached only via the
+            // "Edit Skin" button in the account panel.  Because it has no
+            // sidebar button, we keep the selection indicator pinned to
+            // whatever sidebar page the user was last on — otherwise the
+            // indicator visually jumps to the Settings slot (which was the
+            // fallback visual position for index 5) and looks like a bug.
+            int previousSelectedIndex = _currentSelectedIndex;
+            bool isSkinsOverlay = index == 5;
             if (_gamePage != null) _gamePage.IsVisible = false;
             if (_versionsPage != null) _versionsPage.IsVisible = false;
             if (_serversPage != null) _serversPage.IsVisible = false;
             if (_modsPage != null) _modsPage.IsVisible = false;
             if (_settingsPage != null) _settingsPage.IsVisible = false;
             if (_skinsPage != null) _skinsPage.IsVisible = false;
+            if (_cosmeticsPage != null) _cosmeticsPage.IsVisible = false;
+            if (_storePage != null) _storePage.IsVisible = false;
+            if (_screenshotsPage != null) _screenshotsPage.IsVisible = false;
 
-            // Stop the timer when switching away from the servers page
             _serverStatusRefreshTimer?.Stop();
 
-            // Show selected page
             switch (index)
             {
                 case 0:
-                    if (_gamePage != null) _gamePage.IsVisible = true;
+                    if (_gamePage != null) { _gamePage.IsVisible = true; AnimatePageIn(_gamePage); }
                     UpdateLaunchVersionText();
+                    RefreshPlaytimeStatsCard();
                     break;
 
                 case 1:
-                    if (_versionsPage != null) _versionsPage.IsVisible = true;
+                    if (_versionsPage != null) { _versionsPage.IsVisible = true; AnimatePageIn(_versionsPage); }
+                    RefreshProfilesPage();
                     break;
 
                 case 2:
-                    if (_serversPage != null) _serversPage.IsVisible = true;
+                    if (_serversPage != null) { _serversPage.IsVisible = true; AnimatePageIn(_serversPage); }
 
-                    // Ensure defaults exist here too
-                    await InitializeDefaultServersAsync();
-
-                    LoadServers();
-
-                    _ = Task.Run(async () =>
+                    if (!_serversLoaded)
                     {
-                        try
+                        _serversLoaded = true;
+                        await InitializeDefaultServersAsync();
+                        LoadServers();
+
+                        _ = Task.Run(async () =>
                         {
-                            await Task.Delay(100);
-                            await RefreshAllServerStatusesAsync();
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Server Status Initial] Error: {ex}");
-                        }
-                    });
+                            try
+                            {
+                                await Task.Delay(100);
+                                await RefreshAllServerStatusesAsync();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Server Status Initial] Error: {ex}");
+                            }
+                        });
+                    }
 
                     _serverStatusRefreshTimer?.Start();
                     break;
 
                 case 3:
-                    if (_modsPage != null) _modsPage.IsVisible = true;
+                    if (_modsPage != null) { _modsPage.IsVisible = true; AnimatePageIn(_modsPage); }
                     LoadUserMods();
+                    // Reset the Mods/Resource Packs sub-tab to "Mods" on entry
+                    if (this.FindControl<Border>("ModsTab_Mods") is { } modsPill)
+                    {
+                        OnModsTabTapped(modsPill, null!);
+                    }
                     break;
 
                 case 4:
-                    if (_settingsPage != null) _settingsPage.IsVisible = true;
+                    if (_settingsPage != null) { _settingsPage.IsVisible = true; AnimatePageIn(_settingsPage); }
                     if (!_settingsDirty) HideSettingsSaveBanner();
                     await CalculateDiskUsageAsync();
                     break;
 
                 case 5:
-                    if (_skinsPage != null) _skinsPage.IsVisible = true;
+                    if (_skinsPage != null) { _skinsPage.IsVisible = true; AnimatePageIn(_skinsPage); }
+                    break;
+
+                case 6:
+                    if (_cosmeticsPage != null) { _cosmeticsPage.IsVisible = true; AnimatePageIn(_cosmeticsPage); }
+                    _cosmeticsPage?.LoadCosmeticsPage();
+                    _ = SyncOwnedCosmeticsFromApiAsync();
+                    break;
+
+                case 7:
+                    if (_storePage != null) { _storePage.IsVisible = true; AnimatePageIn(_storePage); }
+                    _storePage?.LoadStorePage();
+                    break;
+
+                case 8:
+                    if (_screenshotsPage != null) { _screenshotsPage.IsVisible = true; AnimatePageIn(_screenshotsPage); }
+                    _screenshotsPage?.LoadScreenshotsPage();
                     break;
             }
 
             if (index != 4) HideSettingsSaveBanner();
 
-            _currentSelectedIndex = index;
+            if (isSkinsOverlay)
+            {
+                // Preserve sidebar selection; Skins doesn't own a sidebar slot.
+                _currentSelectedIndex = previousSelectedIndex;
+                AnimateSelectionIndicator(previousSelectedIndex);
+            }
+            else
+            {
+                _currentSelectedIndex = index;
+                AnimateSelectionIndicator(index);
+            }
             UpdateRichPresenceFromState();
         }
-
 
         private async Task<string?> EnsureFabricProfileAsync(string version)
         {
             Console.WriteLine($"[DEBUG] EnsureFabricProfileAsync started with version: '{version}'");
 
-            // Ensure base vanilla version present before Fabric install
             var baseOk = await EnsureMinecraftVersionInstalledAsync(version);
-            if (!baseOk) return null;
+            if (!baseOk)
+            {
+                Console.WriteLine($"[Fabric] Base version {version} could not be verified.");
+                return null;
+            }
 
             string versionsPath = System.IO.Path.Combine(_minecraftFolder, "versions");
             string? foundProfile = null;
 
-            // Check if Fabric profile already exists locally
             if (System.IO.Directory.Exists(versionsPath))
             {
                 foundProfile = System.IO.Directory.GetDirectories(versionsPath)
@@ -9942,7 +15518,6 @@ namespace LeafClient.Views
                 return foundProfile;
             }
 
-            // Install Fabric only if missing
             try
             {
                 UpdateLaunchButton("INSTALLING FABRIC...", "DeepSkyBlue");
@@ -9953,7 +15528,6 @@ namespace LeafClient.Views
                         .Install(version, new MinecraftPath(_minecraftFolder)));
 
                 ShowProgress(false);
-                UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
 
                 _currentSettings.SelectedFabricProfileName = foundProfile;
                 await _settingsService.SaveSettingsAsync(_currentSettings);
@@ -9961,13 +15535,13 @@ namespace LeafClient.Views
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Fabric] Install failed: {ex.Message}");
+                Console.WriteLine($"[Fabric] Install failed: {ex}");
+                if (ex.InnerException != null) Console.WriteLine($"[Fabric] Inner: {ex.InnerException}");
+
                 ShowProgress(false);
                 return null;
             }
         }
-
-
 
         private void OnMajorVersionClick(object? sender, RoutedEventArgs e)
         {
@@ -9982,19 +15556,14 @@ namespace LeafClient.Views
 
                 if (_versionDropdown != null)
                 {
-                    _versionDropdown.SelectionChanged -= OnSubVersionSelected; // Temporarily unsubscribe
-                    _versionDropdown.Items.Clear();
-
-                    foreach (var versionInfo in subVersions.OrderByDescending(v => v.FullVersion))
-                    {
-                        _versionDropdown.Items.Add(new ComboBoxItem { Content = versionInfo.FullVersion });
-                    }
+                    _versionDropdown.SelectionChanged -= OnSubVersionSelected; 
+                    _versionDropdown.ItemsSource = subVersions.OrderByDescending(v => v.FullVersion).ToList();
 
                     if (_versionDropdown.ItemCount > 0)
                     {
                         var savedSub = _currentSettings.SelectedSubVersion;
-                        var itemToSelect = _versionDropdown.Items.OfType<ComboBoxItem>()
-                            .FirstOrDefault(item => item.Content?.ToString() == savedSub);
+                        var itemToSelect = _versionDropdown.Items.OfType<VersionInfo>()
+                            .FirstOrDefault(item => item.FullVersion == savedSub);
 
                         if (itemToSelect != null)
                         {
@@ -10005,12 +15574,10 @@ namespace LeafClient.Views
                             _versionDropdown.SelectedIndex = 0;
                         }
 
-                        // Explicitly call OnSubVersionSelected to update UI for the newly selected item,
-                        // even if the selection didn't technically "change" (e.g., first item remains selected).
-                        OnSubVersionSelected(null, null); // Pass null for sender/e as it's a programmatic call
+                        OnSubVersionSelected(null, null); 
                     }
 
-                    _versionDropdown.SelectionChanged += OnSubVersionSelected; // Re-subscribe
+                    _versionDropdown.SelectionChanged += OnSubVersionSelected; 
                 }
 
                 _currentSettings.SelectedMajorVersion = majorVersion;
@@ -10018,98 +15585,36 @@ namespace LeafClient.Views
             UpdateRichPresenceFromState();
         }
 
-        private async Task<bool> InstallFabricApiIfNeededAsync(string mcVersion, string versionFolderName)
-        {
-            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
-            System.IO.Directory.CreateDirectory(modsFolder);
-
-            string fabricApiPath = System.IO.Path.Combine(modsFolder, $"fabric-api-{mcVersion}.jar");
-
-            // Even if it exists, we ensure it's registered in settings
-            bool fileExists = System.IO.File.Exists(fabricApiPath);
-
-            try
-            {
-                // If file exists, we might still want to register it if it's missing from settings
-                // But to be safe and simple, we'll just run the install check logic.
-
-                if (fileExists && _currentSettings.InstalledMods.Any(m => m.ModId == "fabric-api" && m.MinecraftVersion == mcVersion))
-                {
-                    Console.WriteLine($"[Fabric API] Fabric API for {mcVersion} already exists and is tracked.");
-                    return true;
-                }
-
-                ShowProgress(true, $"Installing Fabric API for {mcVersion}...");
-
-                using var client = new HttpClient();
-                var apiUrl = $"https://api.modrinth.com/v2/project/P7dR8mSH/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
-                var response = await client.GetStringAsync(apiUrl);
-
-                if (string.IsNullOrWhiteSpace(response)) throw new Exception("Empty response from Modrinth API");
-
-                var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
-                var latest = versions?.FirstOrDefault();
-
-                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found");
-
-                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
-                var downloadUrl = file.url;
-
-                if (!fileExists)
-                {
-                    var jarBytes = await client.GetByteArrayAsync(downloadUrl);
-                    await System.IO.File.WriteAllBytesAsync(fabricApiPath, jarBytes);
-                    Console.WriteLine($"[Fabric API] Installed file for {mcVersion}");
-                }
-
-                // TRACKING FIX: Register the mod so the cleaner knows about it later
-                string fileName = $"fabric-api-{mcVersion}.jar";
-                await RegisterAutoInstalledMod("fabric-api", "Fabric API", latest.versionNumber, mcVersion, fileName, downloadUrl);
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Fabric API] Install failed: {ex.Message}");
-                return false;
-            }
-            finally
-            {
-                ShowProgress(false);
-            }
-        }
-
-
         private async void OnSubVersionSelected(object? sender, SelectionChangedEventArgs? e)
         {
-            if (_versionDropdown?.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content is string selectedSubVersion)
+            if (_versionDropdown?.SelectedItem is VersionInfo selectedVersionInfo)
             {
+                string selectedSubVersion = selectedVersionInfo.FullVersion;
                 _currentSettings.SelectedSubVersion = selectedSubVersion;
+                // Selecting a version explicitly in the dropdown overrides any active profile.
+                _currentSettings.ActiveProfileId = null;
 
-                var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == selectedSubVersion);
-                if (selectedVersionInfo != null)
+                var currentVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == selectedSubVersion);
+                if (currentVersionInfo != null)
                 {
-                    _currentSettings.SelectedMajorVersion = selectedVersionInfo.MajorVersion;
+                    _currentSettings.SelectedMajorVersion = currentVersionInfo.MajorVersion;
 
-                    // Check compatibility: Fabric requires 1.14+
                     bool isFabricCompatible = Version.TryParse(selectedSubVersion, out Version? semver) &&
                                               semver >= new Version(1, 14);
 
                     string savedLoader = GetSelectedAddon(selectedSubVersion);
 
-                    // FORCE Vanilla if Fabric is not supported for this version
                     if (!isFabricCompatible)
                     {
                         savedLoader = "Vanilla";
 
-                        // Ensure the dictionary exists and update the preference to Vanilla
                         if (_currentSettings.SelectedAddonByVersion == null)
                             _currentSettings.SelectedAddonByVersion = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
                         _currentSettings.SelectedAddonByVersion[selectedSubVersion] = "Vanilla";
                     }
 
-                    selectedVersionInfo.Loader = savedLoader;
+                    currentVersionInfo.Loader = savedLoader;
                 }
 
                 await _settingsService.SaveSettingsAsync(_currentSettings);
@@ -10126,6 +15631,7 @@ namespace LeafClient.Views
             UpdateRichPresenceFromState();
         }
 
+
         private async Task<string?> FindClosestOptiFineForFabricVersionAsync(string targetVersion)
         {
             try
@@ -10134,11 +15640,10 @@ namespace LeafClient.Views
                 string apiUrl = "https://api.modrinth.com/v2/project/BHtwz1lb/version";
                 string response = await client.GetStringAsync(apiUrl);
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var allVersions = JsonSerializer.Deserialize<List<ModrinthVersion>>(response, Json.Options);
+                var allVersions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
 
                 if (allVersions == null) return null;
 
-                // Parse target version (e.g., "1.21.3" → [1, 21, 3])
                 var targetParts = targetVersion.Split('.').Select(int.Parse).ToArray();
                 Version targetSemver = targetParts.Length switch
                 {
@@ -10178,16 +15683,33 @@ namespace LeafClient.Views
         {
             if (_launchVersionText != null)
             {
-                var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
-                if (selectedVersionInfo != null)
+                // Prefer active profile display
+                var activeProfile = _currentSettings.Profiles?
+                    .FirstOrDefault(p => p.Id == _currentSettings.ActiveProfileId);
+
+                if (activeProfile != null)
                 {
-                    // Use the Loader property directly from the VersionInfo object
-                    // which is updated in OnSubVersionSelected
-                    _launchVersionText.Text = $"Leaf Client {selectedVersionInfo.FullVersion} with {selectedVersionInfo.Loader}";
+                    string loaderLabel = activeProfile.ModPreset switch
+                    {
+                        "none"     => "Vanilla",
+                        "lite"     => "with Lite Mods",
+                        "balanced" => "with Fabric",
+                        "enhanced" => "with Enhanced Fabric",
+                        _          => "with Fabric"
+                    };
+                    _launchVersionText.Text = $"Leaf Client {activeProfile.MinecraftVersion} {loaderLabel}";
                 }
                 else
                 {
-                    _launchVersionText.Text = "Leaf Client (Version Not Selected)";
+                    var selectedVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
+                    if (selectedVersionInfo != null)
+                    {
+                        _launchVersionText.Text = $"Leaf Client {selectedVersionInfo.FullVersion} with {selectedVersionInfo.Loader}";
+                    }
+                    else
+                    {
+                        _launchVersionText.Text = "Leaf Client";
+                    }
                 }
                 if (!_isLaunching)
                     UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
@@ -10196,10 +15718,10 @@ namespace LeafClient.Views
         }
 
 
-
         private void PopulateAllVersionsData()
         {
-            _allVersions.Add(new VersionInfo("1.21.10", "1.21", "Latest Release", "Fabric", "December 26, 2025", "Further refinements and bug fixes for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.11", "1.21", "Latest Release", "Fabric", "January 14, 2026", "Latest refinements and bug fixes for the Tricky Trials Update."));
+            _allVersions.Add(new VersionInfo("1.21.10", "1.21", "Release", "Fabric", "December 26, 2025", "Further refinements and bug fixes for the Tricky Trials Update."));
             _allVersions.Add(new VersionInfo("1.21.9", "1.21", "Release", "Fabric", "December 19, 2025", "More bug fixes and optimizations for the Tricky Trials Update."));
             _allVersions.Add(new VersionInfo("1.21.8", "1.21", "Release", "Fabric", "December 12, 2025", "Additional bug fixes and performance improvements for the Tricky Trials Update."));
             _allVersions.Add(new VersionInfo("1.21.7", "1.21", "Release", "Fabric", "December 5, 2025", "Minor bug fixes for the Tricky Trials Update."));
@@ -10251,74 +15773,124 @@ namespace LeafClient.Views
             _allVersions.Add(new VersionInfo("1.7.5", "1.7", "Legacy", "Vanilla", "February 26, 2014", "Performance improvements."));
             _allVersions.Add(new VersionInfo("1.7.4", "1.7", "Legacy", "Vanilla", "December 10, 2013", "Bug fixes."));
             _allVersions.Add(new VersionInfo("1.7.2", "1.7", "Release", "Vanilla", "October 25, 2013", "The Update that Changed the World: new biomes and fishing mechanics."));
+
+            var leafClientSupportedVersions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "1.20.1",
+                "1.20.2",
+                "1.21.1",
+                "1.21.2",
+                "1.21.3",
+                "1.21.4",
+                "1.21.5",
+                "1.21.6",
+                "1.21.7",
+                "1.21.8",
+                "1.21.9",
+                "1.21.10",
+                "1.21.11"
+            };
+
+            foreach (var version in _allVersions)
+            {
+                if (leafClientSupportedVersions.Contains(version.FullVersion))
+                {
+                    version.IsLeafClientModSupported = true;
+                    version.IsFullySupported = true;
+                    version.SupportLevel = SupportLevel.FullSupport;
+                }
+                else
+                {
+                    // Set appropriate support level for non-fully-supported versions
+                    version.SupportLevel = SupportLevel.VanillaOnly;
+                }
+            }
         }
-
-
-
         private void AnimateSelectionIndicator(int index)
         {
-            if (_selectionIndicator == null || _settingsIndicator == null) return;
+            if (_selectionIndicator == null) return;
 
             bool animationsEnabled = AreAnimationsEnabled();
 
-            // First, set the transitions based on the animation setting
             if (animationsEnabled && _savedSelectionIndicatorTransitions != null)
             {
                 var newTransitions = new Transitions();
-                foreach (var t in _savedSelectionIndicatorTransitions)
-                {
-                    newTransitions.Add(t);
-                }
+                foreach (var t in _savedSelectionIndicatorTransitions) newTransitions.Add(t);
                 _selectionIndicator.Transitions = newTransitions;
             }
             else
             {
-                _selectionIndicator.Transitions = new Transitions(); // No transitions
+                _selectionIndicator.Transitions = new Transitions();
             }
 
-            if (animationsEnabled && _savedSettingsIndicatorTransitions != null)
+            // Map page index (tag) to visual sidebar position.
+            // Visual order (left→right): Game(0), Versions(1), Servers(2), Mods(3),
+            // Cosmetics(tag6→4), Store(tag7→5), Screenshots(tag8→6), Settings(tag4→7).
+            // Skins (index 5) has no sidebar slot — SwitchToPage preserves the
+            // previous selection instead of calling us with 5.
+            int visualPosition = index switch
             {
-                var newTransitions = new Transitions();
-                foreach (var t in _savedSettingsIndicatorTransitions)
-                {
-                    newTransitions.Add(t);
-                }
-                _settingsIndicator.Transitions = newTransitions;
-            }
-            else
-            {
-                _settingsIndicator.Transitions = new Transitions(); // No transitions
-            }
+                6 => 4,  // Cosmetics
+                7 => 5,  // Store
+                8 => 6,  // Screenshots
+                4 => 7,  // Settings
+                _ => index
+            };
+            double leftOffset = visualPosition * 60;
 
-
-            // Now, apply the visual state (margin, opacity, visibility)
-            // This logic is the same regardless of animationsEnabled,
-            // as the 'Transitions' property will handle if it animates or snaps.
-            if (index == 4) // Settings button is selected
-            {
-                _selectionIndicator.Opacity = 0;
-                _settingsIndicator.IsVisible = true;
-                _settingsIndicator.Opacity = 0.3;
-            }
-            else // Any other sidebar button is selected
-            {
-                _selectionIndicator.Opacity = 0.3;
-                _settingsIndicator.Opacity = 0;
-                _settingsIndicator.IsVisible = false;
-                _selectionIndicator.Margin = new Thickness(10, index * 60, 10, 0);
-            }
+            _selectionIndicator.Opacity = 0.55;
+            _selectionIndicator.Margin = new Thickness(leftOffset, 0, 0, 0);
         }
+
+
+        private void PositionTooltipNextTo(Border button)
+        {
+            if (_sidebarHoverTooltip == null) return;
+
+            var origin = button.TranslatePoint(new Point(0, 0), this);
+            if (!origin.HasValue) return;
+
+            // The tooltip's Bounds.Width reflects the layout from the *previous* text.
+            // When we switch from a long label like "RESOURCE PACKS" to a short one
+            // like "STORE" (or vice versa), that stale width makes the centering math
+            // wrong. Force a measure pass with the fresh text first, then use DesiredSize.
+            _sidebarHoverTooltip.InvalidateMeasure();
+            _sidebarHoverTooltip.Measure(Avalonia.Size.Infinity);
+            double tooltipWidth = _sidebarHoverTooltip.DesiredSize.Width;
+            if (tooltipWidth <= 0)
+                tooltipWidth = _sidebarHoverTooltip.Bounds.Width > 0 ? _sidebarHoverTooltip.Bounds.Width : 80;
+
+            double buttonCenterX = origin.Value.X + (button.Bounds.Width / 2.0);
+            double left = buttonCenterX - (tooltipWidth / 2.0);
+
+            // Position tooltip below the button (Button Y + Height + Spacing)
+            double top = origin.Value.Y + button.Bounds.Height + 10;
+
+            Canvas.SetLeft(_sidebarHoverTooltip, left);
+            Canvas.SetTop(_sidebarHoverTooltip, top);
+
+            // A second positioning pass once the actual Bounds are known after layout
+            // catches any rounding drift. Avalonia resolves layout on the render thread,
+            // so this runs after the text has been measured with the fresh content.
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (_sidebarHoverTooltip == null) return;
+                double realWidth = _sidebarHoverTooltip.Bounds.Width;
+                if (realWidth <= 0) return;
+                double fixedLeft = buttonCenterX - (realWidth / 2.0);
+                Canvas.SetLeft(_sidebarHoverTooltip, fixedLeft);
+            }, Avalonia.Threading.DispatcherPriority.Render);
+        }
+
 
         private void MinimizeWindow(object? s, RoutedEventArgs e)
         {
             WindowState = WindowState.Minimized;
-            // Minimize button ONLY minimizes, never goes to tray
         }
 
         private void MaximizeWindow(object? s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
         private void CloseWindow(object? s, RoutedEventArgs e)
         {
-            // X button behavior depends on MinimizeToTray setting
             if (_currentSettings.MinimizeToTray)
             {
                 MinimizeToTray();
@@ -10332,10 +15904,9 @@ namespace LeafClient.Views
 
         protected override void OnClosed(EventArgs e)
         {
-            // Only kill Minecraft process and dispose tray icon
-            // Do NOT dispose the log writer here - it's handled in OnWindowClosing for true shutdown
+            _parallaxCts?.Cancel();
             KillMinecraftProcess();
-            if (_trayIcon != null) // Removed _isLoggingOut check
+            if (_trayIcon != null)
             {
                 _trayIcon.IsVisible = false;
                 _trayIcon.Dispose();
@@ -10349,15 +15920,197 @@ namespace LeafClient.Views
             if (banner != null) banner.IsVisible = false;
         }
 
-        private async void OnLaunchSectionPointerEntered(object? s, PointerEventArgs e) => await AnimateScaleTransform(_launchBgScale, 1.06, 220, (cts) => _launchBgCts = cts, () => _launchBgCts);
-        private async void OnLaunchSectionPointerExited(object? s, PointerEventArgs e) => await AnimateScaleTransform(_launchBgScale, 1.00, 220, (cts) => _launchBgCts = cts, () => _launchBgCts);
+        // ── ColorBtn shimmer sweep ─────────────────────────────────────────────
+        // AddClassHandler registers at the Avalonia class level so it fires for
+        // every Button instance (AXAML or C#), even though PointerEntered is a
+        // direct (non-bubbling) routed event.
+
+        private static bool _shimmerRegistered;
+        private static readonly Dictionary<Button, DispatcherTimer> _shimmerTimers = new();
+
+        private static void RegisterColorBtnShimmer()
+        {
+            if (_shimmerRegistered) return;
+            _shimmerRegistered = true;
+            Button.PointerEnteredEvent.AddClassHandler<Button>((btn, e) =>
+            {
+                if (btn.Classes.Contains("ColorBtn"))
+                    StartButtonShimmer(btn);
+            });
+        }
+
+        private static void StartButtonShimmer(Button btn)
+        {
+            // Stop any existing timer so rapid re-hovers don't stack.
+            if (_shimmerTimers.TryGetValue(btn, out var existing))
+            {
+                existing.Stop();
+                _shimmerTimers.Remove(btn);
+            }
+
+            var shimmer = btn.GetVisualDescendants().OfType<Border>()
+                .FirstOrDefault(b => b.Name == "PART_Shimmer");
+            if (shimmer == null) return;
+
+            // Full-width overlay approach: instead of translating a fixed-pixel stripe
+            // (which always looks like a thin line), we sweep gradient stop OFFSETS across
+            // the [0..1] coordinate space of the full-button-width overlay.
+            // Offsets outside [0..1] are valid in Avalonia — the gradient pads with the
+            // nearest stop colour (Transparent), so the shimmer naturally fades in from
+            // off-screen left and out off-screen right.
+            const double halfW  = 0.30;                  // shimmer half-width = 30% of button
+            const double startC = -(halfW + 0.05);        // center begins just off the left edge
+            const double endC   = 1.0 + halfW + 0.05;    // center ends just off the right edge
+
+            var fadeLeft  = new GradientStop(Colors.Transparent, startC - halfW);
+            var bright    = new GradientStop(Color.FromArgb(210, 255, 255, 255), startC);
+            var fadeRight = new GradientStop(Colors.Transparent, startC + halfW);
+
+            shimmer.Background = new LinearGradientBrush
+            {
+                StartPoint    = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint      = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops = new GradientStops { fadeLeft, bright, fadeRight }
+            };
+            shimmer.RenderTransform = null;
+
+            void SetCenter(double center)
+            {
+                fadeLeft.Offset  = center - halfW;
+                bright.Offset    = center;
+                fadeRight.Offset = center + halfW;
+                shimmer.InvalidateVisual();
+            }
+
+            SetCenter(startC);
+
+            const int sweepMs     = 550;
+            const int pauseMs     = 100;
+            const int totalSweeps = 2;
+
+            int  sweepCount = 0;
+            bool inPause    = false;
+            var  sw         = System.Diagnostics.Stopwatch.StartNew();
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _shimmerTimers[btn] = timer;
+
+            timer.Tick += (_, _) =>
+            {
+                if (sweepCount >= totalSweeps)
+                {
+                    SetCenter(startC); // push gradient off-screen so it disappears
+                    timer.Stop();
+                    _shimmerTimers.Remove(btn);
+                    return;
+                }
+
+                long elapsed = sw.ElapsedMilliseconds;
+
+                if (inPause)
+                {
+                    if (elapsed >= pauseMs)
+                    {
+                        inPause = false;
+                        sw.Restart();
+                        SetCenter(startC);
+                    }
+                    return;
+                }
+
+                if (elapsed >= sweepMs)
+                {
+                    sweepCount++;
+                    SetCenter(startC);
+                    if (sweepCount < totalSweeps)
+                    {
+                        inPause = true;
+                        sw.Restart();
+                    }
+                    return;
+                }
+
+                double t      = elapsed / (double)sweepMs;
+                double eased  = t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2;
+                SetCenter(startC + (endC - startC) * eased);
+            };
+
+            timer.Start();
+        }
+
+        private async void OnLaunchSectionPointerEntered(object? s, PointerEventArgs e) => await AnimateScaleTransform(_launchBgScale, 1.10, 220, (cts) => _launchBgCts = cts, () => _launchBgCts);
+        private async void OnLaunchSectionPointerExited(object? s, PointerEventArgs e)
+        {
+            await AnimateScaleTransform(_launchBgScale, 1.08, 220, (cts) => _launchBgCts = cts, () => _launchBgCts);
+            // Reset parallax target to center when mouse leaves
+            _parallaxTargetX = 0;
+            _parallaxTargetY = 0;
+        }
+
+        private void OnLaunchSectionPointerMoved(object? s, PointerEventArgs e)
+        {
+            if (_launchSection == null) return;
+            var pos = e.GetPosition(_launchSection);
+            double w = _launchSection.Bounds.Width;
+            double h = _launchSection.Bounds.Height;
+            if (w <= 0 || h <= 0) return;
+
+            // Normalize to -1..1 from center
+            double nx = (pos.X / w - 0.5) * 2.0;
+            double ny = (pos.Y / h - 0.5) * 2.0;
+
+            // Max parallax offset in pixels
+            const double maxOffset = 18.0;
+            _parallaxTargetX = -nx * maxOffset;
+            _parallaxTargetY = -ny * maxOffset;
+        }
+
+        /// <summary>
+        /// Runs a smooth lerp loop on a background thread that moves the bg image
+        /// toward the latest parallax target. 60fps, lerp factor ~0.06 per frame.
+        /// </summary>
+        private void StartParallaxLoop()
+        {
+            _parallaxCts?.Cancel();
+            _parallaxCts = new CancellationTokenSource();
+            var token = _parallaxCts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(16, token).ContinueWith(_ => { }); // ~60 fps, swallow cancel
+                    if (token.IsCancellationRequested) break;
+
+                    double tx = _parallaxTargetX;
+                    double ty = _parallaxTargetY;
+                    double cx = _parallaxCurrentX;
+                    double cy = _parallaxCurrentY;
+
+                    const double lerpFactor = 0.06;
+                    double nx = cx + (tx - cx) * lerpFactor;
+                    double ny = cy + (ty - cy) * lerpFactor;
+
+                    _parallaxCurrentX = nx;
+                    _parallaxCurrentY = ny;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_launchBgTranslate != null)
+                        {
+                            _launchBgTranslate.X = nx;
+                            _launchBgTranslate.Y = ny;
+                        }
+                    });
+                }
+            }, token);
+        }
 
         private void OnAnimationsEnabledChanged()
         {
             bool animationsEnabled = AreAnimationsEnabled();
             Transitions emptyTransitions = new Transitions();
 
-            // Helper to apply/clear transitions
             void SetTransitions(Control? control, IList<ITransition>? savedTransitions)
             {
                 if (control == null) return;
@@ -10367,6 +16120,12 @@ namespace LeafClient.Views
                     var newTransitions = new Transitions();
                     foreach (var t in savedTransitions)
                     {
+                        // To avoid CS0122, we need to re-create the transition rather than copying directly
+                        // and assuming 'Property' is accessible.
+                        // However, for the account panel, we're now explicitly defining it below.
+                        // For other controls, if 'savedTransitions' holds public properties, this might work.
+                        // For now, let's assume 'savedTransitions' is correctly constructed in InitializeControls
+                        // and contains transitions that are safe to re-add.
                         newTransitions.Add(t);
                     }
                     control.Transitions = newTransitions;
@@ -10377,7 +16136,6 @@ namespace LeafClient.Views
                 }
             }
 
-            // Helper to set transform and opacity directly if animations are off
             void SetToFinalState(Control? control, double finalY = 0, double finalX = 0, double finalOpacity = 1.0)
             {
                 if (control == null || animationsEnabled) return;
@@ -10389,25 +16147,20 @@ namespace LeafClient.Views
                 }
                 else if (control.RenderTransform is ScaleTransform st)
                 {
-                    st.ScaleX = st.ScaleY = 1.0; // Assuming 1.0 is the "final" non-hovered state for scale
+                    st.ScaleX = st.ScaleY = 1.0;
                 }
                 control.Opacity = finalOpacity;
-                control.IsVisible = (finalOpacity > 0); // Set visibility based on opacity
+                control.IsVisible = (finalOpacity > 0);
             }
 
-            // Selection Indicator - now handled by AnimateSelectionIndicator
-            // Just ensure its transitions are correctly set
             SetTransitions(_selectionIndicator, _savedSelectionIndicatorTransitions);
             SetTransitions(_settingsIndicator, _savedSettingsIndicatorTransitions);
-            // After setting transitions, re-apply the current selection state
             AnimateSelectionIndicator(_currentSelectedIndex);
 
             SetTransitions(_gameStartingBanner, _gameStartingBanner?.Transitions?.ToList());
             SetToFinalState(_gameStartingBanner, finalY: -100, finalOpacity: 0);
 
-            // Promo Banner (initially hidden, Y=80, Opacity=0; final visible state Y=0, Opacity=1)
             SetTransitions(_promoBanner, _savedPromoBannerTransitions);
-            // --- MODIFIED: Only show if enabled in settings ---
             if (animationsEnabled && _currentSettings.EnableNewContentIndicators)
             {
                 SetToFinalState(_promoBanner, finalY: 0, finalOpacity: 1.0);
@@ -10416,15 +16169,11 @@ namespace LeafClient.Views
             {
                 SetToFinalState(_promoBanner, finalY: 80, finalOpacity: 0);
             }
-            // --- END MODIFIED ---
 
-            // Launch Section (initially hidden, Y=80, Opacity=0; final visible state Y=0, Opacity=1)
             SetTransitions(_launchSection, _savedLaunchSectionTransitions);
             SetToFinalState(_launchSection, finalY: 0, finalOpacity: 1.0);
 
-            // News Section Grid (initially hidden, Y=80, Opacity=0; final visible state Y=0, Opacity=1)
             SetTransitions(_newsSectionGrid, _savedNewsSectionGridTransitions);
-            // --- MODIFIED: Only show if enabled in settings ---
             if (animationsEnabled && _currentSettings.EnableNewContentIndicators)
             {
                 SetToFinalState(_newsSectionGrid, finalY: 0, finalOpacity: 1.0);
@@ -10433,62 +16182,57 @@ namespace LeafClient.Views
             {
                 SetToFinalState(_newsSectionGrid, finalY: 80, finalOpacity: 0);
             }
-            // --- END MODIFIED ---
 
-            // Launch Error Banner (initially hidden, Opacity=0; final visible state Opacity=1)
             SetTransitions(_launchErrorBanner, _savedLaunchErrorBannerTransitions);
             SetToFinalState(_launchErrorBanner, finalOpacity: 0);
 
-            // Settings Save Banner (Visibility and position depend on _settingsDirty)
             SetTransitions(_settingsSaveBanner, _savedSettingsSaveBannerTransitions);
             if (!animationsEnabled && _settingsDirty && _settingsSaveBanner != null)
             {
-                // If animations are off and settings are dirty, ensure it's visible instantly
-                if (_settingsSaveBanner.RenderTransform is TranslateTransform tt) tt.Y = 0; // Visible position
+                if (_settingsSaveBanner.RenderTransform is TranslateTransform tt) tt.Y = 0;
                 _settingsSaveBanner.Opacity = 1;
                 _settingsSaveBanner.IsVisible = true;
             }
             else if (!animationsEnabled && !_settingsDirty && _settingsSaveBanner != null)
             {
-                // If animations are off and settings are NOT dirty, ensure it's hidden instantly
-                if (_settingsSaveBanner.RenderTransform is TranslateTransform tt) tt.Y = 80; // Hidden position
+                if (_settingsSaveBanner.RenderTransform is TranslateTransform tt) tt.Y = 80;
                 _settingsSaveBanner.Opacity = 0;
                 _settingsSaveBanner.IsVisible = false;
             }
-            // If animations are enabled, its state is managed by Show/HideSettingsSaveBanner, which will animate.
 
 
-            // Account Panel (transitions are on its RenderTransform)
             if (_accountPanel?.RenderTransform is TranslateTransform accountPanelTt)
             {
-                if (animationsEnabled && _savedAccountPanelTransitions != null)
+                if (animationsEnabled)
                 {
-                    var newTransitions = new Transitions();
-                    foreach (var t in _savedAccountPanelTransitions)
+                    // Restore original transitions when animations are enabled
+                    if (_savedAccountPanelTransitions != null)
                     {
-                        newTransitions.Add(t);
+                        var newTransitions = new Transitions();
+                        foreach (var t in _savedAccountPanelTransitions)
+                        {
+                            newTransitions.Add(t);
+                        }
+                        _accountPanel.Transitions = newTransitions;
                     }
-                    accountPanelTt.Transitions = newTransitions;
                 }
                 else
                 {
-                    accountPanelTt.Transitions = emptyTransitions;
+                    // Clear transitions when animations are disabled
+                    _accountPanel.Transitions = emptyTransitions;
                 }
             }
-            SetToFinalState(_accountPanel, finalX: 320, finalOpacity: 0); // Initially hidden
+            // When animations are disabled, explicitly set the final state to off-screen and invisible
+            // This ensures it starts correctly if animations are enabled later.
+            SetToFinalState(_accountPanel, finalX: (_accountPanel?.Bounds.Width ?? 400), finalOpacity: 0);
 
 
-            // Sidebar Hover Tooltip (initially hidden, Opacity=0)
             SetTransitions(_sidebarHoverTooltip, _savedTooltipTransitions);
             SetToFinalState(_sidebarHoverTooltip, finalOpacity: 0);
 
-            // Quick Play Tooltip (initially hidden, Opacity=0)
             SetTransitions(_quickPlayTooltip, _savedQuickPlayTooltipTransitions);
             SetToFinalState(_quickPlayTooltip, finalOpacity: 0);
 
-            // Sidebar Icons (Margin transitions)
-            // For sidebar buttons, we need to ensure their transitions are set,
-            // and their margins are reset if animations are disabled
             SetTransitions(_gameButton, _savedGameButtonTransitions);
             if (!animationsEnabled && _gameButton != null) _gameButton.Margin = new Thickness(0);
 
@@ -10505,16 +16249,14 @@ namespace LeafClient.Views
             if (!animationsEnabled && _settingsButton != null) _settingsButton.Margin = new Thickness(0);
 
 
-            // Particle animation
             if (!animationsEnabled)
             {
-                _particleCts?.Cancel(); // Stop particle generation
-                _particles.Clear(); // Clear existing particles
-                _particleLayer?.Children.Clear(); // Clear particles from UI
+                _particleCts?.Cancel();
+                _particles.Clear();
+                _particleLayer?.Children.Clear();
             }
             else
             {
-                // If animations are enabled and particles are not running, restart them.
                 if (_particleCts == null || _particleCts.IsCancellationRequested)
                 {
                     CreateParticles();
@@ -10527,6 +16269,80 @@ namespace LeafClient.Views
         private async void OnNewsItem1PointerExited(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem1Scale, 1.00, 200, (cts) => _newsItem1Cts = cts, () => _newsItem1Cts);
         private async void OnNewsItem2PointerEntered(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem2Scale, 1.05, 200, (cts) => _newsItem2Cts = cts, () => _newsItem2Cts);
         private async void OnNewsItem2PointerExited(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem2Scale, 1.00, 200, (cts) => _newsItem2Cts = cts, () => _newsItem2Cts);
+
+        // ══════════════════════════════════════════════════════
+        //  MAJOR UPDATE badge — animated purple gradient
+        // ══════════════════════════════════════════════════════
+        //
+        // The badge on the NewsItem1 (UI & UX Overhaul) card uses a two-stop
+        // LinearGradientBrush whose stop colors are continuously rewritten
+        // from a background task. Each stop walks a 3-anchor purple cycle
+        // (dark → medium → light → dark) at a slight phase offset from the
+        // other, so the gradient appears to drift smoothly across the badge
+        // while always staying in the purple family.
+        private void StartMajorUpdateBadgeAnimation()
+        {
+            if (_majorUpdateBadge == null) return;
+            if (_majorUpdateBadge.Background is not LinearGradientBrush brush) return;
+            if (brush.GradientStops == null || brush.GradientStops.Count < 2) return;
+
+            var stop1 = brush.GradientStops[0];
+            var stop2 = brush.GradientStops[1];
+
+            _majorUpdateBadgeCts?.Cancel();
+            _majorUpdateBadgeCts = new CancellationTokenSource();
+            var token = _majorUpdateBadgeCts.Token;
+
+            // Three purple anchor colors to cycle through.
+            var anchors = new[]
+            {
+                Color.FromRgb(0x6A, 0x1B, 0x9A), // dark purple  (Material Purple 800)
+                Color.FromRgb(0xAB, 0x47, 0xBC), // medium purple (Material Purple 400)
+                Color.FromRgb(0xCE, 0x93, 0xD8), // light purple  (Material Purple 200)
+            };
+
+            Task.Run(async () =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                const double periodSec = 3.2; // full cycle duration
+
+                while (!token.IsCancellationRequested)
+                {
+                    double t = (sw.Elapsed.TotalSeconds / periodSec) % 1.0;
+                    // Walk across all 3 anchors over one period (multiply by anchor count).
+                    double phase1 = t * anchors.Length;
+                    double phase2 = (t + 0.33) * anchors.Length;
+
+                    Color c1 = SampleColorCycle(anchors, phase1);
+                    Color c2 = SampleColorCycle(anchors, phase2);
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        stop1.Color = c1;
+                        stop2.Color = c2;
+                    });
+
+                    try { await Task.Delay(16, token); }
+                    catch (TaskCanceledException) { break; }
+                }
+            }, token);
+        }
+
+        // Samples a position along a closed cycle of color anchors via linear
+        // interpolation. `phase` is in [0, anchors.Length); wrapping is handled.
+        private static Color SampleColorCycle(Color[] anchors, double phase)
+        {
+            int n = anchors.Length;
+            phase = ((phase % n) + n) % n; // positive modulo
+            int i = (int)phase;
+            double frac = phase - i;
+            Color a = anchors[i];
+            Color b = anchors[(i + 1) % n];
+            return Color.FromRgb(
+                (byte)(a.R + (b.R - a.R) * frac),
+                (byte)(a.G + (b.G - a.G) * frac),
+                (byte)(a.B + (b.B - a.B) * frac));
+        }
 
 
         /// <summary>
@@ -10548,56 +16364,50 @@ namespace LeafClient.Views
         {
             if (st == null) return;
 
-            // Get the current CTS from the field via the Func
             CancellationTokenSource? currentCts = getCtsFunc();
 
-            // If animations are disabled, snap to the target immediately
             if (!AreAnimationsEnabled())
             {
                 st.ScaleX = st.ScaleY = target;
                 currentCts?.Cancel();
                 currentCts?.Dispose();
-                setCtsAction(null); // Clear the CTS field
+                setCtsAction(null); 
                 return;
             }
 
-            // Cancel any existing animation for this specific ScaleTransform
             currentCts?.Cancel();
-            currentCts?.Dispose(); // Dispose the old one
+            currentCts?.Dispose(); 
 
-            // Create a new CancellationTokenSource for the current animation and set it to the field
             CancellationTokenSource newCts = new CancellationTokenSource();
-            setCtsAction(newCts); // Update the field with the new CTS
+            setCtsAction(newCts); 
             var ct = newCts.Token;
 
             double start = st.ScaleX;
             double delta = target - start;
 
-            // If already at target or very close, just set and return to avoid unnecessary animation
             if (Math.Abs(delta) < 0.001)
             {
                 st.ScaleX = st.ScaleY = target;
                 newCts.Dispose();
-                setCtsAction(null); // Clear the CTS field
+                setCtsAction(null); 
                 return;
             }
 
-            const int steps = 16; // Number of steps for the animation
+            const int steps = 16; 
             int delayMs = durationMs / steps;
 
             try
             {
                 for (int i = 1; i <= steps; i++)
                 {
-                    ct.ThrowIfCancellationRequested(); // Check for cancellation at each step
+                    ct.ThrowIfCancellationRequested(); 
 
                     double t = (double)i / steps;
-                    double eased = 1 - Math.Pow(1 - t, 3); // Cubic ease out
+                    double eased = 1 - Math.Pow(1 - t, 3); 
 
-                    // Dispatcher.UIThread.InvokeAsync ensures UI updates are on the main thread
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (st != null) // Double check if st is still valid on UI thread
+                        if (st != null) 
                         {
                             st.ScaleX = st.ScaleY = start + (delta * eased);
                         }
@@ -10605,27 +16415,20 @@ namespace LeafClient.Views
 
                     await Task.Delay(delayMs, ct);
                 }
-                // Animation completed successfully without cancellation
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (st != null)
                     {
-                        st.ScaleX = st.ScaleY = target; // Ensure it ends exactly at the target
+                        st.ScaleX = st.ScaleY = target; 
                     }
                 });
             }
             catch (OperationCanceledException)
             {
-                // Animation was cancelled. The ScaleTransform remains at its current position.
-                // A new animation (either zoom-in or zoom-out) will be initiated by the next event.
             }
             finally
             {
-                // Dispose the CancellationTokenSource when the animation task finishes or is cancelled
-                // and clear the reference in the field.
                 newCts.Dispose();
-                // Only clear the field if it still holds *this specific* CTS,
-                // to avoid clearing a new CTS that might have been set by a subsequent rapid call.
                 if (getCtsFunc() == newCts)
                 {
                     setCtsAction(null);
@@ -10644,8 +16447,8 @@ namespace LeafClient.Views
                 return;
             }
 
-            _launchBgCts?.Cancel(); // Cancel any existing animation for the background
-            _launchBgCts = new CancellationTokenSource(); // Create a new CTS for this animation
+            _launchBgCts?.Cancel(); 
+            _launchBgCts = new CancellationTokenSource(); 
             var ct = _launchBgCts.Token;
             double start = st.ScaleX;
             double delta = target - start;
@@ -10663,19 +16466,18 @@ namespace LeafClient.Views
             }
             catch (OperationCanceledException)
             {
-                // If cancelled, smoothly animate back to 1.00
                 if (st.ScaleX != 1.00)
                 {
                     double currentScale = st.ScaleX;
                     double resetDelta = 1.00 - currentScale;
-                    for (int i = 1; i <= 8; i++) // Shorter, faster reset animation
+                    for (int i = 1; i <= 8; i++) 
                     {
                         double t = (double)i / 8;
                         double eased = 1 - Math.Pow(1 - t, 3);
                         st.ScaleX = st.ScaleY = currentScale + (resetDelta * eased);
-                        await Task.Delay(ms / 32); // Even faster delay for smooth snap-back
+                        await Task.Delay(ms / 32); 
                     }
-                    st.ScaleX = st.ScaleY = 1.00; // Ensure it ends exactly at 1.00
+                    st.ScaleX = st.ScaleY = 1.00; 
                 }
             }
             finally
@@ -10694,8 +16496,8 @@ namespace LeafClient.Views
                 return;
             }
 
-            cts?.Cancel(); // Cancel any existing animation for this specific image
-            cts = new CancellationTokenSource(); // Create a new CTS for this animation
+            cts?.Cancel(); 
+            cts = new CancellationTokenSource(); 
             var ct = cts.Token;
             double start = st.ScaleX;
             double delta = target - start;
@@ -10713,19 +16515,18 @@ namespace LeafClient.Views
             }
             catch (OperationCanceledException)
             {
-                // If cancelled, smoothly animate back to 1.00
                 if (st.ScaleX != 1.00)
                 {
                     double currentScale = st.ScaleX;
                     double resetDelta = 1.00 - currentScale;
-                    for (int i = 1; i <= 8; i++) // Shorter, faster reset animation
+                    for (int i = 1; i <= 8; i++) 
                     {
                         double t = (double)i / 8;
                         double eased = 1 - Math.Pow(1 - t, 3);
                         st.ScaleX = st.ScaleY = currentScale + (resetDelta * eased);
-                        await Task.Delay(ms / 32); // Even faster delay for smooth snap-back
+                        await Task.Delay(ms / 32); 
                     }
-                    st.ScaleX = st.ScaleY = 1.00; // Ensure it ends exactly at 1.00
+                    st.ScaleX = st.ScaleY = 1.00; 
                 }
             }
             finally
@@ -10734,41 +16535,23 @@ namespace LeafClient.Views
             }
         }
 
-        private async void OpenAccountPanel(object? s, RoutedEventArgs e)
+        private void OpenAccountPanel(object? s, RoutedEventArgs e)
         {
-            if (_accountPanelOverlay == null || _accountPanel == null) return;
-            _accountPanelOverlay.IsVisible = true;
-
-            // Declare tt once here
-            TranslateTransform? tt = _accountPanel.RenderTransform as TranslateTransform;
-            if (tt == null && _accountPanel != null) // Ensure tt is initialized if not present
-            {
-                tt = new TranslateTransform();
-                _accountPanel.RenderTransform = tt;
-            }
-
-            if (!AreAnimationsEnabled()) // NEW
-            {
-                if (tt != null) tt.X = 0; // Use the already declared tt
-                return;
-            }
-            if (tt != null) tt.X = 0; // Use the already declared tt
-            _ = RefreshAccountPanelPoseAsync();
+            OpenAccountPanelClick();
             UpdateRichPresenceFromState();
         }
+
 
         private async Task RefreshAccountPanelPoseAsync()
         {
             try
             {
-                // Ensure _session is current
                 await LoadSessionAsync();
 
                 var settings = await _settingsService.LoadSettingsAsync();
                 var username = _session?.Username ?? settings.SessionUsername;
                 var uuid = _session?.UUID ?? settings.SessionUuid;
 
-                // Tiny backoff if nothing is ready yet (first paint race)
                 if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(uuid))
                 {
                     await Task.Delay(250);
@@ -10779,7 +16562,6 @@ namespace LeafClient.Views
 
                 var largePose = _skinRenderService.GetRandomLargePoseName();
 
-                // Pass uuid so SkinRenderService uses it in the URL
                 var largeBitmap = await _skinRenderService.LoadSkinImageAsync(
                     username ?? "Player",
                     largePose,
@@ -10796,34 +16578,464 @@ namespace LeafClient.Views
             }
         }
 
-        private async void CloseAccountPanel(object? s, RoutedEventArgs e)
+        private bool _accountPanelOpen = false;
+
+        private void OnAccountButtonClick(object? sender, RoutedEventArgs e)
         {
-            if (_accountPanel == null || _accountPanelOverlay == null) return;
+            if (_accountPanelOpen)
+                CloseAccountPanel();
+            else
+                OpenAccountPanelClick();
+        }
 
-            // Declare tt once here
-            TranslateTransform? tt = _accountPanel.RenderTransform as TranslateTransform;
-            if (tt == null && _accountPanel != null) // Ensure tt is initialized if not present
-            {
-                tt = new TranslateTransform();
-                _accountPanel.RenderTransform = tt;
-            }
+        private void OpenAccountPanelClick()
+        {
+            if (_accountPanelOverlay == null || _accountPanel == null) return;
+            _accountPanelOpen = true;
 
-            if (!AreAnimationsEnabled()) // NEW
+            // Do all heavy UI work BEFORE making the overlay visible so it
+            // doesn't block the first animation frame.
+            PopulateAccountsListPanel();
+
+            // Snap to invisible without transitions
+            _accountPanel.Transitions = null;
+            _accountPanel.Opacity = 0;
+            _accountPanelOverlay.Opacity = 0;
+            _accountPanelOverlay.IsVisible = true;
+
+            // Next render frame: restore transition and fade in
+            Dispatcher.UIThread.Post(() =>
             {
-                if (tt != null) tt.X = 320; // Use the already declared tt
+                _accountPanel.Transitions = new Transitions
+                {
+                    new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new CubicEaseOut() }
+                };
+                _accountPanelOverlay.Opacity = 1;
+                _accountPanel.Opacity = 1;
+            }, DispatcherPriority.Render);
+
+            _ = RefreshAccountPanelPoseAsync();
+        }
+
+        private async void CloseAccountPanel()
+        {
+            if (_accountPanelOverlay == null || _accountPanel == null) return;
+            _accountPanelOpen = false;
+
+            _accountPanel.Opacity = 0;
+            _accountPanelOverlay.Opacity = 0;
+
+            await Task.Delay(180);
+            if (!_accountPanelOpen)
                 _accountPanelOverlay.IsVisible = false;
-                return;
+        }
+
+        private void PopulateAccountsListPanel()
+        {
+            var panel = _accountsListPanel;
+            if (panel == null) return;
+
+            // Ensure current active account is in SavedAccounts
+            EnsureActiveAccountInList();
+
+            var accounts = _currentSettings?.SavedAccounts ?? new List<AccountEntry>();
+            string activeId = _currentSettings?.ActiveAccountId ?? "";
+
+            // Build all cards first, then swap in one shot to avoid repeated layout passes
+            var newCards = new List<Control>();
+            foreach (var account in accounts)
+            {
+                newCards.Add(CreateAccountCard(account, account.Id == activeId));
             }
 
-            if (tt != null) tt.X = 320; // Use the already declared tt
-            await Task.Delay(300);
-            _accountPanelOverlay.IsVisible = false;
+            if (accounts.Count == 0)
+            {
+                newCards.Add(new TextBlock
+                {
+                    Text = "No accounts added yet",
+                    Foreground = SolidColorBrush.Parse("#4B5563"),
+                    FontSize = 12,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 20)
+                });
+            }
+
+            // Suspend layout while we swap children
+            panel.IsVisible = false;
+            panel.Children.Clear();
+            foreach (var card in newCards)
+                panel.Children.Add(card);
+            panel.IsVisible = true;
+
+            // Update account type label and dot (cached refs — no FindControl traversal)
+            var activeAccount = accounts.FirstOrDefault(a => a.Id == activeId);
+            if (_accountTypeLabel != null)
+                _accountTypeLabel.Text = activeAccount?.AccountType == "microsoft" ? "Microsoft Account" : "Offline";
+            if (_accountOnlineDot != null)
+                _accountOnlineDot.Fill = SolidColorBrush.Parse("#9333EA");
+        }
+
+        private void EnsureActiveAccountInList()
+        {
+            if (_currentSettings == null) return;
+            if (!_currentSettings.IsLoggedIn || string.IsNullOrWhiteSpace(_currentSettings.SessionUsername)) return;
+
+            // Check if current session is already in the saved accounts list
+            bool alreadyExists = _currentSettings.SavedAccounts.Any(a =>
+                a.Username == _currentSettings.SessionUsername &&
+                a.AccountType == _currentSettings.AccountType);
+
+            if (!alreadyExists)
+            {
+                var entry = new AccountEntry
+                {
+                    AccountType = _currentSettings.AccountType ?? "offline",
+                    Username = _currentSettings.SessionUsername ?? "Player",
+                    Uuid = _currentSettings.SessionUuid,
+                    AccessToken = _currentSettings.SessionAccessToken,
+                    Xuid = _currentSettings.SessionXuid
+                };
+                _currentSettings.SavedAccounts.Add(entry);
+                _currentSettings.ActiveAccountId = entry.Id;
+                _ = _settingsService.SaveSettingsAsync(_currentSettings);
+            }
+            else if (string.IsNullOrWhiteSpace(_currentSettings.ActiveAccountId))
+            {
+                var existing = _currentSettings.SavedAccounts.First(a =>
+                    a.Username == _currentSettings.SessionUsername &&
+                    a.AccountType == _currentSettings.AccountType);
+                _currentSettings.ActiveAccountId = existing.Id;
+            }
+        }
+
+        private Border CreateAccountCard(AccountEntry account, bool isActive)
+        {
+            var card = new Border
+            {
+                Background = isActive ? SolidColorBrush.Parse("#150D20") : SolidColorBrush.Parse("#0F1A24"),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(14, 10),
+                BorderThickness = new Thickness(isActive ? 2 : 1.5),
+                BorderBrush = isActive ? SolidColorBrush.Parse("#9333EA") : SolidColorBrush.Parse("#1C2A38"),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                Tag = account.Id
+            };
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // Avatar — real skin head for Microsoft accounts, letter initial for offline
+            var avatar = MakeSkinHeadAvatarBorder(account, 36, 10);
+            avatar.Margin = new Thickness(0, 0, 12, 0);
+            Grid.SetColumn(avatar, 0);
+            row.Children.Add(avatar);
+
+            // Info
+            var info = new StackPanel { Spacing = 2, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            info.Children.Add(new TextBlock
+            {
+                Text = account.Username,
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 13
+            });
+            info.Children.Add(new TextBlock
+            {
+                Text = account.AccountType == "microsoft" ? "Microsoft" : "Offline",
+                Foreground = SolidColorBrush.Parse("#6B7280"),
+                FontSize = 11
+            });
+            Grid.SetColumn(info, 1);
+            row.Children.Add(info);
+
+            // Active checkmark or remove button
+            if (isActive)
+            {
+                var check = new Border
+                {
+                    Width = 24, Height = 24,
+                    CornerRadius = new CornerRadius(12),
+                    Background = SolidColorBrush.Parse("#9333EA"),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+                check.Child = new TextBlock
+                {
+                    Text = "✓", Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeight.Bold,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+                Grid.SetColumn(check, 2);
+                row.Children.Add(check);
+            }
+            else
+            {
+                // Remove button for non-active accounts
+                var removeBtn = new Button
+                {
+                    Content = "✕",
+                    Foreground = SolidColorBrush.Parse("#6B7280"),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    FontSize = 12,
+                    Padding = new Thickness(6),
+                    Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    Tag = account.Id
+                };
+                removeBtn.Click += OnRemoveAccount;
+                Grid.SetColumn(removeBtn, 2);
+                row.Children.Add(removeBtn);
+            }
+
+            card.Child = row;
+
+            // Clicking a non-active card switches to it
+            if (!isActive)
+            {
+                card.Tapped += OnSwitchAccount;
+            }
+
+            return card;
+        }
+
+        private async void OnSwitchAccount(object? sender, TappedEventArgs e)
+        {
+            if (sender is not Border b || b.Tag is not string accountId) return;
+            var account = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == accountId);
+            if (account == null || _currentSettings == null) return;
+
+            // Set this account as active
+            _currentSettings.ActiveAccountId = account.Id;
+            _currentSettings.AccountType = account.AccountType;
+            _currentSettings.SessionUsername = account.Username;
+            _currentSettings.SessionUuid = account.Uuid;
+            _currentSettings.SessionAccessToken = account.AccessToken;
+            _currentSettings.SessionXuid = account.Xuid;
+            _currentSettings.IsLoggedIn = true;
+
+            if (account.AccountType == "offline")
+            {
+                _currentSettings.OfflineUsername = account.Username;
+                _session = MSession.CreateOfflineSession(account.Username);
+            }
+            else
+            {
+                _session = new MSession
+                {
+                    Username = account.Username,
+                    UUID = account.Uuid ?? "",
+                    AccessToken = account.AccessToken ?? "",
+                    Xuid = account.Xuid
+                };
+            }
+
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+            PopulateAccountsListPanel();
+            await LoadUserInfoAsync();
+        }
+
+        private async void OnRemoveAccount(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not string accountId) return;
+            if (_currentSettings == null) return;
+
+            _currentSettings.SavedAccounts.RemoveAll(a => a.Id == accountId);
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+            PopulateAccountsListPanel();
+        }
+
+        private System.Threading.CancellationTokenSource? _msAuthCts;
+
+        private async void AddMicrosoftAccountClick(object? sender, RoutedEventArgs e)
+        {
+            // Show auth status panel
+            var statusPanel = this.FindControl<Border>("MsAuthStatusPanel");
+            var statusText = this.FindControl<TextBlock>("MsAuthStatusText");
+            if (statusPanel != null) statusPanel.IsVisible = true;
+            if (statusText != null) statusText.Text = "Opening browser for Microsoft login...";
+
+            _msAuthCts = new System.Threading.CancellationTokenSource();
+
+            try
+            {
+                var app = await MsalClientHelper.BuildApplicationWithCache("499c8d36-be2a-4231-9ebd-ef291b7bb64c");
+                var loginHandler = new JELoginHandlerBuilder().Build();
+                var authenticator = loginHandler.CreateAuthenticatorWithNewAccount();
+
+                authenticator.AddMsalOAuth(app, msal => msal.Interactive());
+                authenticator.AddXboxAuthForJE(xbox => xbox.Basic());
+                authenticator.AddForceJEAuthenticator();
+
+                if (statusText != null) statusText.Text = "Waiting for browser sign-in...";
+
+                var newSession = await authenticator.ExecuteForLauncherAsync();
+
+                if (newSession != null && newSession.CheckIsValid())
+                {
+                    // Add to saved accounts
+                    var entry = new AccountEntry
+                    {
+                        AccountType = "microsoft",
+                        Username = newSession.Username,
+                        Uuid = newSession.UUID,
+                        AccessToken = newSession.AccessToken,
+                        Xuid = newSession.Xuid
+                    };
+
+                    // Remove any duplicate Microsoft account with same UUID
+                    _currentSettings?.SavedAccounts.RemoveAll(a =>
+                        a.AccountType == "microsoft" && a.Uuid == newSession.UUID);
+
+                    _currentSettings?.SavedAccounts.Add(entry);
+
+                    // Set as active
+                    if (_currentSettings != null)
+                    {
+                        _currentSettings.ActiveAccountId = entry.Id;
+                        _currentSettings.IsLoggedIn = true;
+                        _currentSettings.AccountType = "microsoft";
+                        _currentSettings.SessionUsername = newSession.Username;
+                        _currentSettings.SessionUuid = newSession.UUID;
+                        _currentSettings.SessionAccessToken = newSession.AccessToken;
+                        _currentSettings.SessionXuid = newSession.Xuid;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                    }
+
+                    _session = newSession;
+                    PopulateAccountsListPanel();
+                    await LoadUserInfoAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Accounts] Microsoft auth failed: {ex.Message}");
+                if (statusText != null) statusText.Text = "Authentication failed. Try again.";
+                await System.Threading.Tasks.Task.Delay(2000);
+            }
+            finally
+            {
+                if (statusPanel != null) statusPanel.IsVisible = false;
+                _msAuthCts = null;
+            }
+        }
+
+        private void OnCancelMsAuth(object? sender, RoutedEventArgs e)
+        {
+            _msAuthCts?.Cancel();
+            var statusPanel = this.FindControl<Border>("MsAuthStatusPanel");
+            if (statusPanel != null) statusPanel.IsVisible = false;
+        }
+
+        private void AddLocalAccountClick(object? sender, RoutedEventArgs e)
+        {
+            // Show the inline offline account form
+            var panel = this.FindControl<Border>("AddOfflinePanel");
+            var nameBox = this.FindControl<TextBox>("OfflineUsernameBox");
+            if (panel != null) panel.IsVisible = true;
+            if (nameBox != null) { nameBox.Text = ""; nameBox.Focus(); }
+        }
+
+        private async void OnAddOfflineConfirm(object? sender, RoutedEventArgs e)
+        {
+            var nameBox = this.FindControl<TextBox>("OfflineUsernameBox");
+            var panel = this.FindControl<Border>("AddOfflinePanel");
+            string name = nameBox?.Text?.Trim() ?? "";
+
+            if (string.IsNullOrWhiteSpace(name)) return;
+            if (name.Length < 3) return;
+
+            var offlineSession = MSession.CreateOfflineSession(name);
+            var entry = new AccountEntry
+            {
+                AccountType = "offline",
+                Username = name,
+                Uuid = offlineSession.UUID
+            };
+
+            // Remove duplicate offline account with same name
+            _currentSettings?.SavedAccounts.RemoveAll(a =>
+                a.AccountType == "offline" && a.Username.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            _currentSettings?.SavedAccounts.Add(entry);
+
+            // Set as active
+            if (_currentSettings != null)
+            {
+                _currentSettings.ActiveAccountId = entry.Id;
+                _currentSettings.IsLoggedIn = true;
+                _currentSettings.AccountType = "offline";
+                _currentSettings.OfflineUsername = name;
+                _currentSettings.SessionUsername = name;
+                _currentSettings.SessionUuid = offlineSession.UUID;
+                _currentSettings.SessionAccessToken = null;
+                _currentSettings.SessionXuid = null;
+                await _settingsService.SaveSettingsAsync(_currentSettings);
+            }
+
+            _session = offlineSession;
+
+            if (panel != null) panel.IsVisible = false;
+            PopulateAccountsListPanel();
+            await LoadUserInfoAsync();
+        }
+
+        private void OnCancelAddOffline(object? sender, RoutedEventArgs e)
+        {
+            var panel = this.FindControl<Border>("AddOfflinePanel");
+            if (panel != null) panel.IsVisible = false;
+        }
+
+        private void OnAccountBackdropClick(object? sender, PointerPressedEventArgs e)
+        {
+            CloseAccountPanel();
+        }
+
+        private void OnAccountPanelCloseClick(object? sender, RoutedEventArgs e)
+        {
+            CloseAccountPanel();
+        }
+
+        private void OnAccountPanelBackdropPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        {
+            CloseAccountPanel();
+        }
+
+        private void CloseAccountPanelImmediate(object? sender, RoutedEventArgs e)
+        {
+            _accountPanelCloseCts?.Cancel();
+            if (_accountPanel != null)
+            {
+                var saved = _accountPanel.Transitions;
+                _accountPanel.Transitions = null;
+                _accountPanel.Opacity = 0;
+                if (_accountPanel.RenderTransform is ScaleTransform st)
+                    { st.ScaleX = 0.94; st.ScaleY = 0.94; }
+                _accountPanel.Transitions = saved;
+            }
+            if (_accountPanelOverlay != null)
+                _accountPanelOverlay.IsVisible = false;
+            _accountPanelOpen = false;
+        }
+
+        private async void CopyUuidToClipboard(object? sender, PointerPressedEventArgs e)
+        {
+            if (_accountUuidDisplay?.Text is string uuid)
+            {
+                var topLevel = TopLevel.GetTopLevel(this);
+                if (topLevel?.Clipboard != null)
+                {
+                    await topLevel.Clipboard.SetTextAsync(uuid);
+                    ShowSkinStatusBanner("UUID copied to clipboard!", SkinBannerStatus.Success);
+                }
+            }
         }
 
         private static void OpenDiscord(object? s, RoutedEventArgs e) =>
-            Process.Start(new ProcessStartInfo { FileName = "https://discord.gg/F4MW2CAT94", UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = "https://discord.gg/wvYqKpUNdb", UseShellExecute = true });
         private static void OpenWebsite(object? s, RoutedEventArgs e) =>
-            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.net", UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com", UseShellExecute = true });
         private static void OpenInstagram(object? s, RoutedEventArgs e) =>
             Process.Start(new ProcessStartInfo { FileName = "https://instagram.com/leafclient", UseShellExecute = true });
 
@@ -10832,27 +17044,26 @@ namespace LeafClient.Views
         {
             _currentSettings = await _settingsService.LoadSettingsAsync();
 
-            // Ensure lists exist
             _currentSettings.CustomServers ??= new List<ServerInfo>();
             _currentSettings.CustomSkins ??= new List<SkinInfo>();
 
-            // Insert defaults before any UI build
             await InitializeDefaultServersAsync();
 
             ApplySettingsToUi(_currentSettings);
 
-            // Build UI now that servers exist
             LoadServers();
             RefreshQuickPlayBar();
 
-            StartRichPresenceIfEnabled();
+            // Populate the footer stats strip now that settings are loaded.
+            // The footer is visible on every page so this must run at startup,
+            // not just when navigating to the home page.
+            RefreshPlaytimeStatsCard();
 
-            InitializePrayerTimeReminder();
+            StartRichPresenceIfEnabled();
         }
         private string GetModFilePath(string modsFolder, InstalledMod mod, bool isDisabled = false)
         {
             string fileName = mod.FileName;
-            // Ensure the base filename doesn't already have .disabled if we're trying to add/remove it
             if (fileName.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase))
             {
                 fileName = fileName.Replace(".jar.disabled", ".jar");
@@ -10871,26 +17082,7 @@ namespace LeafClient.Views
         private void ApplySettingsToUi(LauncherSettings settings)
         {
             _isApplyingSettings = true;
-            if (_enablePrayerTimeReminderToggle != null) _enablePrayerTimeReminderToggle.IsChecked = settings.EnablePrayerTimeReminder;
-            if (_prayerTimeCountryComboBox != null) _prayerTimeCountryComboBox.SelectedItem = settings.PrayerTimeCountry; // UPDATED
-            if (_prayerTimeCityTextBox != null) _prayerTimeCityTextBox.Text = settings.PrayerTimeCity;
-
-            if (_prayerCalculationMethodComboBox != null)
-            {
-                var itemToSelect = _prayerCalculationMethodComboBox.Items.OfType<ComboBoxItem>()
-                    .FirstOrDefault(i => (i.Content as string) == settings.PrayerTimeCalculationMethod.ToString());
-                if (itemToSelect != null)
-                {
-                    _prayerCalculationMethodComboBox.SelectedItem = itemToSelect;
-                }
-                else
-                {
-                    _prayerCalculationMethodComboBox.SelectedIndex = (int)PrayerCalculationMethod.ISNA; // Default fallback
-                }
-            }
-            if (_prayerReminderMinutesBeforeSlider != null) _prayerReminderMinutesBeforeSlider.Value = settings.PrayerReminderMinutesBefore;
-            if (_prayerReminderMinutesBeforeValueText != null) _prayerReminderMinutesBeforeValueText.Text = $"{settings.PrayerReminderMinutesBefore:F0} minutes";
-
+            if (_natureThemeToggle != null) _natureThemeToggle.IsChecked = settings.EnableNatureTheme;
             if (_gameResolutionWidthTextBox != null) _gameResolutionWidthTextBox.Text = settings.GameResolutionWidth.ToString();
             if (_gameResolutionHeightTextBox != null) _gameResolutionHeightTextBox.Text = settings.GameResolutionHeight.ToString();
             if (settings.GameResolutionWidth > 0 && settings.GameResolutionHeight > 0)
@@ -10917,38 +17109,38 @@ namespace LeafClient.Views
             if (_enableUpdateNotificationsToggle != null) _enableUpdateNotificationsToggle.IsChecked = settings.EnableUpdateNotifications;
             if (_enableNewContentIndicatorsToggle != null) _enableNewContentIndicatorsToggle.IsChecked = settings.EnableNewContentIndicators;
 
-            // Trigger disk usage calculation
             _ = CalculateDiskUsageAsync();
 
             if (_optiFineToggle != null) _optiFineToggle.IsChecked = settings.IsOptiFineEnabled;
-            if (_lithiumToggle != null) _lithiumToggle.IsChecked = settings.IsLithiumEnabled;
-            if (_sodiumToggle != null) _sodiumToggle.IsChecked = settings.IsSodiumEnabled;
+            if (_testModeToggle != null) _testModeToggle.IsChecked = settings.IsTestMode;
+            if (_testModePathBox != null) _testModePathBox.Text = settings.TestModeModProjectPath;
+            if (_testModePathPanel != null) _testModePathPanel.IsVisible = settings.IsTestMode;
 
             if (_launchOnStartupToggle != null) _launchOnStartupToggle.IsChecked = settings.LaunchOnStartup;
             if (_minimizeToTrayToggle != null) _minimizeToTrayToggle.IsChecked = settings.MinimizeToTray;
             if (_discordRichPresenceToggle != null) _discordRichPresenceToggle.IsChecked = settings.DiscordRichPresence;
 
-            if (_minRamAllocationTextBox != null)
+            if (_minRamSlider != null)
             {
-                _minRamAllocationTextBox.Text = settings.MinRamAllocationMb.ToString();
+                _minRamSlider.Value = settings.MinRamAllocationMb > 0 ? settings.MinRamAllocationMb : 1024;
             }
 
-            if (_maxRamAllocationComboBox != null)
+            if (_maxRamSlider != null)
             {
-                var itemToSelect = _maxRamAllocationComboBox.Items.OfType<ComboBoxItem>()
-                    .FirstOrDefault(i => (i.Content as string) == settings.MaxRamAllocationGb);
-
-                if (itemToSelect != null)
+                double val = 4096;
+                string maxRamStr = settings.MaxRamAllocationGb;
+                if (!string.IsNullOrEmpty(maxRamStr))
                 {
-                    _maxRamAllocationComboBox.SelectedItem = itemToSelect;
+                    if (maxRamStr.EndsWith(" GB"))
+                    {
+                        if (double.TryParse(maxRamStr.Replace(" GB", ""), out double gb)) val = gb * 1024;
+                    }
+                    else if (int.TryParse(maxRamStr, out int mb))
+                    {
+                        val = mb;
+                    }
                 }
-                else
-                {
-                    // Fallback if the saved value is not found in the ComboBox items
-                    var defaultItem = _maxRamAllocationComboBox.Items.OfType<ComboBoxItem>()
-                        .FirstOrDefault(i => (i.Content as string) == "8 GB");
-                    _maxRamAllocationComboBox.SelectedItem = defaultItem ?? _maxRamAllocationComboBox.Items.OfType<ComboBoxItem>().FirstOrDefault();
-                }
+                _maxRamSlider.Value = val;
             }
 
             if (_quickLaunchEnabledToggle != null)
@@ -10958,29 +17150,42 @@ namespace LeafClient.Views
 
             if (_quickJoinServerAddressTextBox != null) _quickJoinServerAddressTextBox.Text = settings.QuickJoinServerAddress;
             if (_quickJoinServerPortTextBox != null) _quickJoinServerPortTextBox.Text = settings.QuickJoinServerPort;
-            // The line below is redundant as _quickLaunchEnabledToggle.IsChecked is already set above
-            // _currentSettings.QuickLaunchEnabled = _quickLaunchEnabledToggle?.IsChecked ?? false;
 
-            _currentSettings.MouseSensitivity = _mouseSensitivitySlider?.Value ?? 0.5;
-            _currentSettings.ScrollSensitivity = _scrollSensitivitySlider?.Value ?? 1.0;
-            _currentSettings.AutoJump = _autoJumpToggle?.IsChecked ?? false;
-            _currentSettings.Touchscreen = _touchscreenToggle?.IsChecked ?? false;
-            _currentSettings.ToggleSprint = _toggleSprintToggle?.IsChecked ?? false;
-            _currentSettings.ToggleCrouch = _toggleCrouchToggle?.IsChecked ?? false;
-            _currentSettings.Subtitles = _subtitlesToggle?.IsChecked ?? false;
-            _currentSettings.RenderDistance = _renderDistanceSlider?.Value ?? 32;
-            _currentSettings.SimulationDistance = _simulationDistanceSlider?.Value ?? 32;
-            _currentSettings.EntityDistance = _entityDistanceSlider?.Value ?? 1;
-            _currentSettings.MaxFps = _maxFpsSlider?.Value ?? 0; // Ensure 0 is saved for unlimited
-            _currentSettings.VSync = _vSyncToggle?.IsChecked ?? false;
-            _currentSettings.Fullscreen = _fullscreenToggle?.IsChecked ?? false;
-            _currentSettings.EntityShadows = _entityShadowsToggle?.IsChecked ?? false;
-            _currentSettings.HighContrast = _highContrastToggle?.IsChecked ?? false;
+            // Reload options.txt so we always reflect the current Minecraft state,
+            // not just what the launcher last wrote (handles in-game changes).
+            _optionsService.Load();
+
+            if (_mouseSensitivitySlider != null) _mouseSensitivitySlider.Value = _optionsService.HasKey("mouseSensitivity") ? _optionsService.GetDouble("mouseSensitivity", settings.MouseSensitivity) : settings.MouseSensitivity;
+            if (_scrollSensitivitySlider != null) _scrollSensitivitySlider.Value = _optionsService.HasKey("scrollSensitivity") ? _optionsService.GetDouble("scrollSensitivity", settings.ScrollSensitivity) : settings.ScrollSensitivity;
+            if (_autoJumpToggle != null) _autoJumpToggle.IsChecked = _optionsService.HasKey("autoJump") ? _optionsService.GetBool("autoJump", settings.AutoJump) : settings.AutoJump;
+            if (_touchscreenToggle != null) _touchscreenToggle.IsChecked = _optionsService.HasKey("touchscreen") ? _optionsService.GetBool("touchscreen", settings.Touchscreen) : settings.Touchscreen;
+            if (_toggleSprintToggle != null) _toggleSprintToggle.IsChecked = _optionsService.HasKey("toggleSprint") ? _optionsService.GetBool("toggleSprint", settings.ToggleSprint) : settings.ToggleSprint;
+            if (_toggleCrouchToggle != null) _toggleCrouchToggle.IsChecked = _optionsService.HasKey("toggleCrouch") ? _optionsService.GetBool("toggleCrouch", settings.ToggleCrouch) : settings.ToggleCrouch;
+            if (_subtitlesToggle != null) _subtitlesToggle.IsChecked = _optionsService.HasKey("showSubtitles") ? _optionsService.GetBool("showSubtitles", settings.Subtitles) : settings.Subtitles;
+            if (_renderDistanceSlider != null) _renderDistanceSlider.Value = _optionsService.HasKey("renderDistance") ? _optionsService.GetInt("renderDistance", (int)settings.RenderDistance) : settings.RenderDistance;
+            if (_simulationDistanceSlider != null) _simulationDistanceSlider.Value = _optionsService.HasKey("simulationDistance") ? _optionsService.GetInt("simulationDistance", (int)settings.SimulationDistance) : settings.SimulationDistance;
+            if (_entityDistanceSlider != null) _entityDistanceSlider.Value = _optionsService.HasKey("entityDistanceScaling") ? _optionsService.GetDouble("entityDistanceScaling", settings.EntityDistance) : settings.EntityDistance;
+            if (_maxFpsSlider != null)
+            {
+                // options.txt stores 260 for "Unlimited"; the slider uses 0 for "Unlimited".
+                var rawFps = _optionsService.HasKey("maxFps") ? _optionsService.GetInt("maxFps", (int)settings.MaxFps) : (int)settings.MaxFps;
+                _maxFpsSlider.Value = rawFps >= 260 ? 0 : rawFps;
+            }
+            if (_vSyncToggle != null) _vSyncToggle.IsChecked = _optionsService.HasKey("enableVsync") ? _optionsService.GetBool("enableVsync", settings.VSync) : settings.VSync;
+            if (_fullscreenToggle != null) _fullscreenToggle.IsChecked = _optionsService.HasKey("fullscreen") ? _optionsService.GetBool("fullscreen", settings.Fullscreen) : settings.Fullscreen;
+            if (_entityShadowsToggle != null) _entityShadowsToggle.IsChecked = _optionsService.HasKey("entityShadows") ? _optionsService.GetBool("entityShadows", settings.EntityShadows) : settings.EntityShadows;
+            if (_highContrastToggle != null) _highContrastToggle.IsChecked = _optionsService.HasKey("highContrast") ? _optionsService.GetBool("highContrast", settings.HighContrast) : settings.HighContrast;
 
             if (_renderCloudsComboBox != null)
             {
+                var cloudsRaw = _optionsService.HasKey("renderClouds")
+                    ? _optionsService.GetEnum("renderClouds", settings.RenderClouds ?? "fast")
+                    : (settings.RenderClouds ?? "fast");
+                // Capitalise to match ComboBoxItem content ("Off", "Fast", "Fancy")
+                if (string.IsNullOrEmpty(cloudsRaw)) cloudsRaw = "fast";
+                var cloudsDisplay = char.ToUpperInvariant(cloudsRaw[0]) + cloudsRaw.Substring(1).ToLowerInvariant();
                 var itemToSelect = _renderCloudsComboBox.Items.OfType<ComboBoxItem>()
-                    .FirstOrDefault(i => i.Content?.ToString() == settings.RenderClouds);
+                    .FirstOrDefault(i => i.Content?.ToString()?.Equals(cloudsDisplay, StringComparison.OrdinalIgnoreCase) == true);
                 if (itemToSelect != null)
                 {
                     _renderCloudsComboBox.SelectedItem = itemToSelect;
@@ -10993,20 +17198,26 @@ namespace LeafClient.Views
                 }
             }
 
-            if (_playerHatToggle != null) _playerHatToggle.IsChecked = settings.PlayerHat;
-            if (_playerCapeToggle != null) _playerCapeToggle.IsChecked = settings.PlayerCape;
-            if (_playerJacketToggle != null) _playerJacketToggle.IsChecked = settings.PlayerJacket;
-            if (_playerLeftSleeveToggle != null) _playerLeftSleeveToggle.IsChecked = settings.PlayerLeftSleeve;
-            if (_playerRightSleeveToggle != null) _playerRightSleeveToggle.IsChecked = settings.PlayerRightSleeve;
-            if (_playerLeftPantToggle != null) _playerLeftPantToggle.IsChecked = settings.PlayerLeftPant;
-            if (_playerRightPantToggle != null) _playerRightPantToggle.IsChecked = settings.PlayerRightPant;
+            if (_playerHatToggle != null) _playerHatToggle.IsChecked = _optionsService.HasKey("modelPart_hat") ? _optionsService.GetBool("modelPart_hat", settings.PlayerHat) : settings.PlayerHat;
+            if (_playerCapeToggle != null) _playerCapeToggle.IsChecked = _optionsService.HasKey("modelPart_cape") ? _optionsService.GetBool("modelPart_cape", settings.PlayerCape) : settings.PlayerCape;
+            if (_playerJacketToggle != null) _playerJacketToggle.IsChecked = _optionsService.HasKey("modelPart_jacket") ? _optionsService.GetBool("modelPart_jacket", settings.PlayerJacket) : settings.PlayerJacket;
+            if (_playerLeftSleeveToggle != null) _playerLeftSleeveToggle.IsChecked = _optionsService.HasKey("modelPart_left_sleeve") ? _optionsService.GetBool("modelPart_left_sleeve", settings.PlayerLeftSleeve) : settings.PlayerLeftSleeve;
+            if (_playerRightSleeveToggle != null) _playerRightSleeveToggle.IsChecked = _optionsService.HasKey("modelPart_right_sleeve") ? _optionsService.GetBool("modelPart_right_sleeve", settings.PlayerRightSleeve) : settings.PlayerRightSleeve;
+            if (_playerLeftPantToggle != null) _playerLeftPantToggle.IsChecked = _optionsService.HasKey("modelPart_left_pants_leg") ? _optionsService.GetBool("modelPart_left_pants_leg", settings.PlayerLeftPant) : settings.PlayerLeftPant;
+            if (_playerRightPantToggle != null) _playerRightPantToggle.IsChecked = _optionsService.HasKey("modelPart_right_pants_leg") ? _optionsService.GetBool("modelPart_right_pants_leg", settings.PlayerRightPant) : settings.PlayerRightPant;
             if (settings.CustomSkins == null)
             {
                 settings.CustomSkins = new List<SkinInfo>();
             }
             if (_playerMainHandComboBox != null)
             {
-                var itemToSelect = _playerMainHandComboBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Content?.ToString() == settings.PlayerMainHand);
+                var handRaw = _optionsService.HasKey("mainHand")
+                    ? _optionsService.GetEnum("mainHand", settings.PlayerMainHand ?? "right")
+                    : (settings.PlayerMainHand ?? "right");
+                if (string.IsNullOrEmpty(handRaw)) handRaw = "right";
+                var handDisplay = char.ToUpperInvariant(handRaw[0]) + handRaw.Substring(1).ToLowerInvariant();
+                var itemToSelect = _playerMainHandComboBox.Items.OfType<ComboBoxItem>()
+                    .FirstOrDefault(i => i.Content?.ToString()?.Equals(handDisplay, StringComparison.OrdinalIgnoreCase) == true);
                 if (itemToSelect != null)
                 {
                     _playerMainHandComboBox.SelectedItem = itemToSelect;
@@ -11049,7 +17260,6 @@ namespace LeafClient.Views
                 _ = _settingsService.SaveSettingsAsync(_currentSettings);
             }
 
-            // Now safely trigger UI update using the VALID version
             if (_majorVersionsStackPanel != null)
             {
                 var majorVersionBorder = _majorVersionsStackPanel.Children
@@ -11058,16 +17268,13 @@ namespace LeafClient.Views
 
                 if (majorVersionBorder != null)
                 {
-                    // Temporarily unsubscribe to prevent OnSubVersionSelected from saving prematurely
-                    // when OnMajorVersionClick programmatically selects an item.
                     if (_versionDropdown != null)
                     {
                         _versionDropdown.SelectionChanged -= OnSubVersionSelected;
                     }
 
-                    OnMajorVersionClick(majorVersionBorder, new RoutedEventArgs()); // This populates _versionDropdown
+                    OnMajorVersionClick(majorVersionBorder, new RoutedEventArgs()); 
 
-                    // After OnMajorVersionClick populates, explicitly select the saved sub-version
                     if (_versionDropdown != null)
                     {
                         var itemToSelect = _versionDropdown.Items.OfType<ComboBoxItem>()
@@ -11079,25 +17286,21 @@ namespace LeafClient.Views
                         }
                         else if (_versionDropdown.ItemCount > 0)
                         {
-                            _versionDropdown.SelectedIndex = 0; // Fallback to first if saved sub-version isn't in this major group
+                            _versionDropdown.SelectedIndex = 0; 
                         }
-                        // Re-subscribe the event handler now that initialization is complete
                         _versionDropdown.SelectionChanged += OnSubVersionSelected;
                     }
                 }
                 else
                 {
-                    // Fallback: if major version not found, use the first one
                     var firstMajor = _majorVersionsStackPanel.Children.OfType<Border>().FirstOrDefault();
                     if (firstMajor != null)
                     {
-                        // Temporarily unsubscribe
                         if (_versionDropdown != null)
                         {
                             _versionDropdown.SelectionChanged -= OnSubVersionSelected;
                         }
                         OnMajorVersionClick(firstMajor, new RoutedEventArgs());
-                        // After OnMajorVersionClick populates, explicitly select the saved sub-version
                         if (_versionDropdown != null)
                         {
                             var itemToSelect = _versionDropdown.Items.OfType<ComboBoxItem>()
@@ -11111,14 +17314,12 @@ namespace LeafClient.Views
                             {
                                 _versionDropdown.SelectedIndex = 0;
                             }
-                            // Re-subscribe
                             _versionDropdown.SelectionChanged += OnSubVersionSelected;
                         }
                     }
                 }
             }
 
-            // These methods will now use the _currentSettings.SelectedSubVersion which should be correctly set.
             UpdateLaunchVersionText();
             UpdateAddonSelectionUI(validSubVersion);
 
@@ -11126,14 +17327,18 @@ namespace LeafClient.Views
             RefreshQuickPlayBar();
 
             _isApplyingSettings = false;
+
+            // Snapshot the clean state so Cancel can revert to it
+            try { _settingsSnapshotJson = System.Text.Json.JsonSerializer.Serialize(settings, JsonContext.Default.LauncherSettings); }
+            catch { _settingsSnapshotJson = null; }
         }
 
 
         private static void OpenPrivacyPolicy(object? s, RoutedEventArgs e) =>
-           Process.Start(new ProcessStartInfo { FileName = "https://leafclient.net/privacypolicy", UseShellExecute = true });
+           Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/privacypolicy", UseShellExecute = true });
 
         private static void OpenTermsOfService(object? s, RoutedEventArgs e) =>
-            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.net/tos", UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/tos", UseShellExecute = true });
 
         private static void OpenLicenses(object? s, RoutedEventArgs e) =>
             Process.Start(new ProcessStartInfo { FileName = "https://github.com/LeafClientMC/LeafClient/blob/main/LICENSE.md", UseShellExecute = true });
@@ -11141,18 +17346,7 @@ namespace LeafClient.Views
 
         private async void SaveSettingsFromUi()
         {
-            _currentSettings.EnablePrayerTimeReminder = _enablePrayerTimeReminderToggle?.IsChecked ?? false;
-            _currentSettings.PrayerTimeCountry = _prayerTimeCountryComboBox?.SelectedItem as string ?? "USA"; // UPDATED
-            _currentSettings.PrayerTimeCity = _prayerTimeCityTextBox?.Text ?? "New York";
-
-            if (_prayerCalculationMethodComboBox?.SelectedItem is ComboBoxItem selectedMethodItem && selectedMethodItem.Content is string methodString)
-            {
-                if (Enum.TryParse(methodString, out PrayerCalculationMethod method))
-                {
-                    _currentSettings.PrayerTimeCalculationMethod = method;
-                }
-            }
-            _currentSettings.PrayerReminderMinutesBefore = (int)(_prayerReminderMinutesBeforeSlider?.Value ?? 10);
+            _currentSettings.EnableNatureTheme = _natureThemeToggle?.IsChecked ?? true;
             if (int.TryParse(_gameResolutionWidthTextBox?.Text, out int resWidth)) _currentSettings.GameResolutionWidth = resWidth;
             if (int.TryParse(_gameResolutionHeightTextBox?.Text, out int resHeight)) _currentSettings.GameResolutionHeight = resHeight;
             _currentSettings.UseCustomGameResolution = _useCustomGameResolutionToggle?.IsChecked ?? false;
@@ -11173,17 +17367,17 @@ namespace LeafClient.Views
             _currentSettings.EnableUpdateNotifications = _enableUpdateNotificationsToggle?.IsChecked ?? true;
             _currentSettings.EnableNewContentIndicators = _enableNewContentIndicatorsToggle?.IsChecked ?? true;
 
-            _currentSettings.IsSodiumEnabled = _sodiumToggle?.IsChecked ?? false;
             _currentSettings.IsOptiFineEnabled = _optiFineToggle?.IsChecked ?? false;
-            _currentSettings.IsLithiumEnabled = _lithiumToggle?.IsChecked ?? true;
+            _currentSettings.IsTestMode = _testModeToggle?.IsChecked ?? false;
+            if (_testModePathBox?.Text is string p && !string.IsNullOrWhiteSpace(p))
+                _currentSettings.TestModeModProjectPath = p;
             _currentSettings.LaunchOnStartup = _launchOnStartupToggle?.IsChecked ?? false;
             _currentSettings.MinimizeToTray = _minimizeToTrayToggle?.IsChecked ?? false;
             _currentSettings.DiscordRichPresence = _discordRichPresenceToggle?.IsChecked ?? false;
-            if (int.TryParse(_minRamAllocationTextBox?.Text, out int minRam))
-            {
-                _currentSettings.MinRamAllocationMb = minRam;
-            }
-            _currentSettings.MaxRamAllocationGb = (_maxRamAllocationComboBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "8 GB";
+            _currentSettings.MinRamAllocationMb = (int)(_minRamSlider?.Value ?? 1024);
+
+            double maxRamMb = _maxRamSlider?.Value ?? 4096;
+            _currentSettings.MaxRamAllocationGb = $"{(maxRamMb / 1024.0):0.##} GB";
             _currentSettings.QuickJoinServerAddress = _quickJoinServerAddressTextBox?.Text ?? "";
             _currentSettings.QuickJoinServerPort = _quickJoinServerPortTextBox?.Text ?? "25565";
             _currentSettings.QuickLaunchEnabled = _quickLaunchEnabledToggle?.IsChecked ?? false;
@@ -11197,7 +17391,7 @@ namespace LeafClient.Views
             _currentSettings.RenderDistance = _renderDistanceSlider?.Value ?? 32;
             _currentSettings.SimulationDistance = _simulationDistanceSlider?.Value ?? 32;
             _currentSettings.EntityDistance = _entityDistanceSlider?.Value ?? 1;
-            _currentSettings.MaxFps = _maxFpsSlider?.Value ?? 0; // Ensure 0 is saved for unlimited
+            _currentSettings.MaxFps = _maxFpsSlider?.Value ?? 0; 
             _currentSettings.VSync = _vSyncToggle?.IsChecked ?? false;
             _currentSettings.Fullscreen = _fullscreenToggle?.IsChecked ?? false;
             _currentSettings.EntityShadows = _entityShadowsToggle?.IsChecked ?? false;
@@ -11233,318 +17427,6 @@ namespace LeafClient.Views
             await _settingsService.SaveSettingsAsync(_currentSettings);
         }
 
-        private void InitializePrayerTimeReminder()
-        {
-            _prayerTimeCheckTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMinutes(1) // Check every minute
-            };
-            _prayerTimeCheckTimer.Tick += async (s, e) => await CheckPrayerTimesAndRemind();
-            _prayerTimeCheckTimer.Start();
-            Console.WriteLine("[Prayer Reminder] Initialized prayer time reminder timer.");
-        }
-
-        private async Task CheckPrayerTimesAndRemind()
-        {
-            if (!_currentSettings.EnablePrayerTimeReminder)
-            {
-                _nextPrayerTimeReminder = null; // Clear if disabled
-                return;
-            }
-
-            // Only fetch new prayer times once a day, or if it's the first check for the day
-            if (_lastFetchedPrayerTimes == null || _lastFetchedPrayerTimes.data?.date.Gregorian.Date != DateTime.Today.ToString("dd-MM-yyyy"))
-            {
-                try
-                {
-                    // Aladhan API for prayer times by city and country
-                    string apiUrl = $"https://api.aladhan.com/v1/timingsByCity?city={Uri.EscapeDataString(_currentSettings.PrayerTimeCity)}&country={Uri.EscapeDataString(_currentSettings.PrayerTimeCountry)}&method={(int)_currentSettings.PrayerTimeCalculationMethod}";
-                    Console.WriteLine($"[Prayer Reminder] Fetching prayer times from: {apiUrl}");
-
-                    var response = await _httpClient.GetStringAsync(apiUrl);
-                    _lastFetchedPrayerTimes = JsonSerializer.Deserialize<AladhanPrayerTimesResponse>(response, Json.Options);
-
-                    if (_lastFetchedPrayerTimes == null || _lastFetchedPrayerTimes.code != 200 || _lastFetchedPrayerTimes.data == null)
-                    {
-                        Console.Error.WriteLine($"[Prayer Reminder ERROR] Failed to fetch prayer times: {_lastFetchedPrayerTimes?.status}");
-                        _nextPrayerTimeReminder = null;
-                        return;
-                    }
-                    Console.WriteLine($"[Prayer Reminder] Successfully fetched prayer times for {_currentSettings.PrayerTimeCity}.");
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Prayer Reminder ERROR] Exception while fetching prayer times: {ex.Message}");
-                    _nextPrayerTimeReminder = null;
-                    return;
-                }
-            }
-
-            if (_lastFetchedPrayerTimes?.data?.timings == null) return;
-
-            var timings = _lastFetchedPrayerTimes.data.timings;
-            var now = DateTime.Now;
-
-            // Map prayer names to their times
-            var prayerTimes = new Dictionary<string, DateTime>
-        {
-            { "Fajr", DateTime.ParseExact(timings.Fajr, "HH:mm", null).AddDays(now.Date == DateTime.ParseExact(_lastFetchedPrayerTimes.data.date.Gregorian.Date, "dd-MM-yyyy", null) ? 0 : 1) }, // Adjust date if next day's Fajr
-            { "Dhuhr", DateTime.ParseExact(timings.Dhuhr, "HH:mm", null).Date == now.Date ? DateTime.ParseExact(timings.Dhuhr, "HH:mm", null) : DateTime.ParseExact(timings.Dhuhr, "HH:mm", null).AddDays(1) },
-            { "Asr", DateTime.ParseExact(timings.Asr, "HH:mm", null).Date == now.Date ? DateTime.ParseExact(timings.Asr, "HH:mm", null) : DateTime.ParseExact(timings.Asr, "HH:mm", null).AddDays(1) },
-            { "Maghrib", DateTime.ParseExact(timings.Maghrib, "HH:mm", null).Date == now.Date ? DateTime.ParseExact(timings.Maghrib, "HH:mm", null) : DateTime.ParseExact(timings.Maghrib, "HH:mm", null).AddDays(1) },
-            { "Isha", DateTime.ParseExact(timings.Isha, "HH:mm", null).Date == now.Date ? DateTime.ParseExact(timings.Isha, "HH:mm", null) : DateTime.ParseExact(timings.Isha, "HH:mm", null).AddDays(1) }
-        };
-
-            // Find the next prayer
-            DateTime nextPrayerTime = DateTime.MaxValue;
-            string nextPrayerName = "None";
-
-            foreach (var prayer in prayerTimes)
-            {
-                // Ensure prayer times are for today or tomorrow if they've passed today
-                DateTime currentPrayerDateTime = now.Date + prayer.Value.TimeOfDay;
-                if (currentPrayerDateTime < now)
-                {
-                    currentPrayerDateTime = currentPrayerDateTime.AddDays(1);
-                }
-
-                if (currentPrayerDateTime > now && currentPrayerDateTime < nextPrayerTime)
-                {
-                    nextPrayerTime = currentPrayerDateTime;
-                    nextPrayerName = prayer.Key;
-                }
-            }
-
-            if (nextPrayerName != "None")
-            {
-                TimeSpan timeUntilNextPrayer = nextPrayerTime - now;
-                int reminderMinutes = _currentSettings.PrayerReminderMinutesBefore;
-
-                if (timeUntilNextPrayer.TotalMinutes <= reminderMinutes && timeUntilNextPrayer.TotalMinutes > 0)
-                {
-                    // Avoid showing multiple reminders for the same prayer
-                    if (_nextPrayerTimeReminder == null || nextPrayerTime != _nextPrayerTimeReminder.Value || nextPrayerName != _nextPrayerName)
-                    {
-                        Console.WriteLine($"[Prayer Reminder] Next prayer ({nextPrayerName}) is in {timeUntilNextPrayer.TotalMinutes:F0} minutes. Showing reminder.");
-                        await ShowPrayerReminderNotification(nextPrayerName, nextPrayerTime);
-                        _nextPrayerTimeReminder = nextPrayerTime;
-                        _nextPrayerName = nextPrayerName;
-                    }
-                }
-                else if (timeUntilNextPrayer.TotalMinutes < 0) // If prayer time has passed, clear reminder
-                {
-                    _nextPrayerTimeReminder = null;
-                    _nextPrayerName = null;
-                }
-            }
-            else
-            {
-                _nextPrayerTimeReminder = null;
-                _nextPrayerName = null;
-            }
-        }
-
-
-        private async Task ShowPrayerReminderNotification(string prayerName, DateTime prayerTime)
-        {
-            var reminderWindow = new Window
-            {
-                Title = "Prayer Time Reminder",
-                SystemDecorations = SystemDecorations.None,
-                TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent },
-                Background = Brushes.Transparent,
-                Topmost = true,
-                ShowInTaskbar = false,
-                CanResize = false,
-                SizeToContent = SizeToContent.WidthAndHeight,
-                Width = 450,
-                Height = 250
-            };
-
-            // Get primary screen to position the window
-            Screen? primaryScreen = null;
-            if (this.Screens != null) primaryScreen = this.Screens.Primary;
-            if (primaryScreen == null && Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                primaryScreen = desktop.MainWindow?.Screens.Primary;
-            }
-
-            if (primaryScreen != null)
-            {
-                var workingArea = primaryScreen.WorkingArea;
-                int x = workingArea.X + (workingArea.Width / 2) - ((int)reminderWindow.Width / 2);
-                int y = workingArea.Y + (workingArea.Height / 2) - ((int)reminderWindow.Height / 2);
-                reminderWindow.Position = new PixelPoint(x, y);
-            }
-
-            var cardBackgroundBrush = GetBrush("CardBackgroundColor");
-            var primaryForegroundBrush = GetBrush("PrimaryForegroundBrush");
-            var accentButtonForegroundBrush = GetBrush("AccentButtonForegroundBrush");
-            var successBrush = GetBrush("SuccessBrush");
-            var errorBrush = GetBrush("ErrorBrush");
-
-            var contentGrid = new Grid
-            {
-                RowDefinitions = new RowDefinitions("Auto,*,Auto")
-            };
-
-            var headerTextBlock = new TextBlock
-            {
-                Text = $"It's almost {prayerName} Prayer time!",
-                Foreground = primaryForegroundBrush,
-                FontWeight = FontWeight.Bold,
-                FontSize = 20,
-                Margin = new Thickness(20, 20, 20, 10),
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
-            };
-            Grid.SetRow(headerTextBlock, 0);
-            contentGrid.Children.Add(headerTextBlock);
-
-            var messageTextBlock = new TextBlock
-            {
-                Text = $"Prayer will be at {prayerTime:hh:mm tt}. Prepare for prayer.",
-                Foreground = primaryForegroundBrush,
-                FontSize = 14,
-                TextWrapping = TextWrapping.Wrap,
-                TextAlignment = TextAlignment.Center,
-                Margin = new Thickness(20, 0, 20, 20),
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
-            };
-            Grid.SetRow(messageTextBlock, 1);
-            contentGrid.Children.Add(messageTextBlock);
-
-            var buttonStackPanel = new StackPanel
-            {
-                Orientation = Avalonia.Layout.Orientation.Horizontal,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                Spacing = 15,
-                Margin = new Thickness(20, 0, 20, 20)
-            };
-
-            var prayNowButton = new Button
-            {
-                Content = "I'll pray now",
-                Background = successBrush,
-                Foreground = accentButtonForegroundBrush,
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(20, 10),
-                FontWeight = FontWeight.Bold,
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-            prayNowButton.Click += (s, e) => reminderWindow.Close();
-            buttonStackPanel.Children.Add(prayNowButton);
-
-            var skipButton = new Button
-            {
-                Content = "Skip",
-                Background = errorBrush,
-                Foreground = accentButtonForegroundBrush,
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(20, 10),
-                FontWeight = FontWeight.Bold,
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-            skipButton.Click += async (s, e) =>
-            {
-                // Show Quranic verse
-                var verseTextBlock = new TextBlock
-                {
-                    Text = "“Recite what has been revealed to you of the Book and establish prayer. Indeed, prayer prohibits immorality and wrongdoing, and the remembrance of Allah is greater.” — Qur'an 29:45",
-                    Foreground = primaryForegroundBrush,
-                    FontSize = 14,
-                    TextWrapping = TextWrapping.Wrap,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    Margin = new Thickness(20)
-                };
-
-                // Hide original content and show verse
-                contentGrid.Children.Clear();
-                contentGrid.Children.Add(verseTextBlock);
-                Grid.SetRow(verseTextBlock, 0);
-                Grid.SetRowSpan(verseTextBlock, 3);
-
-                // Animate blur and fade
-                var blurEffect = new BlurEffect { Radius = 0 };
-                verseTextBlock.Effect = blurEffect;
-
-                if (AreAnimationsEnabled())
-                {
-                    // Fade in and blur
-                    for (int i = 0; i <= 20; i++)
-                    {
-                        double t = i / 20.0;
-                        verseTextBlock.Opacity = t;
-                        blurEffect.Radius = 0 + (4 * t); // Blur up to 4
-                        await Task.Delay(15);
-                    }
-
-                    await Task.Delay(4000); // Show for 4 seconds
-
-                    // Fade out and unblur (reverse)
-                    for (int i = 0; i <= 20; i++)
-                    {
-                        double t = i / 20.0;
-                        verseTextBlock.Opacity = 1 - t;
-                        blurEffect.Radius = 4 - (4 * t); // Blur down to 0
-                        await Task.Delay(15);
-                    }
-                }
-                else
-                {
-                    verseTextBlock.Opacity = 1;
-                    blurEffect.Radius = 4;
-                    await Task.Delay(4000);
-                    verseTextBlock.Opacity = 0;
-                    blurEffect.Radius = 0;
-                }
-
-                reminderWindow.Close();
-            };
-            buttonStackPanel.Children.Add(skipButton);
-
-            Grid.SetRow(buttonStackPanel, 2);
-            contentGrid.Children.Add(buttonStackPanel);
-
-            var mainBorder = new Border
-            {
-                Background = cardBackgroundBrush,
-                CornerRadius = new CornerRadius(12),
-                BoxShadow = new BoxShadows(new BoxShadow { Blur = 15, Color = Color.FromArgb(128, 0, 0, 0), OffsetY = 4 }),
-                Child = contentGrid
-            };
-
-            reminderWindow.Content = mainBorder;
-            reminderWindow.Show();
-
-            // Auto-close after a longer period if not interacted with
-            if (AreAnimationsEnabled())
-            {
-                await Task.Delay(20000); // 20 seconds
-                if (reminderWindow.IsVisible)
-                {
-                    // Fade out if still open
-                    for (int i = 0; i <= 20; i++)
-                    {
-                        double t = i / 20.0;
-                        reminderWindow.Opacity = 1 - t;
-                        await Task.Delay(15);
-                    }
-                }
-            }
-            else
-            {
-                await Task.Delay(20000);
-            }
-
-            if (reminderWindow.IsVisible)
-            {
-                reminderWindow.Close();
-            }
-        }
-
-
         private void SyncLauncherManagedMods(string mcVersion)
         {
             string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
@@ -11552,36 +17434,31 @@ namespace LeafClient.Views
             {
                 Directory.CreateDirectory(modsFolder);
                 Console.WriteLine("[Mod Sync] Mods folder did not exist, created.");
-                return; // Nothing to sync if folder was just created
+                return; 
             }
 
             Console.WriteLine($"[Mod Sync] Synchronizing launcher-managed mods for MC {mcVersion}...");
 
-            // Get all files currently in the mods folder (both .jar and .jar.disabled)
             var allModFilesOnDisk = Directory.GetFiles(modsFolder, "*.jar*", SearchOption.TopDirectoryOnly)
                                              .ToList();
 
-            // Group launcher-managed mods by their target Minecraft version
             var launcherManagedModsForCurrentVersion = _currentSettings.InstalledMods
                 .Where(m => m.MinecraftVersion.Equals(mcVersion, StringComparison.OrdinalIgnoreCase))
-                .ToDictionary(m => GetModFilePath(modsFolder, m, isDisabled: false), m => m, StringComparer.OrdinalIgnoreCase); // Key: full .jar path
+                .ToDictionary(m => GetModFilePath(modsFolder, m, isDisabled: false), m => m, StringComparer.OrdinalIgnoreCase); 
 
             var launcherManagedModsForOtherVersions = _currentSettings.InstalledMods
                 .Where(m => !m.MinecraftVersion.Equals(mcVersion, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            // --- Phase 1: Sync mods for the current Minecraft version ---
             foreach (var mod in launcherManagedModsForCurrentVersion.Values)
             {
-                string enabledJarPath = GetModFilePath(modsFolder, mod, isDisabled: false); // e.g., modname.jar
-                string disabledJarPath = GetModFilePath(modsFolder, mod, isDisabled: true); // e.g., modname.jar.disabled
+                string enabledJarPath = GetModFilePath(modsFolder, mod, isDisabled: false); 
+                string disabledJarPath = GetModFilePath(modsFolder, mod, isDisabled: true); 
 
                 if (mod.Enabled)
                 {
-                    // If mod should be ENABLED:
                     if (File.Exists(disabledJarPath))
                     {
-                        // It's disabled on disk, but should be enabled. Rename it.
                         try
                         {
                             File.Move(disabledJarPath, enabledJarPath);
@@ -11590,17 +17467,13 @@ namespace LeafClient.Views
                         catch (Exception ex)
                         {
                             Console.Error.WriteLine($"[Mod Sync ERROR] Failed to enable '{mod.Name}': {ex.Message}");
-                            // Don't show banner here, as this runs on every launch. Let InstallUserModsAsync handle missing.
                         }
                     }
-                    // If it's already enabledJarPath, or missing, InstallUserModsAsync will handle missing.
                 }
-                else // mod.Enabled is false
+                else 
                 {
-                    // If mod should be DISABLED:
                     if (File.Exists(enabledJarPath))
                     {
-                        // It's enabled on disk, but should be disabled. Rename it.
                         try
                         {
                             File.Move(enabledJarPath, disabledJarPath);
@@ -11609,15 +17482,11 @@ namespace LeafClient.Views
                         catch (Exception ex)
                         {
                             Console.Error.WriteLine($"[Mod Sync ERROR] Failed to disable '{mod.Name}': {ex.Message}");
-                            // Don't show banner here, as this runs on every launch.
                         }
                     }
-                    // If it's already disabledJarPath, or missing, it's fine.
                 }
             }
 
-            // --- Phase 2: Clean up launcher-managed mods for OTHER Minecraft versions ---
-            // These should not be in the mods folder if we are launching a different MC version.
             foreach (var mod in launcherManagedModsForOtherVersions)
             {
                 string jarPath = GetModFilePath(modsFolder, mod, isDisabled: false);
@@ -11652,24 +17521,15 @@ namespace LeafClient.Views
                 }
                 if (removed)
                 {
-                    // If a mod file for another version was removed, we should remove it from settings too,
-                    // as it implies it's no longer relevant or was a leftover.
-                    // However, we only remove from settings if it's not the current version.
                     _currentSettings.InstalledMods.Remove(mod);
-                    // No need to save settings immediately here; it's saved after LaunchGameAsync completes.
                 }
             }
 
-            // --- Phase 3: Clean up potentially orphaned .disabled files for current version ---
-            // Check for .disabled files on disk that are NOT in launcherManagedModsForCurrentVersion.
-            // This handles cases where a mod was deleted from settings but its .disabled file remained.
             foreach (var fileOnDisk in allModFilesOnDisk)
             {
                 if (fileOnDisk.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase))
                 {
                     string baseFileName = System.IO.Path.GetFileName(fileOnDisk).Replace(".jar.disabled", ".jar");
-                    // Check if this disabled file corresponds to a launcher-managed mod for the current MC version
-                    // OR if it's not a launcher-managed mod at all (and thus an orphaned .disabled file)
                     if (!launcherManagedModsForCurrentVersion.ContainsKey(System.IO.Path.Combine(modsFolder, baseFileName)))
                     {
                         try
@@ -11693,15 +17553,14 @@ namespace LeafClient.Views
         /// </summary>
         private string? DetectModVersion(string fileName)
         {
-            // Common patterns: modname-1.20.1.jar, modname_1.20.jar, modname-mc1.20.4.jar
             var patterns = new[]
             {
-                @"-(\d+\.\d+\.\d+)\.jar$",           // matches: -1.20.1.jar
-                @"-(\d+\.\d+)\.jar$",                 // matches: -1.20.jar
-                @"-mc(\d+\.\d+\.\d+)\.jar$",         // matches: -mc1.20.1.jar
-                @"-mc(\d+\.\d+)\.jar$",               // matches: -mc1.20.jar
-                @"-fabric-(\d+\.\d+\.\d+)\.jar$", // matches: -fabric-1.20.1.jar
-                @"-fabric-(\d+\.\d+)\.jar$"        // matches: -fabric-1.20.jar
+                @"-(\d+\.\d+\.\d+)\.jar$",           
+                @"-(\d+\.\d+)\.jar$",                 
+                @"-mc(\d+\.\d+\.\d+)\.jar$",         
+                @"-mc(\d+\.\d+)\.jar$",               
+                @"-fabric-(\d+\.\d+\.\d+)\.jar$", 
+                @"-fabric-(\d+\.\d+)\.jar$"        
             };
 
             foreach (var pattern in patterns)
@@ -11713,7 +17572,7 @@ namespace LeafClient.Views
                 }
             }
 
-            return null; // Version couldn't be determined
+            return null; 
         }
 
         /// <summary>
@@ -11726,7 +17585,6 @@ namespace LeafClient.Views
 
             if (v1Parts.Length >= 2 && v2Parts.Length >= 2)
             {
-                // Compare major.minor (e.g., "1.20" vs "1.21")
                 string v1Major = $"{v1Parts[0]}.{v1Parts[1]}";
                 string v2Major = $"{v2Parts[0]}.{v2Parts[1]}";
 
@@ -11775,7 +17633,6 @@ namespace LeafClient.Views
                     string fileName = System.IO.Path.GetFileName(disabledFile).Replace(".disabled", "");
                     var detectedVersion = DetectModVersion(fileName);
 
-                    // Re-enable if version matches or version couldn't be determined (assume compatible)
                     if (detectedVersion == null || detectedVersion == currentVersion || !IsMajorVersionMismatch(currentVersion, detectedVersion))
                     {
                         string enabledPath = disabledFile.Replace(".disabled", "");
@@ -11795,6 +17652,48 @@ namespace LeafClient.Views
         {
             SaveSettingsFromUi();
         }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // STORE PAGE  (extracted to Views/Pages/StorePageView)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private async Task<byte[]?> FetchSkinBytesAsync()
+        {
+            string? uuid = _session?.UUID ?? _currentSettings?.SessionUuid;
+            string? username = _session?.Username ?? _currentSettings?.SessionUsername;
+            if (string.IsNullOrWhiteSpace(uuid) && string.IsNullOrWhiteSpace(username)) return null;
+
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("LeafClient/1.0");
+
+            if (!string.IsNullOrWhiteSpace(uuid))
+            {
+                try
+                {
+                    string clean = uuid.Replace("-", "");
+                    var json = await http.GetStringAsync($"https://sessionserver.mojang.com/session/minecraft/profile/{clean}");
+                    var url  = ExtractSkinUrlFromProfile(json);
+                    if (!string.IsNullOrWhiteSpace(url)) return await http.GetByteArrayAsync(url);
+                }
+                catch { /* fallthrough */ }
+            }
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                try { return await http.GetByteArrayAsync($"https://minotar.net/skin/{username}"); } catch { }
+            }
+            return null;
+        }
+
+        // Store methods (PopulateStoreGrid, CreateStoreCard, ApplyCosmeticPreviewToRenderer,
+        // UpdateStorePreviewPanel, HighlightStoreTab, OnStoreTabTapped) moved to StorePageView.
+
+    }
+
+    public enum SupportLevel
+    {
+        FullSupport,
+        PartialSupport,
+        VanillaOnly
     }
 
     public class VersionInfo
@@ -11805,6 +17704,23 @@ namespace LeafClient.Views
         public string Loader { get; set; }
         public string ReleaseDate { get; set; }
         public string Description { get; set; }
+        public bool IsLeafClientModSupported { get; set; }
+        public bool IsFullySupported { get; set; }
+        public SupportLevel SupportLevel { get; set; }
+
+        public string DisplayVersion
+        {
+            get
+            {
+                return SupportLevel switch
+                {
+                    SupportLevel.FullSupport => $"{FullVersion} ✓ Full Support",
+                    SupportLevel.PartialSupport => $"{FullVersion} ⚠ Partial Support",
+                    SupportLevel.VanillaOnly => $"{FullVersion} Vanilla Only",
+                    _ => FullVersion
+                };
+            }
+        }
 
         public VersionInfo(string fullVersion, string majorVersion, string type, string loader, string releaseDate, string description)
         {
@@ -11814,13 +17730,16 @@ namespace LeafClient.Views
             Loader = loader;
             ReleaseDate = releaseDate;
             Description = description;
+            IsLeafClientModSupported = false;
+            IsFullySupported = false;
+            SupportLevel = SupportLevel.VanillaOnly;
         }
     }
+
 
     public class MinecraftServerChecker
     {
 
-        // Use a static HttpClient instance for efficiency
         private static readonly HttpClient _httpClient = new HttpClient();
         private const string ApiBaseUrl = "https://api.mcstatus.io/v2/status/java/";
 
@@ -11832,7 +17751,7 @@ namespace LeafClient.Views
             try
             {
                 var jsonResponse = await _httpClient.GetStringAsync(url);
-                var response = JsonSerializer.Deserialize<ServerStatusResponse>(jsonResponse, Json.Options);
+                var response = JsonSerializer.Deserialize(jsonResponse, JsonContext.Default.ServerStatusResponse);
 
                 if (response == null || !response.Online)
                 {
@@ -11875,12 +17794,11 @@ public class ServerStatusResult
     public int CurrentPlayers { get; set; }
     public int MaxPlayers { get; set; }
     public string Motd { get; set; }
-    public string IconData { get; set; } // Keep this, as MineStat returns it
+    public string IconData { get; set; } 
 }
 
 
 
-// Add this class to your project
 public static class UiUpdateService
 {
     private static readonly SemaphoreSlim _uiUpdateLock = new(1, 1);
@@ -11900,11 +17818,10 @@ public static class UiUpdateService
 
             try
             {
-                uiUpdateAction(server, () => { }); // Execute the UI update
+                uiUpdateAction(server, () => { }); 
             }
             catch (Exception ex)
             {
-                // Log but don't rethrow - this is where Avalonia might be triggering the ding
                 logger?.LogError($"UI update failed for {server.Name}: {ex.Message}");
                 Console.WriteLine($"[UI UPDATE FAILED] {server.Name}: {ex.Message}");
             }
@@ -11934,13 +17851,13 @@ public static class StreamExtensions
 
 public class ModrinthPack
 {
-    public int FormatVersion { get; set; } // Changed from string to int
+    public int FormatVersion { get; set; } 
     public string Game { get; set; }
     public string VersionId { get; set; }
     public string Name { get; set; }
     public string? Summary { get; set; }
     public List<ModrinthPackFile> Files { get; set; }
-    public Dictionary<string, string> Dependencies { get; set; } // Changed from List<string>
+    public Dictionary<string, string> Dependencies { get; set; } 
 }
 
 public class ModrinthPackFile
@@ -11960,7 +17877,6 @@ public class NotificationWindow : Window
 
     public NotificationWindow(string title, string message, string? buttonText, Action? buttonAction, bool isError)
     {
-        // 1. Window Properties
         SystemDecorations = SystemDecorations.None;
         TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent };
         Background = Brushes.Transparent;
@@ -11970,8 +17886,7 @@ public class NotificationWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         Title = "Notification";
 
-        // 2. UI Structure
-        _transform = new TranslateTransform { Y = -150 }; // Start off-screen
+        _transform = new TranslateTransform { Y = -150 }; 
 
         _card = new Border
         {
@@ -11989,7 +17904,6 @@ public class NotificationWindow : Window
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
         };
 
-        // Icon
         var iconBorder = new Border
         {
             Width = 40,
@@ -11999,7 +17913,6 @@ public class NotificationWindow : Window
             Margin = new Thickness(0, 0, 15, 0)
         };
 
-        // You can load an actual image here if you want, using a placeholder for now
         var iconText = new TextBlock
         {
             Text = isError ? "⚠️" : "ℹ️",
@@ -12009,19 +17922,17 @@ public class NotificationWindow : Window
         };
         iconBorder.Child = iconText;
 
-        // Text Content
         var textStack = new StackPanel { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Spacing = 2 };
         textStack.Children.Add(new TextBlock { Text = title, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontSize = 14 });
         textStack.Children.Add(new TextBlock { Text = message, Foreground = new SolidColorBrush(Color.Parse("#CCCCCC")), FontSize = 12, TextWrapping = TextWrapping.Wrap });
 
-        // Action Button
         Button? actionBtn = null;
         if (!string.IsNullOrEmpty(buttonText))
         {
             actionBtn = new Button
             {
                 Content = buttonText,
-                Background = new SolidColorBrush(Color.Parse(isError ? "#D32F2F" : "#2E7D32")), // Red if error, Green if normal
+                Background = new SolidColorBrush(Color.Parse(isError ? "#D32F2F" : "#2E7D32")), 
                 Foreground = Brushes.White,
                 FontWeight = FontWeight.Bold,
                 CornerRadius = new CornerRadius(6),
@@ -12032,7 +17943,6 @@ public class NotificationWindow : Window
             actionBtn.Click += (_, __) => { buttonAction?.Invoke(); CloseBanner(); };
         }
 
-        // Assemble Grid
         Grid.SetColumn(iconBorder, 0);
         grid.Children.Add(iconBorder);
 
@@ -12048,13 +17958,11 @@ public class NotificationWindow : Window
         _card.Child = grid;
         Content = _card;
 
-        // Close on click
         this.PointerPressed += (_, __) => CloseBanner();
     }
 
     public static void Show(string title, string message, string? buttonText = null, Action? buttonAction = null, bool isError = false)
     {
-        // Close existing banner if open
         if (_currentBanner != null)
         {
             try { _currentBanner.Close(); } catch { }
@@ -12066,23 +17974,19 @@ public class NotificationWindow : Window
             _currentBanner = window;
             Screen? primaryScreen = null;
 
-            // Try getting screen from the new window (might be null before Show)
             if (window.Screens != null)
                 primaryScreen = window.Screens.Primary;
 
-            // Fallback to Main Window if new window doesn't have screen info yet
             if (primaryScreen == null && Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 primaryScreen = desktop.MainWindow?.Screens.Primary;
             }
 
-            // Position at Top Center of Screen
             if (primaryScreen != null)
             {
                 var workingArea = primaryScreen.WorkingArea;
-                // Center X: Screen X + (Screen Width / 2) - (Window Width / 2)
-                int x = workingArea.X + (workingArea.Width / 2) - 200; // Window width is 400
-                int y = workingArea.Y + 20; // Top padding
+                int x = workingArea.X + (workingArea.Width / 2) - 200; 
+                int y = workingArea.Y + 20; 
                 window.Position = new PixelPoint(x, y);
             }
 
@@ -12093,29 +17997,25 @@ public class NotificationWindow : Window
 
     private async Task AnimateIn()
     {
-        // Slide Down: -150 to 0
         for (int i = 0; i <= 30; i++)
         {
             double t = i / 30.0;
-            double eased = 1 - Math.Pow(1 - t, 3); // Cubic Ease Out
+            double eased = 1 - Math.Pow(1 - t, 3); 
             _transform.Y = -150 + (150 * eased);
             await Task.Delay(10);
         }
 
-        // Wait 4 seconds
         await Task.Delay(4000);
 
-        // Slide Up
         CloseBanner();
     }
 
     private async void CloseBanner()
     {
-        // Slide Up: 0 to -150
         for (int i = 0; i <= 20; i++)
         {
             double t = i / 20.0;
-            double eased = t * t; // Quad Ease In
+            double eased = t * t; 
             _transform.Y = 0 - (150 * eased);
             await Task.Delay(10);
         }
