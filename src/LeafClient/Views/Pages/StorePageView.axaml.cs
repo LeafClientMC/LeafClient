@@ -165,9 +165,6 @@ namespace LeafClient.Views.Pages
             if (_storePreviewActionBtn != null)
                 _storePreviewActionBtn.Tapped += OnStorePreviewActionTapped;
 
-            if (_storePreviewCoinBtn != null)
-                _storePreviewCoinBtn.Tapped += OnStorePreviewCoinBtnTapped;
-
             // Currency selector
             _currencySelector = this.FindControl<ComboBox>("CurrencySelector");
             if (_currencySelector != null)
@@ -661,19 +658,7 @@ namespace LeafClient.Views.Pages
             else if (buyClickable && !isFree)
             {
                 var itemCapturePaid = item;
-                buyBtn.Tapped += (_, _) =>
-                {
-                    if (CheckoutUrls.TryGetValue(itemCapturePaid.Id, out var url) && !string.IsNullOrWhiteSpace(url))
-                    {
-                        var leafId = _host?.LeafIdentifier;
-                        if (!string.IsNullOrWhiteSpace(leafId))
-                        {
-                            var sep = url.Contains('?') ? "&" : "?";
-                            url = $"{url}{sep}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(leafId)}";
-                        }
-                        _host?.OpenCheckout(url);
-                    }
-                };
+                buyBtn.Tapped += (_, _) => OpenPurchasePopupForItem(itemCapturePaid);
             }
 
             bottomStack.Children.Add(buyBtn);
@@ -795,23 +780,8 @@ namespace LeafClient.Views.Pages
                     _storePreviewActionText.Foreground = Brushes.White;
                 }
 
-                bool showCoinBtn = !isOwned && !isComingSoon && !isFreeItem
-                    && CoinPrices.TryGetValue(item.Id, out var coinPrice)
-                    && _host?.CurrentSettings?.LeafApiJwt != null;
-
-                if (_storePreviewCoinBtn != null && _storePreviewCoinText != null)
-                {
-                    _storePreviewCoinBtn.IsVisible = showCoinBtn;
-                    if (showCoinBtn)
-                    {
-                        CoinPrices.TryGetValue(item.Id, out var cp);
-                        _storePreviewCoinBtn.Background  = SolidColorBrush.Parse("#20228B45");
-                        _storePreviewCoinBtn.BorderBrush = SolidColorBrush.Parse("#4ADE80");
-                        _storePreviewCoinBtn.BorderThickness = new Thickness(1);
-                        _storePreviewCoinText.Text       = $"\U0001f343 {cp:N0} Leaf Points";
-                        _storePreviewCoinText.Foreground = SolidColorBrush.Parse("#4ADE80");
-                    }
-                }
+                if (_storePreviewCoinBtn != null)
+                    _storePreviewCoinBtn.IsVisible = false;
             }
         }
 
@@ -889,17 +859,7 @@ namespace LeafClient.Views.Pages
                 return;
             }
 
-            if (!CheckoutUrls.TryGetValue(_previewedItemId, out var url)) return;
-            if (string.IsNullOrWhiteSpace(url)) return;
-
-            var leafId = _host.LeafIdentifier;
-            if (!string.IsNullOrWhiteSpace(leafId))
-            {
-                var separator = url.Contains('?') ? "&" : "?";
-                url = $"{url}{separator}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(leafId)}";
-            }
-
-            _host.OpenCheckout(url);
+            OpenPurchasePopupForItem(catalogItem);
         }
 
         private void OnCardFreeClaimTapped(
@@ -912,45 +872,27 @@ namespace LeafClient.Views.Pages
             UpdateStorePreviewPanel(item);
         }
 
-        private async void OnStorePreviewCoinBtnTapped(object? sender, TappedEventArgs e)
+        private void OpenPurchasePopupForItem(
+            (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
         {
-            if (_previewedItemId == null || _host == null) return;
-            if (_host.IsOwned(_previewedItemId)) return;
+            if (_host == null) return;
+            if (!CheckoutUrls.TryGetValue(item.Id, out var checkoutUrl) || string.IsNullOrWhiteSpace(checkoutUrl)) return;
 
-            var token = _host.CurrentSettings?.LeafApiJwt;
-            if (string.IsNullOrEmpty(token)) return;
+            CoinPrices.TryGetValue(item.Id, out var coinPrice);
+            var displayPrice = GetDisplayPrice(item.Id, item.Price);
 
-            if (_storePreviewCoinBtn != null)
+            _host.ShowPurchaseChoice(item.Id, item.Name, item.Preview, item.Rarity, displayPrice, coinPrice, checkoutUrl);
+        }
+
+        public void RefreshAfterPurchase(string itemId)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                _storePreviewCoinBtn.IsEnabled = false;
-                if (_storePreviewCoinText != null)
-                    _storePreviewCoinText.Text = "Processing...";
-            }
-
-            var (success, newCoins, error) = await LeafApiService.PurchaseCosmeticWithCoinsAsync(token, _previewedItemId);
-
-            if (success)
-            {
-                var catalogItem = System.Array.Find(StoreCatalog, c => c.Id == _previewedItemId);
+                PopulateStoreGrid();
+                var catalogItem = System.Array.Find(StoreCatalog, c => c.Id == itemId);
                 if (catalogItem.Id != null)
-                {
-                    _host.AddOwnedCosmetic(_previewedItemId);
-                    _host.UpdateCoinBalance(newCoins);
-                    _host.ShowPurchaseCelebration(catalogItem.Id, catalogItem.Name, catalogItem.Preview, catalogItem.Rarity);
-                    PopulateStoreGrid();
                     UpdateStorePreviewPanel(catalogItem);
-                }
-            }
-            else
-            {
-                if (_storePreviewCoinBtn != null)
-                {
-                    _storePreviewCoinBtn.IsEnabled = true;
-                    if (_storePreviewCoinText != null && CoinPrices.TryGetValue(_previewedItemId, out var cp))
-                        _storePreviewCoinText.Text = $"\U0001f343 {cp:N0} Leaf Points";
-                }
-                ToastService.Show(error ?? "Purchase failed.", ToastType.Error);
-            }
+            });
         }
     }
 }

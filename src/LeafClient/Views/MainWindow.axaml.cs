@@ -399,6 +399,12 @@ namespace LeafClient.Views
         private WebView? _checkoutWebView;
         private bool _isCheckoutAnimating = false;
 
+        private Grid? _purchasePopupOverlay;
+        private Border? _purchasePopupPanel;
+        private bool _isPurchasePopupAnimating;
+        private string? _pendingPurchaseItemId;
+        private int _currentCoinBalance;
+
         private string _logFolderPath = "";
         private string _logFilePath = "";
         private static StreamWriter? _logStreamWriter;
@@ -651,7 +657,12 @@ namespace LeafClient.Views
 
         string? Services.IMainWindowHost.LeafIdentifier => DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
 
+        int Services.IMainWindowHost.CoinBalance => _currentCoinBalance;
+
         void Services.IMainWindowHost.OpenCheckout(string url) => OpenCheckout(url);
+
+        void Services.IMainWindowHost.ShowPurchaseChoice(string itemId, string itemName, string preview, string rarity, string priceText, int coinPrice, string checkoutUrl)
+            => ShowPurchaseChoice(itemId, itemName, preview, rarity, priceText, coinPrice, checkoutUrl);
 
         bool Services.IMainWindowHost.IsOwned(string cosmeticId) => _ownedCosmeticIds.Contains(cosmeticId);
 
@@ -671,6 +682,7 @@ namespace LeafClient.Views
 
         void Services.IMainWindowHost.UpdateCoinBalance(int newBalance)
         {
+            _currentCoinBalance = newBalance;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
@@ -1782,6 +1794,7 @@ namespace LeafClient.Views
             var result = await LeafClient.Services.LeafApiService.ReportPlaytimeAsync(jwt, minutes);
             if (result == null || result.Awarded == 0) return;
 
+            _currentCoinBalance = result.Coins;
             Dispatcher.UIThread.Post(() =>
             {
                 _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
@@ -1808,6 +1821,7 @@ namespace LeafClient.Views
             var balance = await LeafClient.Services.LeafApiService.GetUserBalanceAsync(jwt);
             if (balance == null) return;
 
+            _currentCoinBalance = balance.Coins;
             Dispatcher.UIThread.Post(() =>
             {
                 _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
@@ -6003,11 +6017,448 @@ namespace LeafClient.Views
             {
                 _isCheckoutAnimating = false;
             }
+
+            _ = SyncAfterCheckoutAsync();
+        }
+
+        private async Task SyncAfterCheckoutAsync()
+        {
+            try
+            {
+                await Task.Delay(2000);
+                var beforeIds = new HashSet<string>(_ownedCosmeticIds);
+                await SyncOwnedCosmeticsFromApiAsync();
+                var newIds = _ownedCosmeticIds.Where(id => !beforeIds.Contains(id)).ToList();
+                if (newIds.Count > 0)
+                {
+                    var firstNewId = newIds[0];
+                    var catalog = LeafClient.Views.Pages.StorePageView.StoreCatalog;
+                    var item = System.Array.Find(catalog, c => c.Id == firstNewId);
+                    if (item.Id != null)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            ShowPurchaseCelebration(item.Id, item.Name, item.Preview, item.Rarity);
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PostCheckout] Sync failed: {ex.Message}");
+            }
         }
 
         private void OnCheckoutClose(object? sender, TappedEventArgs e) => CloseCheckout();
 
         private void OnCheckoutBackdropTapped(object? sender, TappedEventArgs e) => CloseCheckout();
+
+        private async void ShowPurchaseChoice(string itemId, string itemName, string preview, string rarity, string priceText, int coinPrice, string checkoutUrl)
+        {
+            if (_purchasePopupOverlay != null && _purchasePopupOverlay.IsVisible) return;
+            if (_isPurchasePopupAnimating) return;
+
+            _pendingPurchaseItemId = itemId;
+
+            var rarityColor = rarity switch
+            {
+                "Legendary" => Color.Parse("#FFD700"),
+                "Epic"      => Color.Parse("#A855F7"),
+                "Rare"      => Color.Parse("#3B82F6"),
+                _           => Color.Parse("#9CA3AF"),
+            };
+
+            bool canAffordCoins = _currentCoinBalance >= coinPrice && coinPrice > 0;
+
+            if (_purchasePopupOverlay != null)
+            {
+                foreach (var child in _purchasePopupOverlay.Children)
+                {
+                    if (child is Border panel) child.IsVisible = false;
+                }
+                _purchasePopupOverlay.Children.Clear();
+            }
+
+            var overlay = new Grid
+            {
+                Background = new SolidColorBrush(Color.Parse("#CC000000")),
+                IsVisible = false,
+                ZIndex = 900,
+            };
+
+            overlay.Tapped += (_, _) => ClosePurchasePopup();
+
+            var card = new Border
+            {
+                Background = new SolidColorBrush(Color.Parse("#1A1A2E")),
+                CornerRadius = new CornerRadius(16),
+                BorderBrush = new SolidColorBrush(Color.Parse("#2A2A4A")),
+                BorderThickness = new Thickness(1),
+                Width = 380,
+                Padding = new Thickness(0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                RenderTransform = new ScaleTransform { ScaleX = 0.85, ScaleY = 0.85 },
+                BoxShadow = BoxShadows.Parse("0 20 60 0 #80000000"),
+            };
+            card.Tapped += (_, e) => e.Handled = true;
+
+            var mainStack = new StackPanel { Spacing = 0 };
+
+            var headerGrid = new Grid
+            {
+                Background = new SolidColorBrush(Color.Parse("#12122A")),
+                Height = 100,
+            };
+            headerGrid.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(16, 16, 0, 0),
+                ClipToBounds = true,
+                Child = new Border
+                {
+                    Background = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops =
+                        {
+                            new GradientStop(Color.Parse($"#20{rarityColor.ToString().Substring(3)}"), 0),
+                            new GradientStop(Color.Parse("#00000000"), 1),
+                        },
+                    },
+                },
+            });
+
+            var previewEmoji = new TextBlock
+            {
+                Text = preview,
+                FontSize = 42,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            headerGrid.Children.Add(previewEmoji);
+
+            var closeBtn = new Border
+            {
+                Width = 32, Height = 32,
+                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(Color.Parse("#30FFFFFF")),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Thickness(0, 12, 12, 0),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                Child = new TextBlock
+                {
+                    Text = "\u2715",
+                    FontSize = 14,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                },
+            };
+            closeBtn.Tapped += (_, _) => ClosePurchasePopup();
+            headerGrid.Children.Add(closeBtn);
+
+            mainStack.Children.Add(headerGrid);
+
+            var contentStack = new StackPanel { Spacing = 16, Margin = new Thickness(24, 20, 24, 24) };
+
+            var nameBlock = new TextBlock
+            {
+                Text = itemName,
+                FontSize = 22,
+                FontWeight = FontWeight.Bold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            };
+            contentStack.Children.Add(nameBlock);
+
+            var rarityBadge = new Border
+            {
+                Background = new SolidColorBrush(new Color(0x25, rarityColor.R, rarityColor.G, rarityColor.B)),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 4),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = rarity,
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = new SolidColorBrush(rarityColor),
+                },
+            };
+            contentStack.Children.Add(rarityBadge);
+
+            var detailsBox = new Border
+            {
+                Background = new SolidColorBrush(Color.Parse("#15FFFFFF")),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(16, 12),
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            var detailsGrid = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*, Auto") };
+            detailsGrid.Children.Add(new TextBlock
+            {
+                Text = itemName,
+                FontSize = 14,
+                Foreground = SolidColorBrush.Parse("#CCFFFFFF"),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+            var priceBlock = new TextBlock
+            {
+                Text = priceText,
+                FontSize = 14,
+                FontWeight = FontWeight.Bold,
+                Foreground = new SolidColorBrush(rarityColor),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            Grid.SetColumn(priceBlock, 1);
+            detailsGrid.Children.Add(priceBlock);
+            detailsBox.Child = detailsGrid;
+            contentStack.Children.Add(detailsBox);
+
+            var methodLabel = new TextBlock
+            {
+                Text = "Choose payment method:",
+                FontSize = 13,
+                Foreground = SolidColorBrush.Parse("#80FFFFFF"),
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            contentStack.Children.Add(methodLabel);
+
+            var coinBtnBorder = new Border
+            {
+                Background = canAffordCoins ? SolidColorBrush.Parse("#15228B45") : SolidColorBrush.Parse("#10FFFFFF"),
+                BorderBrush = canAffordCoins ? SolidColorBrush.Parse("#4ADE80") : SolidColorBrush.Parse("#30FFFFFF"),
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(16, 14),
+                Cursor = canAffordCoins ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow),
+                Opacity = canAffordCoins ? 1.0 : 0.45,
+                IsEnabled = canAffordCoins,
+            };
+            var coinStack = new StackPanel { Spacing = 4 };
+            coinStack.Children.Add(new TextBlock
+            {
+                Text = "\U0001f343  Pay with Leaf Points",
+                FontSize = 15,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = canAffordCoins ? SolidColorBrush.Parse("#4ADE80") : SolidColorBrush.Parse("#60FFFFFF"),
+            });
+            var balanceLine = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+            balanceLine.Children.Add(new TextBlock
+            {
+                Text = $"{coinPrice:N0} Leaf Points",
+                FontSize = 12,
+                Foreground = canAffordCoins ? SolidColorBrush.Parse("#80FFFFFF") : SolidColorBrush.Parse("#40FFFFFF"),
+            });
+            if (!canAffordCoins)
+            {
+                balanceLine.Children.Add(new TextBlock
+                {
+                    Text = $"(You have {_currentCoinBalance:N0})",
+                    FontSize = 12,
+                    Foreground = SolidColorBrush.Parse("#FF6B6B"),
+                });
+            }
+            coinStack.Children.Add(balanceLine);
+            coinBtnBorder.Child = coinStack;
+
+            if (canAffordCoins)
+            {
+                coinBtnBorder.PointerEntered += (_, _) =>
+                {
+                    coinBtnBorder.Background = SolidColorBrush.Parse("#25228B45");
+                    coinBtnBorder.BorderBrush = SolidColorBrush.Parse("#6ADE80");
+                };
+                coinBtnBorder.PointerExited += (_, _) =>
+                {
+                    coinBtnBorder.Background = SolidColorBrush.Parse("#15228B45");
+                    coinBtnBorder.BorderBrush = SolidColorBrush.Parse("#4ADE80");
+                };
+                coinBtnBorder.Tapped += async (_, e) =>
+                {
+                    e.Handled = true;
+                    await HandleCoinPurchaseFromPopup(itemId, itemName, preview, rarity, coinPrice);
+                };
+            }
+            contentStack.Children.Add(coinBtnBorder);
+
+            var cardBtnBorder = new Border
+            {
+                Background = SolidColorBrush.Parse("#15FFFFFF"),
+                BorderBrush = SolidColorBrush.Parse("#40FFFFFF"),
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(16, 14),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+            var cardStack = new StackPanel { Spacing = 4 };
+            cardStack.Children.Add(new TextBlock
+            {
+                Text = "\U0001f4b3  Pay with Card / PayPal",
+                FontSize = 15,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brushes.White,
+            });
+            cardStack.Children.Add(new TextBlock
+            {
+                Text = priceText,
+                FontSize = 12,
+                Foreground = SolidColorBrush.Parse("#80FFFFFF"),
+            });
+            cardBtnBorder.Child = cardStack;
+            cardBtnBorder.PointerEntered += (_, _) =>
+            {
+                cardBtnBorder.Background = SolidColorBrush.Parse("#25FFFFFF");
+                cardBtnBorder.BorderBrush = SolidColorBrush.Parse("#60FFFFFF");
+            };
+            cardBtnBorder.PointerExited += (_, _) =>
+            {
+                cardBtnBorder.Background = SolidColorBrush.Parse("#15FFFFFF");
+                cardBtnBorder.BorderBrush = SolidColorBrush.Parse("#40FFFFFF");
+            };
+            cardBtnBorder.Tapped += (_, e) =>
+            {
+                e.Handled = true;
+                ClosePurchasePopup();
+
+                var leafId = DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
+                var url = checkoutUrl;
+                if (!string.IsNullOrWhiteSpace(leafId))
+                {
+                    var sep = url.Contains('?') ? "&" : "?";
+                    url = $"{url}{sep}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(leafId)}";
+                }
+                OpenCheckout(url);
+            };
+            contentStack.Children.Add(cardBtnBorder);
+
+            mainStack.Children.Add(contentStack);
+            card.Child = mainStack;
+            overlay.Children.Add(card);
+
+            _purchasePopupOverlay = overlay;
+            _purchasePopupPanel = card;
+
+            var rootGrid = this.FindControl<Grid>("RootGrid") ?? (Content as Grid);
+            if (rootGrid != null)
+            {
+                rootGrid.Children.Add(overlay);
+            }
+
+            _isPurchasePopupAnimating = true;
+            overlay.IsVisible = true;
+
+            if (AreAnimationsEnabled())
+            {
+                var st = card.RenderTransform as ScaleTransform ?? new ScaleTransform();
+                card.RenderTransform = st;
+                card.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                card.Opacity = 0;
+                overlay.Opacity = 0;
+
+                const int dur = 200;
+                const int frames = 12;
+                const int delay = dur / frames;
+
+                for (int i = 0; i <= frames; i++)
+                {
+                    double t = (double)i / frames;
+                    double eased = 1 - Math.Pow(1 - t, 3);
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        overlay.Opacity = eased;
+                        card.Opacity = eased;
+                        st.ScaleX = 0.85 + 0.15 * eased;
+                        st.ScaleY = 0.85 + 0.15 * eased;
+                    });
+
+                    if (i < frames) await Task.Delay(delay);
+                }
+            }
+            else
+            {
+                card.Opacity = 1;
+                overlay.Opacity = 1;
+                var st = card.RenderTransform as ScaleTransform;
+                if (st != null) { st.ScaleX = 1; st.ScaleY = 1; }
+            }
+
+            _isPurchasePopupAnimating = false;
+        }
+
+        private async void ClosePurchasePopup()
+        {
+            if (_purchasePopupOverlay == null || !_purchasePopupOverlay.IsVisible) return;
+            if (_isPurchasePopupAnimating) return;
+            _isPurchasePopupAnimating = true;
+
+            if (AreAnimationsEnabled() && _purchasePopupPanel != null)
+            {
+                var st = _purchasePopupPanel.RenderTransform as ScaleTransform ?? new ScaleTransform();
+                _purchasePopupPanel.RenderTransform = st;
+
+                const int dur = 150;
+                const int frames = 10;
+                const int delay = dur / frames;
+
+                for (int i = 0; i <= frames; i++)
+                {
+                    double t = (double)i / frames;
+                    double eased = t * t;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_purchasePopupOverlay != null) _purchasePopupOverlay.Opacity = 1 - eased;
+                        if (_purchasePopupPanel != null) _purchasePopupPanel.Opacity = 1 - eased;
+                        st.ScaleX = 1 - 0.1 * eased;
+                        st.ScaleY = 1 - 0.1 * eased;
+                    });
+
+                    if (i < frames) await Task.Delay(delay);
+                }
+            }
+
+            _purchasePopupOverlay.IsVisible = false;
+            var rootGrid = this.FindControl<Grid>("RootGrid") ?? (Content as Grid);
+            if (rootGrid != null && _purchasePopupOverlay != null)
+                rootGrid.Children.Remove(_purchasePopupOverlay);
+            _purchasePopupOverlay = null;
+            _purchasePopupPanel = null;
+            _isPurchasePopupAnimating = false;
+        }
+
+        private async Task HandleCoinPurchaseFromPopup(string itemId, string itemName, string preview, string rarity, int coinPrice)
+        {
+            var token = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(token)) return;
+
+            var (success, newCoins, error) = await LeafApiService.PurchaseCosmeticWithCoinsAsync(token, itemId);
+
+            if (success)
+            {
+                ClosePurchasePopup();
+                _ownedCosmeticIds.Add(itemId);
+                SaveOwnedJson();
+                _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+                _currentCoinBalance = newCoins;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                    if (_leafsBalanceText != null)
+                        _leafsBalanceText.Text = newCoins.ToString("N0");
+                });
+                ShowPurchaseCelebration(itemId, itemName, preview, rarity);
+                _storePage?.RefreshAfterPurchase(itemId);
+            }
+            else
+            {
+                ClosePurchasePopup();
+                ToastService.Show(error ?? "Purchase failed.", ToastType.Error);
+            }
+        }
 
         // ─── Monthly Pass Popup ─────────────────────────────────────────────
         private bool _isMonthlyPassAnimating;
