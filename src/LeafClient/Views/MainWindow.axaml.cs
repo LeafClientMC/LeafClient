@@ -1830,12 +1830,60 @@ namespace LeafClient.Views
             });
         }
 
-        private async Task SyncOwnedCosmeticsFromApiAsync()
+        private async Task<string?> EnsureLeafJwtAsync()
         {
             var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt)) return null;
+
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length >= 2)
+                {
+                    var payload = parts[1];
+                    var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                    var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("exp", out var expEl))
+                    {
+                        var exp = DateTimeOffset.FromUnixTimeSeconds(expEl.GetInt64());
+                        if (exp > DateTimeOffset.UtcNow.AddMinutes(5))
+                            return jwt;
+                    }
+                }
+            }
+            catch { }
+
+            var refreshToken = _currentSettings?.LeafApiRefreshToken;
+            if (string.IsNullOrEmpty(refreshToken)) return null;
+
+            try
+            {
+                Console.WriteLine("[JWT] Access token expired, refreshing...");
+                var result = await LeafApiService.RefreshAsync(refreshToken);
+                if (result != null && _currentSettings != null)
+                {
+                    _currentSettings.LeafApiJwt = result.AccessToken;
+                    _currentSettings.LeafApiRefreshToken = result.RefreshToken;
+                    if (_settingsService != null) _ = _settingsService.SaveSettingsAsync(_currentSettings);
+                    Console.WriteLine("[JWT] Refreshed successfully.");
+                    return result.AccessToken;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[JWT] Refresh failed: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private async Task SyncOwnedCosmeticsFromApiAsync()
+        {
+            var jwt = await EnsureLeafJwtAsync();
             if (string.IsNullOrEmpty(jwt))
             {
-                Console.WriteLine("[Owned] Skipping API sync — no JWT.");
+                Console.WriteLine("[Owned] Skipping API sync — no valid JWT.");
                 return;
             }
 
@@ -6432,7 +6480,7 @@ namespace LeafClient.Views
 
         private async Task HandleCoinPurchaseFromPopup(string itemId, string itemName, string preview, string rarity, int coinPrice)
         {
-            var token = _currentSettings?.LeafApiJwt;
+            var token = await EnsureLeafJwtAsync();
             if (string.IsNullOrEmpty(token)) return;
 
             var (success, newCoins, error) = await LeafApiService.PurchaseCosmeticWithCoinsAsync(token, itemId);
