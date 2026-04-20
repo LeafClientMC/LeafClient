@@ -1,3 +1,4 @@
+#pragma warning disable CS0618, CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8625, CS4014, CS0162, CS0219, CS0168, CS0169, CS0649, CS0414
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
@@ -256,8 +257,10 @@ namespace LeafClient.Views
 
         private readonly SemaphoreSlim _installGate = new(1, 1);
         private volatile bool _isInstalling = false;
-        private string _currentOperationText = "LAUNCH GAME"; 
-        private string _currentOperationColor = "SeaGreen"; 
+        private string _currentOperationText = "LAUNCH GAME";
+        private string _currentOperationColor = "SeaGreen";
+        private Color _launchButtonGlowColor = Color.FromRgb(50, 205, 50);
+        private bool _launchButtonHovered;
         private CancellationTokenSource? _launchCancellationTokenSource;
 
         private Border? _launchErrorBanner;
@@ -355,7 +358,7 @@ namespace LeafClient.Views
         private static readonly string[] _po_RecommendedVersions =
         {
             "1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4",
-            "1.21.3", "1.21.2", "1.21.1", "1.20.2", "1.20.1"
+            "1.21.3", "1.21.2", "1.21.1", "1.21", "1.20.2", "1.20.1"
         };
         // Side nav: 54px height + 8px spacing = 62px per nav item
 
@@ -378,6 +381,8 @@ namespace LeafClient.Views
         private IList<ITransition>? _savedSettingsSaveBannerTransitions;
         private IList<ITransition>? _savedAccountPanelTransitions;
 
+        private int _navigationToken = 0;
+
         private Border? _gameButton;
         private Border? _versionsButton;
         private Border? _serversButton;
@@ -398,6 +403,9 @@ namespace LeafClient.Views
         private Border? _checkoutPanel;
         private WebView? _checkoutWebView;
         private bool _isCheckoutAnimating = false;
+        private CancellationTokenSource? _checkoutPollCts;
+        private HashSet<string>? _checkoutPreOwnedIds;
+        private bool _checkoutPurchaseDetected;
 
         private Grid? _purchasePopupOverlay;
         private Border? _purchasePopupPanel;
@@ -671,6 +679,21 @@ namespace LeafClient.Views
             _ownedCosmeticIds.Add(cosmeticId);
             SaveOwnedJson();
             _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    var jwt = await EnsureLeafJwtAsync();
+                    if (string.IsNullOrEmpty(jwt)) return;
+                    await LeafApiService.PurchaseCosmeticWithCoinsAsync(jwt, cosmeticId);
+                }
+                catch { }
+                finally
+                {
+                    await SyncOwnedCosmeticsFromApiAsync();
+                }
+            });
         }
 
         void Services.IMainWindowHost.ShowPurchaseCelebration(string id, string name, string preview, string rarity)
@@ -972,6 +995,18 @@ namespace LeafClient.Views
             try
             {
                 _onlineCountService = new OnlineCountService();
+                _onlineCountService.SetTokenRefreshCallback(() => EnsureLeafJwtAsync());
+                var mcUsername = _currentSettings?.SessionUsername
+                    ?? DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
+                Console.WriteLine($"[OnlineCountService] Starting with username='{mcUsername}' (sessionUsername='{_currentSettings?.SessionUsername}')");
+                if (!string.IsNullOrWhiteSpace(mcUsername))
+                {
+                    _onlineCountService.Start(mcUsername!, _currentSettings?.LeafApiJwt);
+                }
+                else
+                {
+                    Console.WriteLine("[OnlineCountService] WARN: No username available, heartbeats disabled");
+                }
             }
             catch (Exception ex)
             {
@@ -1030,6 +1065,13 @@ namespace LeafClient.Views
 
                     if (_onlineCountService != null)
                     {
+                        var mcUsername = _currentSettings?.SessionUsername
+                            ?? DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
+                        Console.WriteLine($"[OnlineCountService] Opened handler: mcUsername='{mcUsername}', hasJwt={!string.IsNullOrEmpty(_currentSettings?.LeafApiJwt)}");
+                        if (!string.IsNullOrWhiteSpace(mcUsername))
+                        {
+                            _onlineCountService.Start(mcUsername!, _currentSettings?.LeafApiJwt);
+                        }
                         try { await _onlineCountService.UpdateCount(true); } catch (Exception ex) { Console.WriteLine($"[UpdateCount Error] {ex.Message}"); }
                         try { await UpdateOnlineCountDisplay(); } catch (Exception ex) { Console.WriteLine($"[UpdateOnlineCountDisplay Error] {ex.Message}"); }
                     }
@@ -1706,12 +1748,68 @@ namespace LeafClient.Views
             }
         }
 
+        private static readonly HttpClient _connectivityClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        private bool _offlineOverlayVisible = false;
+        private bool _connectivityCheckInFlight = false;
+
         private void CheckNetworkConnectivity()
         {
-            Dispatcher.UIThread.Post(() =>
+            if (_connectivityCheckInFlight) return;
+            _connectivityCheckInFlight = true;
+            _ = Task.Run(async () =>
             {
-                ApplyLaunchButtonState();
+                bool online = false;
+                try
+                {
+                    if (System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Head, "https://api.leafclient.com/health");
+                        using var res = await _connectivityClient.SendAsync(req).ConfigureAwait(false);
+                        online = res.IsSuccessStatusCode;
+                    }
+                }
+                catch { online = false; }
+                finally
+                {
+                    _connectivityCheckInFlight = false;
+                }
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    SetOfflineOverlay(!online);
+                    ApplyLaunchButtonState();
+                });
             });
+        }
+
+        private void SetOfflineOverlay(bool show)
+        {
+            if (_offlineOverlayVisible == show) return;
+            _offlineOverlayVisible = show;
+            var overlay = this.FindControl<Border>("OfflineOverlay");
+            if (overlay == null) return;
+            overlay.IsVisible = show;
+            var statusText = this.FindControl<TextBlock>("OfflineStatusText");
+            var dot = this.FindControl<Ellipse>("OfflineSpinnerDot");
+            if (show)
+            {
+                if (statusText != null) statusText.Text = "Waiting for connection…";
+                if (dot != null) dot.Fill = new SolidColorBrush(Color.Parse("#FF5252"));
+                var retry = this.FindControl<Button>("OfflineRetryButton");
+                if (retry != null)
+                {
+                    retry.Click -= OfflineRetry_Click;
+                    retry.Click += OfflineRetry_Click;
+                }
+            }
+        }
+
+        private void OfflineRetry_Click(object? sender, RoutedEventArgs e)
+        {
+            var statusText = this.FindControl<TextBlock>("OfflineStatusText");
+            var dot = this.FindControl<Ellipse>("OfflineSpinnerDot");
+            if (statusText != null) statusText.Text = "Checking connection…";
+            if (dot != null) dot.Fill = new SolidColorBrush(Color.Parse("#FFC857"));
+            CheckNetworkConnectivity();
         }
 
         /// <summary>
@@ -1741,6 +1839,7 @@ namespace LeafClient.Views
 
             int count = await _onlineCountService.GetOnlineCount();
             string? motd = _onlineCountService.GetMotd();
+            string? motdColor = _onlineCountService.GetMotdColor();
 
             if (count == int.MinValue)
             {
@@ -1773,7 +1872,16 @@ namespace LeafClient.Views
                 {
                     _motdTextBlock ??= this.FindControl<TextBlock>("MotdTextBlock");
                     _motdBanner ??= this.FindControl<Border>("MotdBanner");
-                    if (_motdTextBlock != null) _motdTextBlock.Text = motd;
+                    if (_motdTextBlock != null)
+                    {
+                        _motdTextBlock.Text = motd;
+                        IBrush brush = new SolidColorBrush(Colors.White);
+                        if (!string.IsNullOrWhiteSpace(motdColor))
+                        {
+                            try { brush = SolidColorBrush.Parse(motdColor); } catch { }
+                        }
+                        _motdTextBlock.Foreground = brush;
+                    }
                     if (_motdBanner != null) _motdBanner.IsVisible = true;
                 });
             }
@@ -1865,7 +1973,14 @@ namespace LeafClient.Views
                 {
                     _currentSettings.LeafApiJwt = result.AccessToken;
                     _currentSettings.LeafApiRefreshToken = result.RefreshToken;
+                    var activeEntry = _currentSettings.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+                    if (activeEntry != null)
+                    {
+                        activeEntry.LeafApiJwt = result.AccessToken;
+                        activeEntry.LeafApiRefreshToken = result.RefreshToken;
+                    }
                     if (_settingsService != null) _ = _settingsService.SaveSettingsAsync(_currentSettings);
+                    _onlineCountService?.UpdateAccessToken(result.AccessToken);
                     Console.WriteLine("[JWT] Refreshed successfully.");
                     return result.AccessToken;
                 }
@@ -1899,24 +2014,22 @@ namespace LeafClient.Views
 
                 Console.WriteLine($"[Owned] API returned {owned.Count} cosmetic(s): {string.Join(", ", owned.Select(x => x.Id))}");
 
-                var changed = false;
+                _ownedCosmeticIds.Clear();
                 foreach (var item in owned)
+                    _ownedCosmeticIds.Add(item.Id);
+
+                SaveOwnedJson();
+
+                var activeEntry = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+                if (activeEntry != null)
                 {
-                    if (_ownedCosmeticIds.Add(item.Id))
-                        changed = true;
+                    activeEntry.OwnedCosmeticIds = new List<string>(_ownedCosmeticIds);
+                    if (_settingsService != null) _ = _settingsService.SaveSettingsAsync(_currentSettings!);
                 }
 
-                if (changed)
-                {
-                    SaveOwnedJson();
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                        _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds));
-                    Console.WriteLine($"[Owned] Synced {owned.Count} owned cosmetics from API. Current set: {string.Join(", ", _ownedCosmeticIds)}");
-                }
-                else
-                {
-                    Console.WriteLine($"[Owned] No new cosmetics from API. Current set: {string.Join(", ", _ownedCosmeticIds)}");
-                }
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds));
+                Console.WriteLine($"[Owned] Synced {owned.Count} owned cosmetics from API. Current set: {string.Join(", ", _ownedCosmeticIds)}");
             }
             catch (Exception ex)
             {
@@ -1955,23 +2068,30 @@ namespace LeafClient.Views
 
         #endregion
 
+        private static readonly HashSet<string> LeafSupportedVersions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "1.20.1",
+            "1.20.2",
+            "1.21",
+            "1.21.1",
+            "1.21.2",
+            "1.21.3",
+            "1.21.4",
+            "1.21.5",
+            "1.21.6",
+            "1.21.7",
+            "1.21.8",
+            "1.21.9",
+            "1.21.10",
+            "1.21.11",
+        };
+
+        private static bool IsLeafRuntimeVersion(string? version)
+            => !string.IsNullOrWhiteSpace(version) && LeafSupportedVersions.Contains(version);
+
         private async Task DownloadLeafRuntimeDependencies(string version, bool isFabric)
         {
-            var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "1.20.1 Supported",
-        "1.20.2 Supported",
-        "1.21.4 Supported",
-        "1.21.5 Supported",
-        "1.21.6 Supported",
-        "1.21.7 Supported",
-        "1.21.8 Supported",
-        "1.21.9 Supported",
-        "1.21.10 Supported",
-        "1.21.11 Supported",
-    };
-
-            if (!isFabric || !supported.Contains(version))
+            if (!isFabric || !IsLeafRuntimeVersion(version))
                 return;
 
             string leafRuntimeDir = System.IO.Path.Combine(_minecraftFolder, "leaf-runtime", version);
@@ -2070,6 +2190,13 @@ namespace LeafClient.Views
 
         private async Task InitiateSelfUpdate(string newExeDownloadUrl)
         {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Console.WriteLine("[Updater] auto-update not yet available on this platform");
+                await ShowUpdateErrorDialog("Auto-update is not yet available on this platform. Please download the latest build manually.");
+                return;
+            }
+
             Console.WriteLine("[Updater] Preparing self-update process...");
 
             try
@@ -2089,7 +2216,7 @@ namespace LeafClient.Views
                 string updaterDir = System.IO.Path.Combine(appDirectory, "Updater");
                 System.IO.Directory.CreateDirectory(updaterDir);
 
-                string updaterExeName = "LeafClientUpdater.exe";
+                string updaterExeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "LeafClientUpdater.exe" : "LeafClientUpdater";
                 string updaterLocalPath = System.IO.Path.Combine(updaterDir, updaterExeName);
 
                 Console.WriteLine($"[Updater] Downloading updater from {updaterDownloadUrl} to {updaterLocalPath}");
@@ -2806,7 +2933,17 @@ namespace LeafClient.Views
 
             _checkoutOverlay = this.FindControl<Grid>("CheckoutOverlay");
             _checkoutPanel = this.FindControl<Border>("CheckoutPanel");
-            _checkoutWebView = this.FindControl<WebView>("CheckoutWebView");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                _checkoutWebView = this.FindControl<WebView>("CheckoutWebView");
+            }
+            else
+            {
+                var unsupportedLabel = this.FindControl<TextBlock>("CheckoutUnsupportedLabel");
+                if (unsupportedLabel != null) unsupportedLabel.IsVisible = true;
+                var webViewCtrl = this.FindControl<WebView>("CheckoutWebView");
+                if (webViewCtrl != null) webViewCtrl.IsVisible = false;
+            }
 
             _jvmArgumentsEditButton = this.FindControl<Button>("JvmArgumentsEditButton");
             if (_jvmArgumentsEditButton != null)
@@ -3079,12 +3216,14 @@ namespace LeafClient.Views
 
                 launchBtn.PointerEntered += (s, e) =>
                 {
-                    // Only show hover effect for TERMINATE, not for cancel anymore
+                    _launchButtonHovered = true;
                     if (_gameProcess != null && !_gameProcess.HasExited)
                     {
                         if (s is Button hoveredBtn)
                         {
                             hoveredBtn.Background = new SolidColorBrush(Colors.DarkRed);
+                            _launchButtonGlowColor = Colors.DarkRed;
+                            hoveredBtn.Effect = BuildLaunchGlow(Colors.DarkRed, true);
                             if (this.FindControl<Border>("LaunchButtonOuterBorder") is { } outerBorder)
                             {
                                 outerBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(139, 0, 0));
@@ -3095,10 +3234,15 @@ namespace LeafClient.Views
                             }
                         }
                     }
+                    else if (s is Button btn2)
+                    {
+                        btn2.Effect = BuildLaunchGlow(_launchButtonGlowColor, true);
+                    }
                 };
 
                 launchBtn.PointerExited += (s, e) =>
                 {
+                    _launchButtonHovered = false;
                     ApplyLaunchButtonState();
                 };
                 _settingsSaveBanner = this.FindControl<Border>("SettingsSaveBanner");
@@ -5142,16 +5286,14 @@ namespace LeafClient.Views
 
                     if (mod.DownloadUrl.Equals("internal", StringComparison.OrdinalIgnoreCase))
                     {
-                        string? launcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                        if (string.IsNullOrEmpty(launcherExePath))
+                        string? launcherDir = AppContext.BaseDirectory;
+                        if (string.IsNullOrEmpty(launcherDir))
                         {
-                            launcherExePath = Environment.ProcessPath; 
-                        }
-
-                        string? launcherDir = null;
-                        if (!string.IsNullOrEmpty(launcherExePath))
-                        {
-                            launcherDir = System.IO.Path.GetDirectoryName(launcherExePath);
+                            string? launcherExePath = Environment.ProcessPath;
+                            if (!string.IsNullOrEmpty(launcherExePath))
+                            {
+                                launcherDir = System.IO.Path.GetDirectoryName(launcherExePath);
+                            }
                         }
 
                         if (string.IsNullOrEmpty(launcherDir))
@@ -5936,6 +6078,11 @@ namespace LeafClient.Views
             if (_checkoutOverlay.IsVisible || _isCheckoutAnimating) return;
 
             _isCheckoutAnimating = true;
+            _checkoutPurchaseDetected = false;
+            _checkoutPreOwnedIds = new HashSet<string>(_ownedCosmeticIds);
+            _checkoutPollCts?.Cancel();
+            _checkoutPollCts = new CancellationTokenSource();
+            _ = PollForCheckoutPurchaseAsync(_checkoutPollCts.Token);
             _checkoutOverlay.IsVisible = true;
 
             // Make the WebView visible BEFORE setting the URL.  The backing
@@ -5946,13 +6093,8 @@ namespace LeafClient.Views
             {
                 _checkoutWebView.IsVisible = true;
 
-                // Give the native HWND enough time to re-attach to the visual
-                // tree before we issue the navigation. A single background tick
-                // is not enough after multiple hide/show cycles — the HWND
-                // needs layout + render passes to complete.
                 await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
-                await Task.Delay(80);
-                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                await Task.Delay(50);
 
                 try
                 {
@@ -5962,6 +6104,8 @@ namespace LeafClient.Views
                 {
                     Console.WriteLine($"[Checkout] Failed to load URL in WebView: {ex.Message}");
                 }
+
+                _ = RetryCheckoutNavigationAsync(url);
             }
 
             var tt = _checkoutPanel.RenderTransform as TranslateTransform;
@@ -6005,6 +6149,24 @@ namespace LeafClient.Views
             }
         }
 
+        private async Task RetryCheckoutNavigationAsync(string url)
+        {
+            await Task.Delay(600);
+            if (_checkoutWebView == null || !_checkoutWebView.IsVisible) return;
+            try
+            {
+                if (_checkoutWebView.Url == null || _checkoutWebView.Url.AbsoluteUri == "about:blank")
+                {
+                    Console.WriteLine("[Checkout] Retrying navigation — first attempt may have been dropped.");
+                    _checkoutWebView.Url = new Uri(url);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Checkout] Retry navigation failed: {ex.Message}");
+            }
+        }
+
         private async void CloseCheckout()
         {
             if (_checkoutOverlay == null || _checkoutPanel == null) return;
@@ -6012,14 +6174,13 @@ namespace LeafClient.Views
 
             _isCheckoutAnimating = true;
 
-            // Hide the WebView BEFORE animating — the native HWND doesn't respect
-            // RenderTransform, so if we leave it visible it floats above the
-            // sliding panel and then snaps away at the end.
-            // Do NOT navigate to about:blank here: issuing a navigation while the
-            // HWND is hidden corrupts WebView2's navigation state, causing the next
-            // open to silently drop the URL and show a blank panel.
+            _checkoutPollCts?.Cancel();
+            _checkoutPollCts = null;
+
             if (_checkoutWebView != null)
             {
+                try { _checkoutWebView.Url = new Uri("about:blank"); } catch { }
+                await Task.Delay(60);
                 _checkoutWebView.IsVisible = false;
             }
 
@@ -6066,14 +6227,16 @@ namespace LeafClient.Views
                 _isCheckoutAnimating = false;
             }
 
-            _ = SyncAfterCheckoutAsync();
+            if (!_checkoutPurchaseDetected)
+            {
+                _ = SyncAfterCheckoutAsync();
+            }
         }
 
         private async Task SyncAfterCheckoutAsync()
         {
             try
             {
-                await Task.Delay(2000);
                 var beforeIds = new HashSet<string>(_ownedCosmeticIds);
                 await SyncOwnedCosmeticsFromApiAsync();
                 var newIds = _ownedCosmeticIds.Where(id => !beforeIds.Contains(id)).ToList();
@@ -6094,6 +6257,63 @@ namespace LeafClient.Views
             catch (Exception ex)
             {
                 Console.WriteLine($"[PostCheckout] Sync failed: {ex.Message}");
+            }
+        }
+
+        private async Task PollForCheckoutPurchaseAsync(CancellationToken ct)
+        {
+            try
+            {
+                await Task.Delay(3000, ct);
+
+                while (!ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        Console.WriteLine("[CheckoutPoll] Checking for new cosmetics...");
+                        await SyncOwnedCosmeticsFromApiAsync();
+
+                        if (_checkoutPreOwnedIds != null)
+                        {
+                            var newIds = _ownedCosmeticIds
+                                .Where(id => !_checkoutPreOwnedIds.Contains(id))
+                                .ToList();
+
+                            if (newIds.Count > 0)
+                            {
+                                Console.WriteLine($"[CheckoutPoll] New cosmetic detected: {string.Join(", ", newIds)}");
+                                _checkoutPurchaseDetected = true;
+
+                                var firstNewId = newIds[0];
+                                var catalog = LeafClient.Views.Pages.StorePageView.StoreCatalog;
+                                var item = System.Array.Find(catalog, c => c.Id == firstNewId);
+
+                                await Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    CloseCheckout();
+
+                                    if (item.Id != null)
+                                    {
+                                        ShowPurchaseCelebration(item.Id, item.Name, item.Preview, item.Rarity);
+                                    }
+                                });
+
+                                return;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[CheckoutPoll] Poll error: {ex.Message}");
+                    }
+
+                    await Task.Delay(2000, ct);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CheckoutPoll] Unexpected error: {ex.Message}");
             }
         }
 
@@ -6371,12 +6591,12 @@ namespace LeafClient.Views
                 e.Handled = true;
                 ClosePurchasePopup();
 
-                var leafId = DecodeJwtMinecraftUsername(_currentSettings?.LeafApiJwt);
+                var userId = DecodeJwtSub(_currentSettings?.LeafApiJwt);
                 var url = checkoutUrl;
-                if (!string.IsNullOrWhiteSpace(leafId))
+                if (!string.IsNullOrWhiteSpace(userId))
                 {
                     var sep = url.Contains('?') ? "&" : "?";
-                    url = $"{url}{sep}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(leafId)}";
+                    url = $"{url}{sep}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(userId)}";
                 }
                 OpenCheckout(url);
             };
@@ -6646,11 +6866,185 @@ namespace LeafClient.Views
         }
 
         // Lemon Squeezy checkout URLs — one per billing tier.
-        private const string LeafPlusCheckoutMonthly   = "https://leafclient.lemonsqueezy.com/checkout/buy/5b0ccff3-487a-4f7e-b3d0-f85eb6fab73e";
-        private const string LeafPlusCheckoutQuarterly = "https://leafclient.lemonsqueezy.com/checkout/buy/06aa90ac-5b7c-4e8c-93ec-56a947c81865";
-        private const string LeafPlusCheckoutYearly    = "https://leafclient.lemonsqueezy.com/checkout/buy/d485dfcb-d312-44de-a783-241089d76b73";
+        private const string LeafPlusCheckoutMonthly   = "https://leafclient.lemonsqueezy.com/checkout/buy/1cde7c5c-c4fb-4a32-9a81-ed54cafc04ac";
+        private const string LeafPlusCheckoutQuarterly = "https://leafclient.lemonsqueezy.com/checkout/buy/305dfdd4-40fd-4e00-946a-e6246b8636ee";
+        private const string LeafPlusCheckoutYearly    = "https://leafclient.lemonsqueezy.com/checkout/buy/d3042d32-0b28-49ae-b12f-f897c308b9e0";
+
+        private const int LeafPlusCoinsMonthly   = 500;
+        private const int LeafPlusCoinsQuarterly = 1400;
+        private const int LeafPlusCoinsYearly    = 5000;
+
+        private bool _isLeafPlusPaymentAnimating;
 
         private void OnMonthlyPassSubscribeTapped(object? sender, TappedEventArgs e)
+        {
+            CloseMonthlyPassPopup();
+            ShowLeafPlusPaymentPopup();
+        }
+
+        private async void ShowLeafPlusPaymentPopup()
+        {
+            var overlay  = this.FindControl<Grid>("LeafPlusPaymentOverlay");
+            var panel    = this.FindControl<Border>("LeafPlusPaymentPanel");
+            var backdrop = this.FindControl<Border>("LeafPlusPaymentBackdrop");
+            if (overlay == null || panel == null) return;
+            if (_isLeafPlusPaymentAnimating || overlay.IsVisible) return;
+
+            _isLeafPlusPaymentAnimating = true;
+
+            var tierLabel    = this.FindControl<TextBlock>("LeafPlusPaymentTierLabel");
+            var pointsCost   = this.FindControl<TextBlock>("LeafPointsPayCost");
+            var pointsBal    = this.FindControl<TextBlock>("LeafPointsPayBalance");
+            var cardPrice    = this.FindControl<TextBlock>("LeafCardPayPrice");
+
+            (string tierName, int coins, string cardText) = _selectedLeafPlusTier switch
+            {
+                "monthly"   => ("Monthly",   LeafPlusCoinsMonthly,   "€4.99/month"),
+                "quarterly" => ("Quarterly", LeafPlusCoinsQuarterly, "€13.99/quarter"),
+                "yearly"    => ("Yearly",    LeafPlusCoinsYearly,    "€49.99/year"),
+                _           => ("Yearly",    LeafPlusCoinsYearly,    "€49.99/year"),
+            };
+
+            if (tierLabel  != null) tierLabel.Text  = $"Leaf+ {tierName}";
+            if (pointsCost != null) pointsCost.Text = $"{coins:N0} 🍃";
+            if (cardPrice  != null) cardPrice.Text  = cardText;
+
+            int balance = _currentCoinBalance;
+            if (pointsBal != null) pointsBal.Text = $"(you have {balance:N0})";
+
+            var pointsOption = this.FindControl<Border>("LeafPointsPayOption");
+            bool canAfford = balance >= coins;
+            if (pointsOption != null)
+            {
+                pointsOption.Opacity = canAfford ? 1.0 : 0.45;
+                pointsOption.Cursor = canAfford ? new Cursor(StandardCursorType.Hand) : new Cursor(StandardCursorType.No);
+            }
+
+            overlay.IsVisible = true;
+            if (backdrop != null) backdrop.Opacity = 0;
+            panel.Opacity = 0;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(0.85, 0.85);
+            panel.RenderTransform       = st;
+            panel.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            st.ScaleX = 0.85;
+            st.ScaleY = 0.85;
+
+            if (!AreAnimationsEnabled())
+            {
+                if (backdrop != null) backdrop.Opacity = 1;
+                panel.Opacity = 1;
+                st.ScaleX = 1; st.ScaleY = 1;
+                _isLeafPlusPaymentAnimating = false;
+                return;
+            }
+
+            const int steps = 18;
+            const int durationMs = 260;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t    = (double)i / steps;
+                double ease = 1 - Math.Pow(1 - t, 3);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = ease;
+                    panel.Opacity = ease;
+                    st.ScaleX = 0.85 + 0.15 * ease;
+                    st.ScaleY = 0.85 + 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+
+            _isLeafPlusPaymentAnimating = false;
+        }
+
+        private async void CloseLeafPlusPaymentPopup()
+        {
+            var overlay  = this.FindControl<Grid>("LeafPlusPaymentOverlay");
+            var panel    = this.FindControl<Border>("LeafPlusPaymentPanel");
+            var backdrop = this.FindControl<Border>("LeafPlusPaymentBackdrop");
+            if (overlay == null || panel == null) return;
+            if (!overlay.IsVisible || _isLeafPlusPaymentAnimating) return;
+
+            _isLeafPlusPaymentAnimating = true;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+            panel.RenderTransform = st;
+
+            if (!AreAnimationsEnabled())
+            {
+                overlay.IsVisible = false;
+                _isLeafPlusPaymentAnimating = false;
+                return;
+            }
+
+            const int steps = 14;
+            const int durationMs = 200;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t    = (double)i / steps;
+                double ease = Math.Pow(t, 2);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = 1 - ease;
+                    panel.Opacity = 1 - ease;
+                    st.ScaleX = 1.0 - 0.15 * ease;
+                    st.ScaleY = 1.0 - 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+
+            overlay.IsVisible = false;
+            _isLeafPlusPaymentAnimating = false;
+        }
+
+        private void OnLeafPlusPaymentClose(object? sender, TappedEventArgs e) => CloseLeafPlusPaymentPopup();
+        private void OnLeafPlusPaymentBackdropTapped(object? sender, TappedEventArgs e) => CloseLeafPlusPaymentPopup();
+
+        private async void OnLeafPlusPayWithPoints(object? sender, TappedEventArgs e)
+        {
+            int coins = _selectedLeafPlusTier switch
+            {
+                "monthly"   => LeafPlusCoinsMonthly,
+                "quarterly" => LeafPlusCoinsQuarterly,
+                "yearly"    => LeafPlusCoinsYearly,
+                _           => LeafPlusCoinsYearly,
+            };
+
+            if (_currentCoinBalance < coins) return;
+
+            CloseLeafPlusPaymentPopup();
+
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt)) return;
+
+            try
+            {
+                var result = await LeafApiService.PurchaseLeafPlusWithCoinsAsync(jwt, _selectedLeafPlusTier);
+                if (result?.Ok == true)
+                {
+                    if (_currentSettings != null)
+                        await UpdateLeafsBalanceAsync();
+                    string tierLabel = _selectedLeafPlusTier switch
+                    {
+                        "quarterly" => "LEAF+ Quarterly",
+                        "yearly"    => "LEAF+ Yearly",
+                        _           => "LEAF+ Monthly",
+                    };
+                    ShowPurchaseCelebration("leafplus", tierLabel, "", "exclusive");
+                }
+                else
+                {
+                    Console.WriteLine($"[LeafPlus] Coin purchase failed: {result?.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LeafPlus] Coin purchase error: {ex.Message}");
+            }
+        }
+
+        private void OnLeafPlusPayWithCard(object? sender, TappedEventArgs e)
         {
             string url = _selectedLeafPlusTier switch
             {
@@ -6660,11 +7054,14 @@ namespace LeafClient.Views
                 _           => LeafPlusCheckoutYearly,
             };
 
-            Console.WriteLine($"[LeafPlus] Opening in-app checkout — tier={_selectedLeafPlusTier}");
-
-            // Close the Leaf+ popup first, then reuse the same in-app WebView
-            // checkout overlay used for cosmetic purchases.
-            CloseMonthlyPassPopup();
+            Console.WriteLine($"[LeafPlus] Card checkout — tier={_selectedLeafPlusTier}");
+            CloseLeafPlusPaymentPopup();
+            var leafPlusUserId = DecodeJwtSub(_currentSettings?.LeafApiJwt);
+            if (!string.IsNullOrWhiteSpace(leafPlusUserId))
+            {
+                var sep = url.Contains('?') ? "&" : "?";
+                url = $"{url}{sep}checkout[custom][minecraft_uuid]={Uri.EscapeDataString(leafPlusUserId)}";
+            }
             OpenCheckout(url);
         }
 
@@ -6970,6 +7367,47 @@ namespace LeafClient.Views
             {
                 okButton.Click += (s, e) => dialog.Close();
             }
+            await dialog.ShowDialog(this);
+        }
+
+        private async Task ShowInfoDialog(string title, string message)
+        {
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 450,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Content = new StackPanel
+                {
+                    Margin = new Thickness(20),
+                    Spacing = 15,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = message,
+                            Foreground = GetBrush("PrimaryForegroundBrush"),
+                            FontSize = 13,
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        new Button
+                        {
+                            Content = "OK",
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                            Padding = new Thickness(15, 8),
+                            Background = GetBrush("PrimaryAccentBrush"),
+                            Foreground = GetBrush("AccentButtonForegroundBrush"),
+                            CornerRadius = new CornerRadius(8)
+                        }
+                    }
+                }
+            };
+
+            if (dialog.Content is StackPanel sp && sp.Children.OfType<Button>().LastOrDefault() is Button okBtn)
+                okBtn.Click += (_, __) => dialog.Close();
+
             await dialog.ShowDialog(this);
         }
 
@@ -8008,6 +8446,7 @@ namespace LeafClient.Views
             {
                 _currentSettings = await _settingsService.LoadSettingsAsync();
                 LoadOwnedJson();
+                MigrateActiveAccountEntry();
                 ValidateEquippedCosmetics();
 
                 if (_currentSettings.IsLoggedIn && _currentSettings.AccountType == "microsoft")
@@ -9727,29 +10166,48 @@ namespace LeafClient.Views
                 UpdateLaunchButton("PREPARING...", "DeepSkyBlue");
                 ClearModsFolder();
 
-                string leafModUrl  = $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestjars/{version}/leafclient.jar";
                 string leafModPath = GetLeafOfflineJarPath(version);
 
+                bool leafSupported = IsLeafRuntimeVersion(version);
+
                 _gameOutputWindow?.AppendLog($"[LaunchDiag] Mode: {(_currentSettings.IsTestMode ? "TEST (local build)" : "NORMAL (github download)")}", "INFO");
-                LogLaunchPreBuildDiagnostics(leafModPath, version);
+                _gameOutputWindow?.AppendLog($"[LaunchDiag] LeafClient mod support for {version}: {(leafSupported ? "YES" : "NO (launching vanilla)")}", "INFO");
+                if (leafSupported)
+                    LogLaunchPreBuildDiagnostics(leafModPath, version);
 
                 bool isModern = Version.TryParse(version, out var v) && v >= new Version(1, 17);
-                if (isModern)
+                if (isModern && leafSupported)
                 {
                     try
                     {
                         if (_currentSettings.IsTestMode)
                         {
-                            // Delete any previously downloaded JAR so the locally built one is always used
                             if (File.Exists(leafModPath)) File.Delete(leafModPath);
                             await BuildAndCopyLocalModAsync(version, leafModPath);
                         }
                         else
                         {
-                            // Always re-download to ensure the latest published version
-                            await DownloadFileWithProgressAsync(leafModUrl, leafModPath, "Leaf Core");
-                            LogJarFileInfo("leafModPath (post-download)", leafModPath);
+                            var manifest = await LeafApiService.GetModManifestAsync(version);
+                            if (manifest != null && !string.IsNullOrWhiteSpace(manifest.Sha256) && !string.IsNullOrWhiteSpace(manifest.JarUrl))
+                            {
+                                _gameOutputWindow?.AppendLog($"[LaunchDiag] Using verified CDN manifest (v{manifest.Version}) for Leaf Core.", "INFO");
+                                if (File.Exists(leafModPath)) File.Delete(leafModPath);
+                                await LeafApiService.DownloadVerifiedModJarAsync(manifest, leafModPath);
+                                LogJarFileInfo("leafModPath (post-download)", leafModPath);
+                            }
+                            else
+                            {
+                                _gameOutputWindow?.AppendLog($"LeafClient doesn't support {version} yet — launching vanilla.", "WARN");
+                                leafSupported = false;
+                            }
                         }
+                    }
+                    catch (InvalidOperationException integrityEx) when (integrityEx.Message == "Jar integrity check failed")
+                    {
+                        _gameOutputWindow?.AppendLog("[JarVerify] Integrity check FAILED — aborting launch.", "ERROR");
+                        ShowProgress(false);
+                        await ShowAccountActionErrorDialog("Could not verify client files. Please restart the launcher.");
+                        return;
                     }
                     catch (Exception ex)
                     {
@@ -9760,7 +10218,16 @@ namespace LeafClient.Views
                             await ShowAccountActionErrorDialog($"Developer test mode build failed — launch aborted.\n\n{ex.Message}");
                             return;
                         }
+                        leafSupported = false;
+                        _gameOutputWindow?.AppendLog($"[LaunchDiag] LeafClient jar unavailable for {version} — falling back to vanilla launch.", "WARN");
                     }
+
+                    if (leafSupported && (!File.Exists(leafModPath) || new FileInfo(leafModPath).Length < 1024))
+                    {
+                        leafSupported = false;
+                        _gameOutputWindow?.AppendLog($"[LaunchDiag] LeafClient jar not present on disk after prep for {version} — falling back to vanilla launch.", "WARN");
+                    }
+
                     ShowProgress(false);
                 }
 
@@ -9829,18 +10296,12 @@ namespace LeafClient.Views
                     _gameOutputWindow?.AppendLog($"[LaunchDiag] Rogue leaf jar sweep failed: {ex.Message}", "ERROR");
                 }
 
-                // Final pre-launch check: mods folder should have no stale leafclient jars,
-                // and the leafModPath file should still match what we prepared above.
-                LogLaunchPreLaunchDiagnostics(leafModPath);
+                if (leafSupported)
+                    LogLaunchPreLaunchDiagnostics(leafModPath);
 
                 var jvmArguments = new List<MArgument>
         {
-            new("-Dleaf.client=true"),
-            new("-Dleaf.version=1.1.0"),
-            new($"-Dfabric.addMods={leafModPath}"),
-            // Expose test mode to the mod so it can distinguish local vs published builds
             new($"-Dleaf.testmode={(_currentSettings.IsTestMode ? "true" : "false")}"),
-            // Aikar's GC flags for Minecraft
             new("-XX:+UseG1GC"),
             new("-XX:+UnlockExperimentalVMOptions"),
             new("-XX:G1NewSizePercent=20"),
@@ -9851,6 +10312,13 @@ namespace LeafClient.Views
             new("-XX:+AlwaysPreTouch"),
             new("-XX:+ParallelRefProcEnabled"),
         };
+
+                if (leafSupported)
+                {
+                    jvmArguments.Insert(0, new MArgument($"-Dfabric.addMods={leafModPath}"));
+                    jvmArguments.Insert(0, new MArgument("-Dleaf.version=1.5.0"));
+                    jvmArguments.Insert(0, new MArgument("-Dleaf.client=true"));
+                }
 
                 // Combine global + active-profile JVM argument overrides so per-profile
                 // tuning (e.g. a "benchmark" profile with aggressive GC flags) actually
@@ -9908,9 +10376,8 @@ namespace LeafClient.Views
                 process.EnableRaisingEvents = true;
                 process.Exited += OnGameExited;
 
-                // Track whether Leaf Client mod should be loaded for this version
                 var launchVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == _currentSettings.SelectedSubVersion);
-                _leafModExpected = launchVersionInfo?.IsLeafClientModSupported == true;
+                _leafModExpected = leafSupported && launchVersionInfo?.IsLeafClientModSupported == true;
                 _leafModLoaded = false;
                 _lastLaunchVersion = _currentSettings.SelectedSubVersion;
 
@@ -10519,6 +10986,8 @@ namespace LeafClient.Views
                 };
 
                 btn.Background = new SolidColorBrush(baseColor);
+                _launchButtonGlowColor = baseColor;
+                btn.Effect = BuildLaunchGlow(baseColor, _launchButtonHovered);
 
                 if (this.FindControl<Border>("LaunchButtonOuterBorder") is { } outerBorder)
                 {
@@ -10536,6 +11005,21 @@ namespace LeafClient.Views
                     subTextBlock.Text = _launchVersionText?.Text ?? "Leaf Client";
                 }
             }
+        }
+
+        private static DropShadowEffect BuildLaunchGlow(Color baseColor, bool hovered)
+        {
+            byte hoverAlpha = 0xAA;
+            byte idleAlpha = 0x2A;
+            var glow = Color.FromArgb(hovered ? hoverAlpha : idleAlpha, baseColor.R, baseColor.G, baseColor.B);
+            return new DropShadowEffect
+            {
+                BlurRadius = hovered ? 32 : 8,
+                Color = glow,
+                OffsetX = 0,
+                OffsetY = hovered ? 8 : 0,
+                Opacity = 1.0
+            };
         }
 
         private void StartRichPresenceIfEnabled()
@@ -10583,7 +11067,7 @@ namespace LeafClient.Views
                     "0" => "LAUNCH",
                     "1" => "PROFILES",
                     "2" => "SERVERS",
-                    "3" => "MODS",
+                    "3" => "CONTENT",
                     "6" => "COSMETICS",
                     "7" => "STORE",
                     "8" => "SCREENSHOTS",
@@ -10816,6 +11300,83 @@ namespace LeafClient.Views
                 "auras" => _currentSettings.Equipped.AuraId == cosId,
                 _       => false
             };
+        }
+
+        private void MigrateActiveAccountEntry()
+        {
+            if (_currentSettings == null) return;
+            var entry = _currentSettings.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+            if (entry == null) return;
+
+            var expectedId = ExpectedJwtIdentifier(entry);
+
+            if (!string.IsNullOrEmpty(entry.LeafApiJwt))
+            {
+                var jwtId = GetJwtMinecraftUsername(entry.LeafApiJwt);
+                if (!string.IsNullOrEmpty(jwtId) && !string.Equals(jwtId, expectedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[Migrate] Cleared mismatched JWT from AccountEntry (expected={expectedId}, got={jwtId})");
+                    entry.LeafApiJwt = null;
+                    entry.LeafApiRefreshToken = null;
+                    entry.OwnedCosmeticIds = new List<string>();
+                    _ = _settingsService?.SaveSettingsAsync(_currentSettings);
+                }
+            }
+
+            if (string.IsNullOrEmpty(entry.LeafApiJwt) && !string.IsNullOrEmpty(_currentSettings.LeafApiJwt))
+            {
+                var jwtId = GetJwtMinecraftUsername(_currentSettings.LeafApiJwt);
+                if (!string.IsNullOrEmpty(jwtId) && string.Equals(jwtId, expectedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.LeafApiJwt = _currentSettings.LeafApiJwt;
+                    entry.LeafApiRefreshToken = _currentSettings.LeafApiRefreshToken;
+                    _ = _settingsService?.SaveSettingsAsync(_currentSettings);
+                    Console.WriteLine("[Migrate] Copied matching LeafApiJwt into active AccountEntry.");
+                }
+            }
+
+            if (entry.OwnedCosmeticIds.Count == 0 && !string.IsNullOrEmpty(entry.LeafApiJwt) && _ownedCosmeticIds.Count > 0)
+            {
+                entry.OwnedCosmeticIds = new List<string>(_ownedCosmeticIds);
+            }
+        }
+
+        private static string ExpectedJwtIdentifier(AccountEntry entry)
+        {
+            if (entry.AccountType == "microsoft")
+            {
+                var clean = (entry.Uuid ?? "").Replace("-", "").ToLowerInvariant();
+                if (clean.Length == 32)
+                    return $"{clean[..8]}-{clean[8..12]}-{clean[12..16]}-{clean[16..20]}-{clean[20..]}";
+                return entry.Uuid?.ToLowerInvariant() ?? "";
+            }
+            return entry.Username?.ToLowerInvariant() ?? "";
+        }
+
+        private static string? GetJwtMinecraftUsername(string jwt)
+        {
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                var padded = (payload.Length % 4) switch
+                {
+                    2 => payload + "==",
+                    3 => payload + "=",
+                    _ => payload
+                };
+                var bytes = Convert.FromBase64String(padded.Replace('-', '+').Replace('_', '/'));
+                var json = System.Text.Encoding.UTF8.GetString(bytes);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("minecraft_username", out var prop))
+                    return prop.GetString();
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private void LoadOwnedJson()
@@ -13428,32 +13989,39 @@ namespace LeafClient.Views
             var iconGroup = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Spacing = 2,
+                Spacing = 8,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
             };
 
-            Button MakeIconBtn(string icon, string tooltip, IBrush fg, Action onClick)
+            Border MakeIconChip(string icon, string tooltip, IBrush fg, Action onClick)
             {
-                var btn = new Button
+                var iconText = new TextBlock
                 {
-                    Content = icon,
-                    Background = Brushes.Transparent,
+                    Text = icon,
+                    FontSize = 13,
                     Foreground = fg,
-                    BorderThickness = new Thickness(0),
-                    CornerRadius = new CornerRadius(8),
-                    Width = 34, Height = 34,
-                    FontSize = 14,
-                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalContentAlignment   = Avalonia.Layout.VerticalAlignment.Center,
-                    Cursor = new Cursor(StandardCursorType.Hand)
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
                 };
-                ToolTip.SetTip(btn, tooltip);
-                btn.Click += (_, _) => onClick();
-                return btn;
+                var chip = new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(12, 9, 12, 7),
+                    Background = SolidColorBrush.Parse("#0F1A24"),
+                    BorderBrush = SolidColorBrush.Parse("#1C2A38"),
+                    BorderThickness = new Thickness(1),
+                    Cursor = new Cursor(StandardCursorType.Hand),
+                    MinWidth = 38,
+                    MinHeight = 34,
+                    Child = iconText
+                };
+                ToolTip.SetTip(chip, tooltip);
+                chip.Tapped += (_, _) => onClick();
+                return chip;
             }
 
-            iconGroup.Children.Add(MakeIconBtn("📁", "Open profile folder", GetBrush("SecondaryForegroundBrush"), () =>
+            iconGroup.Children.Add(MakeIconChip("\U0001F4C1", "Open profile folder", GetBrush("SecondaryForegroundBrush"), () =>
             {
                 try
                 {
@@ -13461,12 +14029,12 @@ namespace LeafClient.Views
                         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                         ".minecraft", "profiles", profile.Id);
                     System.IO.Directory.CreateDirectory(folderPath);
-                    System.Diagnostics.Process.Start("explorer.exe", folderPath);
+                    LeafClient.Utils.SystemUtil.OpenFolder(folderPath);
                 }
                 catch { }
             }));
 
-            iconGroup.Children.Add(MakeIconBtn("🗑", "Delete profile", SolidColorBrush.Parse("#FF6B6B"), () => OnDeleteProfile(profile)));
+            iconGroup.Children.Add(MakeIconChip("\U0001F5D1", "Delete profile", SolidColorBrush.Parse("#FF6B6B"), () => OnDeleteProfile(profile)));
 
             Grid.SetColumn(iconGroup, 1);
             actionBar.Children.Add(iconGroup);
@@ -15541,6 +16109,53 @@ namespace LeafClient.Views
         }
 
 
+        private async void LinkWebsiteButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (!_currentSettings.IsLoggedIn || _currentSettings.AccountType != "microsoft")
+            {
+                await ShowAccountActionErrorDialog("Link Website is only available for Microsoft accounts.");
+                return;
+            }
+
+            var uuid = _currentSettings.SessionUuid;
+            var accessToken = _currentSettings.SessionAccessToken;
+            if (string.IsNullOrEmpty(uuid) || string.IsNullOrEmpty(accessToken))
+            {
+                await ShowAccountActionErrorDialog("Your session is missing credentials. Please log out and log back in.");
+                return;
+            }
+
+            var code = await ShowTextInputDialog(
+                "Link Website",
+                "Enter the 6-character code shown on the Leaf Client website:");
+
+            if (string.IsNullOrWhiteSpace(code)) return;
+
+            code = code.Trim().ToUpperInvariant();
+            if (code.Length != 6)
+            {
+                await ShowAccountActionErrorDialog("Invalid code. Please enter the 6-character code from the website.");
+                return;
+            }
+
+            try
+            {
+                var (success, error) = await LeafApiService.WebLinkCompleteAsync(code, uuid, accessToken);
+                if (success)
+                {
+                    await ShowInfoDialog("Link Website", "Your account has been linked to the website. You are now signed in!");
+                }
+                else
+                {
+                    await ShowAccountActionErrorDialog(error ?? "Failed to link account. Please check the code and try again.");
+                }
+            }
+            catch (Exception ex)
+            {
+                await ShowAccountActionErrorDialog($"Error: {ex.Message}");
+            }
+        }
+
         private async void LogoutButton_Click(object? sender, RoutedEventArgs e)
         {
             try
@@ -15574,10 +16189,11 @@ namespace LeafClient.Views
                         _currentSettings.ActiveAccountId = next.Id;
                         _currentSettings.OfflineUsername = next.AccountType == "offline" ? next.Username : null;
 
+                        LoadAccountState(next);
+
                         await _settingsService.SaveSettingsAsync(_currentSettings);
                     }
 
-                    // Refresh the session
                     _session = next.AccountType == "offline"
                         ? MSession.CreateOfflineSession(next.Username)
                         : new MSession(next.Username, next.AccessToken ?? "", next.Uuid ?? "");
@@ -15585,9 +16201,9 @@ namespace LeafClient.Views
                     _loggedIn = true;
                     _currentUsername = next.Username;
 
-                    // Refresh UI
                     PopulateAccountsListPanel();
                     await LoadUserInfoAsync();
+                    _ = SyncOwnedCosmeticsFromApiAsync();
                     Console.WriteLine("[MainWindow] Switched to next account successfully");
                 }
                 else
@@ -15875,12 +16491,8 @@ namespace LeafClient.Views
 
         private async void SwitchToPage(int index)
         {
-            // Skins (5) is a hidden overlay-style page reached only via the
-            // "Edit Skin" button in the account panel.  Because it has no
-            // sidebar button, we keep the selection indicator pinned to
-            // whatever sidebar page the user was last on — otherwise the
-            // indicator visually jumps to the Settings slot (which was the
-            // fallback visual position for index 5) and looks like a bug.
+            int navToken = ++_navigationToken;
+
             int previousSelectedIndex = _currentSelectedIndex;
             bool isSkinsOverlay = index == 5;
             if (_gamePage != null) _gamePage.IsVisible = false;
@@ -15971,11 +16583,12 @@ namespace LeafClient.Views
                     break;
             }
 
+            if (navToken != _navigationToken) return;
+
             if (index != 4) HideSettingsSaveBanner();
 
             if (isSkinsOverlay)
             {
-                // Preserve sidebar selection; Skins doesn't own a sidebar slot.
                 _currentSelectedIndex = previousSelectedIndex;
                 AnimateSelectionIndicator(previousSelectedIndex);
             }
@@ -16275,22 +16888,7 @@ namespace LeafClient.Views
             _allVersions.Add(new VersionInfo("1.7.4", "1.7", "Legacy", "Vanilla", "December 10, 2013", "Bug fixes."));
             _allVersions.Add(new VersionInfo("1.7.2", "1.7", "Release", "Vanilla", "October 25, 2013", "The Update that Changed the World: new biomes and fishing mechanics."));
 
-            var leafClientSupportedVersions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "1.20.1",
-                "1.20.2",
-                "1.21.1",
-                "1.21.2",
-                "1.21.3",
-                "1.21.4",
-                "1.21.5",
-                "1.21.6",
-                "1.21.7",
-                "1.21.8",
-                "1.21.9",
-                "1.21.10",
-                "1.21.11"
-            };
+            var leafClientSupportedVersions = LeafSupportedVersions;
 
             foreach (var version in _allVersions)
             {
@@ -16407,6 +17005,8 @@ namespace LeafClient.Views
         {
             _parallaxCts?.Cancel();
             KillMinecraftProcess();
+            try { _onlineCountService?.DeleteHeartbeatAsync().Wait(3000); } catch { }
+            _onlineCountService?.Dispose();
             if (_trayIcon != null)
             {
                 _trayIcon.IsVisible = false;
@@ -17301,13 +17901,57 @@ namespace LeafClient.Views
             return card;
         }
 
+        private void SaveCurrentAccountState()
+        {
+            if (_currentSettings == null) return;
+            var entry = _currentSettings.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+            if (entry == null) return;
+            entry.LeafApiJwt = _currentSettings.LeafApiJwt;
+            entry.LeafApiRefreshToken = _currentSettings.LeafApiRefreshToken;
+            entry.OwnedCosmeticIds = new List<string>(_ownedCosmeticIds);
+            if (_currentSettings.Equipped != null)
+                entry.Equipped = new EquippedCosmetics
+                {
+                    CapeId = _currentSettings.Equipped.CapeId,
+                    HatId = _currentSettings.Equipped.HatId,
+                    WingsId = _currentSettings.Equipped.WingsId,
+                    BackItemId = _currentSettings.Equipped.BackItemId,
+                    AuraId = _currentSettings.Equipped.AuraId
+                };
+        }
+
+        private void LoadAccountState(AccountEntry account)
+        {
+            if (_currentSettings == null) return;
+            _currentSettings.LeafApiJwt = account.LeafApiJwt;
+            _currentSettings.LeafApiRefreshToken = account.LeafApiRefreshToken;
+            _onlineCountService?.UpdateAccessToken(account.LeafApiJwt);
+            _currentSettings.Equipped = new EquippedCosmetics
+            {
+                CapeId = account.Equipped.CapeId,
+                HatId = account.Equipped.HatId,
+                WingsId = account.Equipped.WingsId,
+                BackItemId = account.Equipped.BackItemId,
+                AuraId = account.Equipped.AuraId
+            };
+            _ownedCosmeticIds.Clear();
+            foreach (var id in account.OwnedCosmeticIds)
+                _ownedCosmeticIds.Add(id);
+            Dispatcher.UIThread.Post(() =>
+            {
+                _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+                _storePage?.RefreshOwnedList(_ownedCosmeticIds);
+            });
+        }
+
         private async void OnSwitchAccount(object? sender, TappedEventArgs e)
         {
             if (sender is not Border b || b.Tag is not string accountId) return;
             var account = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == accountId);
             if (account == null || _currentSettings == null) return;
 
-            // Set this account as active
+            SaveCurrentAccountState();
+
             _currentSettings.ActiveAccountId = account.Id;
             _currentSettings.AccountType = account.AccountType;
             _currentSettings.SessionUsername = account.Username;
@@ -17315,6 +17959,8 @@ namespace LeafClient.Views
             _currentSettings.SessionAccessToken = account.AccessToken;
             _currentSettings.SessionXuid = account.Xuid;
             _currentSettings.IsLoggedIn = true;
+
+            LoadAccountState(account);
 
             if (account.AccountType == "offline")
             {
@@ -17335,6 +17981,34 @@ namespace LeafClient.Views
             await _settingsService.SaveSettingsAsync(_currentSettings);
             PopulateAccountsListPanel();
             await LoadUserInfoAsync();
+
+            if (string.IsNullOrEmpty(account.LeafApiJwt) && account.AccountType == "microsoft" &&
+                !string.IsNullOrWhiteSpace(account.Uuid) && !string.IsNullOrWhiteSpace(account.AccessToken))
+            {
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        var apiResult = await LeafApiService.MicrosoftLoginAsync(account.Uuid!, account.AccessToken!);
+                        if (apiResult != null && _currentSettings != null)
+                        {
+                            _currentSettings.LeafApiJwt = apiResult.AccessToken;
+                            _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
+                            account.LeafApiJwt = apiResult.AccessToken;
+                            account.LeafApiRefreshToken = apiResult.RefreshToken;
+                            await _settingsService.SaveSettingsAsync(_currentSettings);
+                            _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+                            Console.WriteLine("[Accounts] Silently re-linked Microsoft account JWT on switch.");
+                            await SyncOwnedCosmeticsFromApiAsync();
+                        }
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[Accounts] Silent re-link failed: {ex.Message}"); }
+                });
+            }
+            else
+            {
+                _ = SyncOwnedCosmeticsFromApiAsync();
+            }
         }
 
         private async void OnRemoveAccount(object? sender, RoutedEventArgs e)
@@ -17351,18 +18025,48 @@ namespace LeafClient.Views
 
         private async void AddMicrosoftAccountClick(object? sender, RoutedEventArgs e)
         {
-            // Show auth status panel
             var statusPanel = this.FindControl<Border>("MsAuthStatusPanel");
             var statusText = this.FindControl<TextBlock>("MsAuthStatusText");
+            var statusSub = this.FindControl<TextBlock>("MsAuthSubText");
             if (statusPanel != null) statusPanel.IsVisible = true;
             if (statusText != null) statusText.Text = "Opening browser for Microsoft login...";
+            if (statusSub != null) statusSub.Text = "Complete the sign-in in your browser";
 
             _msAuthCts = new System.Threading.CancellationTokenSource();
 
             try
             {
+                XboxAuthNet.Game.Msal.MsalSerializationConfig.DefaultSerializerOptions = LeafClient.Json.Options;
+                XboxAuthNet.JsonConfig.DefaultOptions = LeafClient.Json.Options;
+
                 var app = await MsalClientHelper.BuildApplicationWithCache("499c8d36-be2a-4231-9ebd-ef291b7bb64c");
-                var loginHandler = new JELoginHandlerBuilder().Build();
+
+                string? capturedRefreshToken = null;
+                app.UserTokenCache.SetAfterAccess(notification =>
+                {
+                    if (notification.HasStateChanged && capturedRefreshToken == null)
+                    {
+                        try
+                        {
+                            var cacheBytes = notification.TokenCache.SerializeMsalV3();
+                            using var cacheDoc = System.Text.Json.JsonDocument.Parse(cacheBytes);
+                            if (cacheDoc.RootElement.TryGetProperty("RefreshToken", out var rtSection))
+                            {
+                                foreach (var rtEntry in rtSection.EnumerateObject())
+                                {
+                                    if (rtEntry.Value.TryGetProperty("secret", out var secret))
+                                    {
+                                        capturedRefreshToken = secret.GetString();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                });
+
+                var loginHandler = JELoginHandlerBuilder.BuildDefault();
                 var authenticator = loginHandler.CreateAuthenticatorWithNewAccount();
 
                 authenticator.AddMsalOAuth(app, msal => msal.Interactive());
@@ -17375,7 +18079,6 @@ namespace LeafClient.Views
 
                 if (newSession != null && newSession.CheckIsValid())
                 {
-                    // Add to saved accounts
                     var entry = new AccountEntry
                     {
                         AccountType = "microsoft",
@@ -17385,13 +18088,11 @@ namespace LeafClient.Views
                         Xuid = newSession.Xuid
                     };
 
-                    // Remove any duplicate Microsoft account with same UUID
                     _currentSettings?.SavedAccounts.RemoveAll(a =>
                         a.AccountType == "microsoft" && a.Uuid == newSession.UUID);
 
                     _currentSettings?.SavedAccounts.Add(entry);
 
-                    // Set as active
                     if (_currentSettings != null)
                     {
                         _currentSettings.ActiveAccountId = entry.Id;
@@ -17401,19 +18102,60 @@ namespace LeafClient.Views
                         _currentSettings.SessionUuid = newSession.UUID;
                         _currentSettings.SessionAccessToken = newSession.AccessToken;
                         _currentSettings.SessionXuid = newSession.Xuid;
+                        if (!string.IsNullOrWhiteSpace(capturedRefreshToken))
+                            _currentSettings.MicrosoftRefreshToken = capturedRefreshToken;
                         await _settingsService.SaveSettingsAsync(_currentSettings);
                     }
+
+                    _ = System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(newSession.UUID) && !string.IsNullOrWhiteSpace(newSession.AccessToken))
+                            {
+                                var apiResult = await LeafApiService.MicrosoftLoginAsync(newSession.UUID, newSession.AccessToken);
+                                if (apiResult != null && _currentSettings != null)
+                                {
+                                    _currentSettings.LeafApiJwt = apiResult.AccessToken;
+                                    _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
+                                    var activeEntry = _currentSettings.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+                                    if (activeEntry != null)
+                                    {
+                                        activeEntry.LeafApiJwt = apiResult.AccessToken;
+                                        activeEntry.LeafApiRefreshToken = apiResult.RefreshToken;
+                                    }
+                                    await _settingsService.SaveSettingsAsync(_currentSettings);
+                                    _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+                                    Console.WriteLine("[Accounts] LeafClient API linked for Microsoft account.");
+                                    _ownedCosmeticIds.Clear();
+                                    await SyncOwnedCosmeticsFromApiAsync();
+                                }
+                            }
+                        }
+                        catch (Exception ex2)
+                        {
+                            Console.WriteLine($"[Accounts] LeafClient API link failed (non-critical): {ex2.Message}");
+                        }
+                    });
 
                     _session = newSession;
                     PopulateAccountsListPanel();
                     await LoadUserInfoAsync();
                 }
             }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("[Accounts] Microsoft auth cancelled.");
+                if (statusText != null) statusText.Text = "Sign-in cancelled.";
+                if (statusSub != null) statusSub.Text = "You can try again anytime.";
+                await System.Threading.Tasks.Task.Delay(1500);
+            }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Accounts] Microsoft auth failed: {ex.Message}");
+                Console.WriteLine($"[Accounts] Microsoft auth failed: {ex}");
                 if (statusText != null) statusText.Text = "Authentication failed. Try again.";
-                await System.Threading.Tasks.Task.Delay(2000);
+                if (statusSub != null) statusSub.Text = ex.Message.Length > 80 ? ex.Message[..80] + "\u2026" : ex.Message;
+                await System.Threading.Tasks.Task.Delay(3000);
             }
             finally
             {
@@ -17836,13 +18578,16 @@ namespace LeafClient.Views
 
 
         private static void OpenPrivacyPolicy(object? s, RoutedEventArgs e) =>
-           Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/privacypolicy", UseShellExecute = true });
+           Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/privacy.html", UseShellExecute = true });
 
         private static void OpenTermsOfService(object? s, RoutedEventArgs e) =>
-            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/tos", UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/terms.html", UseShellExecute = true });
 
         private static void OpenLicenses(object? s, RoutedEventArgs e) =>
             Process.Start(new ProcessStartInfo { FileName = "https://github.com/LeafClientMC/LeafClient/blob/main/LICENSE.md", UseShellExecute = true });
+
+        private static void OpenContact(object? s, RoutedEventArgs e) =>
+            Process.Start(new ProcessStartInfo { FileName = "https://leafclient.com/contact.html", UseShellExecute = true });
 
 
         private async void SaveSettingsFromUi()
@@ -18176,6 +18921,24 @@ namespace LeafClient.Views
             return null;
         }
 
+        private static string? DecodeJwtSub(string? jwt)
+        {
+            if (string.IsNullOrWhiteSpace(jwt)) return null;
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("sub", out var el))
+                    return el.GetString();
+            }
+            catch { }
+            return null;
+        }
+
         private async Task<byte[]?> FetchSkinBytesAsync()
         {
             string? uuid = _session?.UUID ?? _currentSettings?.SessionUuid;
@@ -18312,8 +19075,8 @@ public class ServerStatusResult
     public bool IsOnline { get; set; }
     public int CurrentPlayers { get; set; }
     public int MaxPlayers { get; set; }
-    public string Motd { get; set; }
-    public string IconData { get; set; } 
+    public string? Motd { get; set; }
+    public string? IconData { get; set; }
 }
 
 
@@ -18370,22 +19133,22 @@ public static class StreamExtensions
 
 public class ModrinthPack
 {
-    public int FormatVersion { get; set; } 
-    public string Game { get; set; }
-    public string VersionId { get; set; }
-    public string Name { get; set; }
+    public int FormatVersion { get; set; }
+    public string? Game { get; set; }
+    public string? VersionId { get; set; }
+    public string? Name { get; set; }
     public string? Summary { get; set; }
-    public List<ModrinthPackFile> Files { get; set; }
-    public Dictionary<string, string> Dependencies { get; set; } 
+    public List<ModrinthPackFile>? Files { get; set; }
+    public Dictionary<string, string>? Dependencies { get; set; }
 }
 
 public class ModrinthPackFile
 {
-    public string Path { get; set; }
-    public Dictionary<string, string> Hashes { get; set; }
-    public List<string> Downloads { get; set; }
+    public string? Path { get; set; }
+    public Dictionary<string, string>? Hashes { get; set; }
+    public List<string>? Downloads { get; set; }
     public long FileSize { get; set; }
-    public string FileType { get; set; }
+    public string? FileType { get; set; }
 }
 
 public class NotificationWindow : Window

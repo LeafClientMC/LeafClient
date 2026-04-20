@@ -33,6 +33,13 @@ namespace LeafClient
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     )]
     [JsonSerializable(typeof(LauncherSettings))]
+    [JsonSerializable(typeof(LauncherProfile))]
+    [JsonSerializable(typeof(List<LauncherProfile>))]
+    [JsonSerializable(typeof(AccountEntry))]
+    [JsonSerializable(typeof(List<AccountEntry>))]
+    [JsonSerializable(typeof(EquippedCosmetics))]
+    [JsonSerializable(typeof(CosmeticPreset))]
+    [JsonSerializable(typeof(List<CosmeticPreset>))]
     [JsonSerializable(typeof(ServerInfo))]
     [JsonSerializable(typeof(SkinInfo))]
     [JsonSerializable(typeof(InstalledMod))]
@@ -54,9 +61,10 @@ namespace LeafClient
     [JsonSerializable(typeof(Dictionary<string, object>))]
     [JsonSerializable(typeof(object))]
 
-    // NEW: Add payload types for SuggestionsService
+    // NEW: Add payload types for SuggestionsService and CrashReportService
     [JsonSerializable(typeof(FeatureSuggestionPayload))]
     [JsonSerializable(typeof(BugReportPayload))]
+    [JsonSerializable(typeof(CrashReportPayload))]
     [JsonSerializable(typeof(ErrorResponse))] // Ensure ErrorResponse is also serializable
 
     // CmlLib VersionMetadata types
@@ -123,6 +131,47 @@ namespace LeafClient
     [JsonSerializable(typeof(XboxSignedUserTokenRequestProperties))]
     [JsonSerializable(typeof(XboxDeviceAuthRequestPayload))]
     [JsonSerializable(typeof(XboxDeviceAuthRequestProperties))]
+
+    // AOT: missing types for IL3050/IL2026 fixes
+    [JsonSerializable(typeof(AAdsAdResponse))]
+    [JsonSerializable(typeof(ModCleanupEntry))]
+    [JsonSerializable(typeof(List<ModCleanupEntry>))]
+
+    // AOT: named request body for XboxUnsignedDeviceTokenAuth
+    [JsonSerializable(typeof(XboxDeviceTokenRequestBody))]
+
+    // AOT: DirectRefreshService request bodies (replaces anonymous-type serialization)
+    [JsonSerializable(typeof(XblAuthRequest))]
+    [JsonSerializable(typeof(XblAuthProperties))]
+    [JsonSerializable(typeof(XstsAuthRequest))]
+    [JsonSerializable(typeof(XstsAuthProperties))]
+    [JsonSerializable(typeof(McLoginRequest))]
+
+    // LeafClient API DTOs
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiAuthResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiUser))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiOwnedCosmetic))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiOwnedCosmetic>))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiEquippedCosmetic))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiEquippedCosmetic>))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiConfig))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiRegisterRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiLoginRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiMicrosoftAuthRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiRefreshRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiEquipRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiBalance))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiPlaytimeRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiPlaytimeResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiErrorResponse))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiCoinPurchaseRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiCoinPurchaseResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiLeafPlusSubscribeRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiLeafPlusSubscribeResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiHeartbeatRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiDeleteHeartbeatRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiManifest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiWebLinkCompleteRequest))]
 
     internal partial class JsonContext : JsonSerializerContext
     {
