@@ -17834,6 +17834,8 @@ namespace LeafClient.Views
                 _accountTypeLabel.Text = activeAccount?.AccountType == "microsoft" ? "Microsoft Account" : "Offline";
             if (_accountOnlineDot != null)
                 _accountOnlineDot.Fill = SolidColorBrush.Parse("#9333EA");
+            if (EditSkinButton != null)
+                EditSkinButton.IsVisible = activeAccount?.AccountType != "offline";
         }
 
         private void EnsureActiveAccountInList()
