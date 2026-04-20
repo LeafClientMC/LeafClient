@@ -3117,6 +3117,8 @@
 													CornerRadius="8"
 													HorizontalAlignment="Stretch"
 													HorizontalContentAlignment="Center"
+													VerticalContentAlignment="Center"
+													Padding="0"
 													Cursor="Hand"
 													Click="WebLinkConfirmButton_Click">
 												<Button.Styles>
@@ -3127,7 +3129,7 @@
 														<Setter Property="Background" Value="Transparent"/>
 													</Style>
 												</Button.Styles>
-												<TextBlock Text="CONFIRM" Foreground="#6BDF9F" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+												<TextBlock Text="CONFIRM" Foreground="#6BDF9F" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
 											</Button>
 											<Button Grid.Column="2" Height="34"
 													Background="#1A1A1A"
@@ -3136,6 +3138,8 @@
 													CornerRadius="8"
 													HorizontalAlignment="Stretch"
 													HorizontalContentAlignment="Center"
+													VerticalContentAlignment="Center"
+													Padding="0"
 													Cursor="Hand"
 													Click="WebLinkCancelButton_Click">
 												<Button.Styles>
@@ -3146,7 +3150,7 @@
 														<Setter Property="Background" Value="Transparent"/>
 													</Style>
 												</Button.Styles>
-												<TextBlock Text="CANCEL" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+												<TextBlock Text="CANCEL" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
 											</Button>
 										</Grid>
 									</StackPanel>
@@ -3165,6 +3169,8 @@
 												CornerRadius="8"
 												HorizontalAlignment="Stretch"
 												HorizontalContentAlignment="Center"
+												VerticalContentAlignment="Center"
+												Padding="0"
 												Cursor="Hand"
 												Click="WebLinkCancelButton_Click">
 											<Button.Styles>
@@ -3175,7 +3181,7 @@
 													<Setter Property="Background" Value="Transparent"/>
 												</Style>
 											</Button.Styles>
-											<TextBlock Text="OK" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+											<TextBlock Text="OK" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
 										</Button>
 									</StackPanel>
 
