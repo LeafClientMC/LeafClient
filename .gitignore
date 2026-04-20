@@ -12,13 +12,10 @@ Desktop.ini
 # ==================================================================
 # IDE / Editor files
 # ==================================================================
-# IntelliJ IDEA
 .idea/
 *.iml
 *.ipr
 *.iws
-
-# VS Code
 .vscode/
 .vscode/*.log
 .vscode/*.tmp
@@ -36,8 +33,6 @@ replay_pid*
 # ==================================================================
 **/.gradle/
 !**/gradle/wrapper/gradle-wrapper.jar
-
-# Build outputs
 **/build/
 **/target/
 **/out/
@@ -63,8 +58,6 @@ replay_pid*
 *.so
 *.dll
 *.dylib
-
-# Debug symbols
 *.pdb
 *.idb
 *.dbg
@@ -92,7 +85,112 @@ logs/
 src/LeafClient/PrivateServices/
 
 # ==================================================================
+# PARTIAL OPEN-SOURCE: hide design + runnables
+# Backend logic (Services/, ViewModels/, Models/, Controls/, Utils/,
+# Views/*.axaml.cs, App.axaml.cs, Program.cs) stays visible.
+# Everything below is hidden so the repo cannot be compiled/run locally.
+# ==================================================================
+
+# ── Design layer ──────────────────────────────────────────────────
+src/LeafClient/**/*.axaml
+src/LeafClient/Themes/
+src/LeafClient/DarkTheme.axaml
+src/LeafClient/LightTheme.axaml
+src/LeafClient/Fonts/
+src/LeafClient/Assets/
+launcherassets/
+
+# ── Build / project files (kill local compile) ────────────────────
+src/LeafClient/LeafClient.sln
+src/LeafClient/LeafClient.csproj.Backup*.tmp
+src/LeafClient/app.manifest
+src/LeafClient/rd.xml
+src/LeafClient/packages.config
+src/LeafClient/Properties/
+src/LeafClient/build.gradle
+src/LeafClient/settings.gradle
+src/LeafClient/gradle/
+src/LeafClient/gradle.properties
+src/LeafClient/gradlew
+src/LeafClient/gradlew.bat
+
+# ── Internal planning / preview assets ────────────────────────────
+src/LeafClient/LeafClient-Master-Plan.md
+src/LeafClient/LeafClient-Master-Plan.html
+src/LeafClient/cosmetic-uv-templates.html
+src/LeafClient/*preview*.png
+src/LeafClient/angel_texture_preview.png
+src/LeafClient/wing_*.png
+
+# ── Distribution artifacts ────────────────────────────────────────
+latestexe/
+latestjars/
+latestversion.txt
+
+# ── Top-level branding / icons ────────────────────────────────────
+/Leaf Client Process.ico
+/Leaf Client.png
+
+# ── Release checklist (private ops doc) ───────────────────────────
+RELEASE-CHECKLIST.md
+
+# ==== Private: hide from public mirror ====
+# Internal ops + design docs
+UPTIMEROBOT-SETUP.md
+NOTES.md
+TODO-private.md
+SECRETS.md
+ROADMAP.md
+*.private.md
+.private/
+docs/internal/
+docs/launch/
+docs/design/
+docs/superpowers/
+
+# Deploy / provisioning scripts with embedded server info
+deploy-ssh-key.ps1
+deploy/secrets/
+deploy/*.env
+
+# Production config
+appsettings.Production.json
+appsettings.*.Production.json
+launcher-config.json
+launcher-config.production.json
+config.production.*
+
+# Secrets, signing, keys
+.env
+.env.*
+!.env.example
+signing/
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.pem
+*.key
+*.crt
+id_rsa*
+service-account*.json
+
+# Local data
+*.sqlite
+pb_data/
+pb_migrations/
+
+# ==================================================================
 # Source JAR exceptions (explicitly tracked)
 # ==================================================================
 !src/LeafClient/LeafRuntime/**/*.jar
 !src/LeafClient/LeafBootstrap/**/*.jar
+
+# ==================================================================
+# Developer-only local files (release scripts, internal instructions,
+# server IPs, credentials). NEVER commit.
+# ==================================================================
+.dev-local/
+.release-snapshots/
+.release-staging/
+release-*.log
