@@ -3082,7 +3082,7 @@
 								</Button>
 							</StackPanel>
 
-							<!-- Inline weblink code entry (shown when Link Website is clicked) -->
+							<!-- Inline weblink panel (shown when Link Website is clicked) -->
 							<Border x:Name="WebLinkInlinePanel" IsVisible="False"
 									Background="#0A1520"
 									BorderBrush="#153D3D"
@@ -3090,47 +3090,81 @@
 									CornerRadius="10"
 									Padding="14,12">
 								<StackPanel Spacing="8">
-									<TextBlock Text="Enter the 6-character code from the website:"
-											   Foreground="#9BA1A8" FontSize="11"
-											   TextWrapping="Wrap"/>
-									<TextBox x:Name="WebLinkCodeTextBox"
-											 Watermark="e.g. MSCUFQ"
-											 MaxLength="6"
-											 FontSize="16" FontWeight="Bold"
-											 LetterSpacing="4"
-											 HorizontalContentAlignment="Center"
-											 Background="#0D1A2A"
-											 BorderBrush="#153D3D"
-											 BorderThickness="1"
-											 CornerRadius="8"
-											 Foreground="#6BDFFF"
-											 CaretBrush="#6BDFFF"
-											 Padding="10,8"/>
-									<Grid ColumnDefinitions="*,8,*">
-										<Button Grid.Column="0" Height="34"
-												Background="#0D2A1A"
-												BorderThickness="1"
-												BorderBrush="#1A5C2A"
-												CornerRadius="8"
-												HorizontalAlignment="Stretch"
-												Cursor="Hand"
-												Click="WebLinkConfirmButton_Click">
-											<Button.Styles>
-												<Style Selector="Button:pointerover /template/ ContentPresenter">
-													<Setter Property="Background" Value="#1A5C2A"/>
-												</Style>
-												<Style Selector="Button /template/ ContentPresenter">
-													<Setter Property="Background" Value="Transparent"/>
-												</Style>
-											</Button.Styles>
-											<TextBlock Text="CONFIRM" Foreground="#6BDF9F" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
-										</Button>
-										<Button Grid.Column="2" Height="34"
+
+									<!-- Code entry state -->
+									<StackPanel x:Name="WebLinkCodeEntryPanel" Spacing="8">
+										<TextBlock Text="Enter the 6-character code from the website:"
+												   Foreground="#9BA1A8" FontSize="11"
+												   TextWrapping="Wrap"/>
+										<TextBox x:Name="WebLinkCodeTextBox"
+												 Watermark="e.g. MSCUFQ"
+												 MaxLength="6"
+												 FontSize="16" FontWeight="Bold"
+												 LetterSpacing="4"
+												 HorizontalContentAlignment="Center"
+												 Background="#0D1A2A"
+												 BorderBrush="#153D3D"
+												 BorderThickness="1"
+												 CornerRadius="8"
+												 Foreground="#6BDFFF"
+												 CaretBrush="#6BDFFF"
+												 Padding="10,8"/>
+										<Grid ColumnDefinitions="*,8,*">
+											<Button Grid.Column="0" Height="34"
+													Background="#0D2A1A"
+													BorderThickness="1"
+													BorderBrush="#1A5C2A"
+													CornerRadius="8"
+													HorizontalAlignment="Stretch"
+													HorizontalContentAlignment="Center"
+													Cursor="Hand"
+													Click="WebLinkConfirmButton_Click">
+												<Button.Styles>
+													<Style Selector="Button:pointerover /template/ ContentPresenter">
+														<Setter Property="Background" Value="#1A5C2A"/>
+													</Style>
+													<Style Selector="Button /template/ ContentPresenter">
+														<Setter Property="Background" Value="Transparent"/>
+													</Style>
+												</Button.Styles>
+												<TextBlock Text="CONFIRM" Foreground="#6BDF9F" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+											</Button>
+											<Button Grid.Column="2" Height="34"
+													Background="#1A1A1A"
+													BorderThickness="1"
+													BorderBrush="#333"
+													CornerRadius="8"
+													HorizontalAlignment="Stretch"
+													HorizontalContentAlignment="Center"
+													Cursor="Hand"
+													Click="WebLinkCancelButton_Click">
+												<Button.Styles>
+													<Style Selector="Button:pointerover /template/ ContentPresenter">
+														<Setter Property="Background" Value="#333"/>
+													</Style>
+													<Style Selector="Button /template/ ContentPresenter">
+														<Setter Property="Background" Value="Transparent"/>
+													</Style>
+												</Button.Styles>
+												<TextBlock Text="CANCEL" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+											</Button>
+										</Grid>
+									</StackPanel>
+
+									<!-- Result state (success / error) -->
+									<StackPanel x:Name="WebLinkResultPanel" IsVisible="False" Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+											<TextBlock x:Name="WebLinkResultIcon" Text="✓" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/>
+											<TextBlock x:Name="WebLinkResultText" FontSize="12" FontWeight="SemiBold"
+													   TextWrapping="Wrap" VerticalAlignment="Center"/>
+										</StackPanel>
+										<Button Height="34"
 												Background="#1A1A1A"
 												BorderThickness="1"
 												BorderBrush="#333"
 												CornerRadius="8"
 												HorizontalAlignment="Stretch"
+												HorizontalContentAlignment="Center"
 												Cursor="Hand"
 												Click="WebLinkCancelButton_Click">
 											<Button.Styles>
@@ -3141,9 +3175,10 @@
 													<Setter Property="Background" Value="Transparent"/>
 												</Style>
 											</Button.Styles>
-											<TextBlock Text="CANCEL" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
+											<TextBlock Text="OK" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
 										</Button>
-									</Grid>
+									</StackPanel>
+
 								</StackPanel>
 							</Border>
 						</StackPanel>

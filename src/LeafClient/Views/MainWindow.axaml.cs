@@ -16139,7 +16139,7 @@ namespace LeafClient.Views
             var code = WebLinkCodeTextBox?.Text?.Trim().ToUpperInvariant() ?? string.Empty;
             if (code.Length != 6)
             {
-                await ShowAccountActionErrorDialog("Please enter the 6-character code from the website.");
+                ShowWebLinkResult(false, "Please enter the 6-character code from the website.");
                 return;
             }
 
@@ -16148,7 +16148,7 @@ namespace LeafClient.Views
 
             if (string.IsNullOrEmpty(uuid) || string.IsNullOrEmpty(accessToken))
             {
-                await ShowAccountActionErrorDialog("Your session is missing credentials. Please log out and log back in.");
+                ShowWebLinkResult(false, "Your session is missing credentials. Please log out and log back in.");
                 return;
             }
 
@@ -16168,36 +16168,52 @@ namespace LeafClient.Views
                     }
                     else
                     {
-                        await ShowAccountActionErrorDialog("Your session has expired. Please log out and log back in.");
-                        WebLinkInlinePanel.IsVisible = false;
-                        AccountFooterButtonsPanel.IsVisible = true;
+                        ShowWebLinkResult(false, "Your session has expired. Please log out and log back in.");
                         return;
                     }
                 }
                 else
                 {
-                    await ShowAccountActionErrorDialog("Your session has expired. Please log out and log back in.");
-                    WebLinkInlinePanel.IsVisible = false;
-                    AccountFooterButtonsPanel.IsVisible = true;
+                    ShowWebLinkResult(false, "Your session has expired. Please log out and log back in.");
                     return;
                 }
             }
 
             var (success, error) = await LeafApiService.WebLinkCompleteAsync(code, uuid, accessToken);
 
-            WebLinkInlinePanel.IsVisible = false;
-            AccountFooterButtonsPanel.IsVisible = true;
-
             if (success)
-                await ShowInfoDialog("Link Website", "Your account has been linked! You are now signed in on the website.");
+                ShowWebLinkResult(true, "Account linked! You are now signed in on the website.");
             else
-                await ShowAccountActionErrorDialog(error ?? "Failed to link account. Check the code and try again.");
+                ShowWebLinkResult(false, error ?? "Failed to link account. Check the code and try again.");
+        }
+
+        private void ShowWebLinkResult(bool success, string message)
+        {
+            if (WebLinkCodeEntryPanel != null) WebLinkCodeEntryPanel.IsVisible = false;
+            if (WebLinkResultPanel != null) WebLinkResultPanel.IsVisible = true;
+            if (WebLinkResultIcon != null)
+            {
+                WebLinkResultIcon.Text = success ? "✓" : "✕";
+                WebLinkResultIcon.Foreground = success
+                    ? new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#6BDF9F"))
+                    : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FF6B6B"));
+            }
+            if (WebLinkResultText != null)
+            {
+                WebLinkResultText.Text = message;
+                WebLinkResultText.Foreground = success
+                    ? new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#6BDF9F"))
+                    : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FF6B6B"));
+            }
         }
 
         private void WebLinkCancelButton_Click(object? sender, RoutedEventArgs e)
         {
             if (WebLinkInlinePanel != null) WebLinkInlinePanel.IsVisible = false;
             if (AccountFooterButtonsPanel != null) AccountFooterButtonsPanel.IsVisible = true;
+            if (WebLinkCodeEntryPanel != null) WebLinkCodeEntryPanel.IsVisible = true;
+            if (WebLinkResultPanel != null) WebLinkResultPanel.IsVisible = false;
+            if (WebLinkCodeTextBox != null) WebLinkCodeTextBox.Text = string.Empty;
         }
 
         private async void LogoutButton_Click(object? sender, RoutedEventArgs e)
