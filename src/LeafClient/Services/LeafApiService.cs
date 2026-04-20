@@ -236,7 +236,16 @@ namespace LeafClient.Services
                     $"{BaseUrl}/auth/microsoft/weblink/complete",
                     body,
                     LeafClient.JsonContext.Default.LeafApiWebLinkCompleteRequest);
-                return (response.IsSuccessStatusCode, response.IsSuccessStatusCode ? null : "Link failed. Check the code and try again.");
+                if (response.IsSuccessStatusCode) return (true, null);
+                try
+                {
+                    var err = await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.LeafApiErrorResponse);
+                    return (false, err?.Error ?? "Link failed. Check the code and try again.");
+                }
+                catch
+                {
+                    return (false, "Link failed. Check the code and try again.");
+                }
             }
             catch
             {

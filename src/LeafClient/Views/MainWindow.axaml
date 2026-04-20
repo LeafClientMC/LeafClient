@@ -3027,58 +3027,125 @@
 
 						<!-- Account panel footer buttons -->
 						<StackPanel Grid.Row="3" Margin="28,12,28,24" Spacing="8">
-							<Button Height="40"
-									Background="#0D1A2A"
-									BorderThickness="1"
+							<StackPanel x:Name="AccountFooterButtonsPanel" Spacing="8">
+								<Button Height="40"
+										Background="#0D1A2A"
+										BorderThickness="1"
+										BorderBrush="#153D3D"
+										CornerRadius="10"
+										HorizontalAlignment="Stretch"
+										Cursor="Hand"
+										Click="LinkWebsiteButton_Click">
+									<Button.Styles>
+										<Style Selector="Button:pointerover /template/ ContentPresenter">
+											<Setter Property="Background" Value="#153D3D"/>
+										</Style>
+										<Style Selector="Button /template/ ContentPresenter">
+											<Setter Property="Background" Value="Transparent"/>
+											<Setter Property="Transitions">
+												<Transitions>
+													<BrushTransition Property="Background" Duration="0:0:0.15"/>
+												</Transitions>
+											</Setter>
+										</Style>
+									</Button.Styles>
+									<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+										<TextBlock Text="&#x1F517;" FontSize="13" VerticalAlignment="Center"/>
+										<TextBlock Text="LINK WEBSITE" Foreground="#6BDFFF" FontSize="12" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+								<Button Height="40"
+										Background="#2A0D0D"
+										BorderThickness="1"
+										BorderBrush="#3D1515"
+										CornerRadius="10"
+										HorizontalAlignment="Stretch"
+										Cursor="Hand"
+										Click="LogoutButton_Click">
+									<Button.Styles>
+										<Style Selector="Button:pointerover /template/ ContentPresenter">
+											<Setter Property="Background" Value="#3D1515"/>
+										</Style>
+										<Style Selector="Button /template/ ContentPresenter">
+											<Setter Property="Background" Value="Transparent"/>
+											<Setter Property="Transitions">
+												<Transitions>
+													<BrushTransition Property="Background" Duration="0:0:0.15"/>
+												</Transitions>
+											</Setter>
+										</Style>
+									</Button.Styles>
+									<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+										<TextBlock Text="&#x2BBF;" Foreground="#FF6B6B" FontSize="14" VerticalAlignment="Center"/>
+										<TextBlock Text="LOG OUT" Foreground="#FF6B6B" FontSize="12" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+							</StackPanel>
+
+							<!-- Inline weblink code entry (shown when Link Website is clicked) -->
+							<Border x:Name="WebLinkInlinePanel" IsVisible="False"
+									Background="#0A1520"
 									BorderBrush="#153D3D"
-									CornerRadius="10"
-									HorizontalAlignment="Stretch"
-									Cursor="Hand"
-									Click="LinkWebsiteButton_Click">
-								<Button.Styles>
-									<Style Selector="Button:pointerover /template/ ContentPresenter">
-										<Setter Property="Background" Value="#153D3D"/>
-									</Style>
-									<Style Selector="Button /template/ ContentPresenter">
-										<Setter Property="Background" Value="Transparent"/>
-										<Setter Property="Transitions">
-											<Transitions>
-												<BrushTransition Property="Background" Duration="0:0:0.15"/>
-											</Transitions>
-										</Setter>
-									</Style>
-								</Button.Styles>
-								<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-									<TextBlock Text="&#x1F517;" FontSize="13" VerticalAlignment="Center"/>
-									<TextBlock Text="LINK WEBSITE" Foreground="#6BDFFF" FontSize="12" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-							<Button Height="40"
-									Background="#2A0D0D"
 									BorderThickness="1"
-									BorderBrush="#3D1515"
 									CornerRadius="10"
-									HorizontalAlignment="Stretch"
-									Cursor="Hand"
-									Click="LogoutButton_Click">
-								<Button.Styles>
-									<Style Selector="Button:pointerover /template/ ContentPresenter">
-										<Setter Property="Background" Value="#3D1515"/>
-									</Style>
-									<Style Selector="Button /template/ ContentPresenter">
-										<Setter Property="Background" Value="Transparent"/>
-										<Setter Property="Transitions">
-											<Transitions>
-												<BrushTransition Property="Background" Duration="0:0:0.15"/>
-											</Transitions>
-										</Setter>
-									</Style>
-								</Button.Styles>
-								<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-									<TextBlock Text="&#x2BBF;" Foreground="#FF6B6B" FontSize="14" VerticalAlignment="Center"/>
-									<TextBlock Text="LOG OUT" Foreground="#FF6B6B" FontSize="12" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center"/>
+									Padding="14,12">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Enter the 6-character code from the website:"
+											   Foreground="#9BA1A8" FontSize="11"
+											   TextWrapping="Wrap"/>
+									<TextBox x:Name="WebLinkCodeTextBox"
+											 Watermark="e.g. MSCUFQ"
+											 MaxLength="6"
+											 FontSize="16" FontWeight="Bold"
+											 LetterSpacing="4"
+											 HorizontalContentAlignment="Center"
+											 Background="#0D1A2A"
+											 BorderBrush="#153D3D"
+											 BorderThickness="1"
+											 CornerRadius="8"
+											 Foreground="#6BDFFF"
+											 CaretBrush="#6BDFFF"
+											 Padding="10,8"/>
+									<Grid ColumnDefinitions="*,8,*">
+										<Button Grid.Column="0" Height="34"
+												Background="#0D2A1A"
+												BorderThickness="1"
+												BorderBrush="#1A5C2A"
+												CornerRadius="8"
+												HorizontalAlignment="Stretch"
+												Cursor="Hand"
+												Click="WebLinkConfirmButton_Click">
+											<Button.Styles>
+												<Style Selector="Button:pointerover /template/ ContentPresenter">
+													<Setter Property="Background" Value="#1A5C2A"/>
+												</Style>
+												<Style Selector="Button /template/ ContentPresenter">
+													<Setter Property="Background" Value="Transparent"/>
+												</Style>
+											</Button.Styles>
+											<TextBlock Text="CONFIRM" Foreground="#6BDF9F" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
+										</Button>
+										<Button Grid.Column="2" Height="34"
+												Background="#1A1A1A"
+												BorderThickness="1"
+												BorderBrush="#333"
+												CornerRadius="8"
+												HorizontalAlignment="Stretch"
+												Cursor="Hand"
+												Click="WebLinkCancelButton_Click">
+											<Button.Styles>
+												<Style Selector="Button:pointerover /template/ ContentPresenter">
+													<Setter Property="Background" Value="#333"/>
+												</Style>
+												<Style Selector="Button /template/ ContentPresenter">
+													<Setter Property="Background" Value="Transparent"/>
+												</Style>
+											</Button.Styles>
+											<TextBlock Text="CANCEL" Foreground="#9BA1A8" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
+										</Button>
+									</Grid>
 								</StackPanel>
-							</Button>
+							</Border>
 						</StackPanel>
 					</Grid>
 

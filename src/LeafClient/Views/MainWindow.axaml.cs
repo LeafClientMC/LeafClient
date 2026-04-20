@@ -16125,35 +16125,79 @@ namespace LeafClient.Views
                 return;
             }
 
-            var code = await ShowTextInputDialog(
-                "Link Website",
-                "Enter the 6-character code shown on the Leaf Client website:");
+            if (WebLinkInlinePanel != null && AccountFooterButtonsPanel != null)
+            {
+                WebLinkCodeTextBox.Text = string.Empty;
+                AccountFooterButtonsPanel.IsVisible = false;
+                WebLinkInlinePanel.IsVisible = true;
+                WebLinkCodeTextBox.Focus();
+            }
+        }
 
-            if (string.IsNullOrWhiteSpace(code)) return;
-
-            code = code.Trim().ToUpperInvariant();
+        private async void WebLinkConfirmButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var code = WebLinkCodeTextBox?.Text?.Trim().ToUpperInvariant() ?? string.Empty;
             if (code.Length != 6)
             {
-                await ShowAccountActionErrorDialog("Invalid code. Please enter the 6-character code from the website.");
+                await ShowAccountActionErrorDialog("Please enter the 6-character code from the website.");
                 return;
             }
 
-            try
+            var uuid = _currentSettings.SessionUuid;
+            var accessToken = _currentSettings.SessionAccessToken;
+
+            if (string.IsNullOrEmpty(uuid) || string.IsNullOrEmpty(accessToken))
             {
-                var (success, error) = await LeafApiService.WebLinkCompleteAsync(code, uuid, accessToken);
-                if (success)
+                await ShowAccountActionErrorDialog("Your session is missing credentials. Please log out and log back in.");
+                return;
+            }
+
+            var tokenValid = await ValidateMinecraftTokenAsync(accessToken);
+            if (!tokenValid)
+            {
+                if (!string.IsNullOrWhiteSpace(_currentSettings.MicrosoftRefreshToken))
                 {
-                    await ShowInfoDialog("Link Website", "Your account has been linked to the website. You are now signed in!");
+                    var refreshed = await TryDirectTokenRefreshAsync(_currentSettings.MicrosoftRefreshToken);
+                    if (refreshed != null)
+                    {
+                        _currentSettings.SessionUuid = refreshed.UUID;
+                        _currentSettings.SessionAccessToken = refreshed.AccessToken;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        uuid = refreshed.UUID;
+                        accessToken = refreshed.AccessToken;
+                    }
+                    else
+                    {
+                        await ShowAccountActionErrorDialog("Your session has expired. Please log out and log back in.");
+                        WebLinkInlinePanel.IsVisible = false;
+                        AccountFooterButtonsPanel.IsVisible = true;
+                        return;
+                    }
                 }
                 else
                 {
-                    await ShowAccountActionErrorDialog(error ?? "Failed to link account. Please check the code and try again.");
+                    await ShowAccountActionErrorDialog("Your session has expired. Please log out and log back in.");
+                    WebLinkInlinePanel.IsVisible = false;
+                    AccountFooterButtonsPanel.IsVisible = true;
+                    return;
                 }
             }
-            catch (Exception ex)
-            {
-                await ShowAccountActionErrorDialog($"Error: {ex.Message}");
-            }
+
+            var (success, error) = await LeafApiService.WebLinkCompleteAsync(code, uuid, accessToken);
+
+            WebLinkInlinePanel.IsVisible = false;
+            AccountFooterButtonsPanel.IsVisible = true;
+
+            if (success)
+                await ShowInfoDialog("Link Website", "Your account has been linked! You are now signed in on the website.");
+            else
+                await ShowAccountActionErrorDialog(error ?? "Failed to link account. Check the code and try again.");
+        }
+
+        private void WebLinkCancelButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (WebLinkInlinePanel != null) WebLinkInlinePanel.IsVisible = false;
+            if (AccountFooterButtonsPanel != null) AccountFooterButtonsPanel.IsVisible = true;
         }
 
         private async void LogoutButton_Click(object? sender, RoutedEventArgs e)
