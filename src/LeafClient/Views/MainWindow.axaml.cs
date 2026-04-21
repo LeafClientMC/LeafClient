@@ -2082,6 +2082,7 @@ namespace LeafClient.Views
                 if (result != null && _currentSettings != null)
                 {
                     _currentSettings.LeafApiJwt = result.AccessToken;
+                    WriteSessionJson(result.AccessToken);
                     _currentSettings.LeafApiRefreshToken = result.RefreshToken;
                     var activeEntry = _currentSettings.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
                     if (activeEntry != null)
@@ -11545,6 +11546,21 @@ namespace LeafClient.Views
             };
         }
 
+        private static void WriteSessionJson(string? jwt)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "LeafClient");
+                Directory.CreateDirectory(dir);
+                var path = System.IO.Path.Combine(dir, "session.json");
+                var json = System.Text.Json.JsonSerializer.Serialize(new { jwt = jwt ?? "" });
+                File.WriteAllText(path, json);
+            }
+            catch { }
+        }
+
         private void StartRichPresenceIfEnabled()
         {
             try
@@ -18902,6 +18918,7 @@ namespace LeafClient.Views
             RefreshPlaytimeStatsCard();
 
             StartRichPresenceIfEnabled();
+            WriteSessionJson(_currentSettings.LeafApiJwt);
         }
         private string GetModFilePath(string modsFolder, InstalledMod mod, bool isDisabled = false)
         {
