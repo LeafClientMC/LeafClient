@@ -1052,10 +1052,10 @@ namespace LeafClient.Views
 
             InitializeComponent();
 
+            TutorialService.Instance.StepChanged += OnTutorialStepChanged;
+
             var tutorialOverlay = this.FindControl<TutorialOverlay>("TutorialOverlayControl");
             tutorialOverlay?.Initialize(this);
-
-            TutorialService.Instance.StepChanged += OnTutorialStepChanged;
 
             var replayBtn = this.FindControl<Button>("ReplayTutorialBtn");
             if (replayBtn != null)

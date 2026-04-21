@@ -16,4 +16,5 @@ public class TutorialStep
     public bool OpenAccountPanel { get; init; }
     public bool HideOverlayAfterAction { get; init; }
     public TutorialOnEnter OnEnter { get; init; } = TutorialOnEnter.None;
+    public bool CenterTooltip { get; init; }
 }

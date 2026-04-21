@@ -14,6 +14,7 @@ namespace LeafClient.Views;
 public partial class TutorialOverlay : UserControl
 {
     private const double TooltipMaxWidth = 260.0;
+    private const double TooltipEstimatedHeight = 120.0;
     private bool _initialized;
     private MainWindow? _window;
     private Path? _backdropPath;
@@ -65,12 +66,18 @@ public partial class TutorialOverlay : UserControl
         IsVisible = true;
         DetachWaitHandler();
 
-        if (step.NavigateToPage.HasValue)
+        if (step.NavigateToPage.HasValue || step.OpenAccountPanel)
         {
-            await Task.Delay(200);
+            await Task.Delay(500);
         }
 
         if (_window == null) return;
+
+        if (step.CenterTooltip)
+        {
+            ShowCentered(step);
+            return;
+        }
 
         var target = FindControlByName(_window, step.TargetElementName);
         if (target == null) return;
@@ -93,6 +100,7 @@ public partial class TutorialOverlay : UserControl
 
         if (_spotlightBorder != null)
         {
+            _spotlightBorder.IsVisible = true;
             Canvas.SetLeft(_spotlightBorder, spotX);
             Canvas.SetTop(_spotlightBorder, spotY);
             _spotlightBorder.Width = spotW;
@@ -114,6 +122,32 @@ public partial class TutorialOverlay : UserControl
         }
     }
 
+    private void ShowCentered(TutorialStep step)
+    {
+        if (_window == null) return;
+
+        var winW = _window.Bounds.Width;
+        var winH = _window.Bounds.Height;
+
+        UpdateFullBackdrop(winW, winH);
+
+        if (_spotlightBorder != null)
+            _spotlightBorder.IsVisible = false;
+
+        if (_tooltipTitle != null) _tooltipTitle.Text = step.Title;
+        if (_tooltipBody != null) _tooltipBody.Text = step.Body;
+        if (_skipBtn != null) _skipBtn.IsVisible = step.IsSkippable;
+        if (_nextBtn != null) _nextBtn.IsVisible = true;
+
+        if (_tooltipCard != null)
+        {
+            var tipX = (winW - TooltipMaxWidth) / 2.0;
+            var tipY = (winH / 2.0) - (TooltipEstimatedHeight / 2.0);
+            Canvas.SetLeft(_tooltipCard, tipX);
+            Canvas.SetTop(_tooltipCard, tipY);
+        }
+    }
+
     private void AttachWaitHandler(Control target, TutorialStep step)
     {
         _waitTarget = target;
@@ -125,7 +159,11 @@ public partial class TutorialOverlay : UserControl
             else
                 TutorialService.Instance.Next();
         };
-        _waitTarget.AddHandler(PointerReleasedEvent, _waitHandler, Avalonia.Interactivity.RoutingStrategies.Bubble);
+        _waitTarget.AddHandler(
+            PointerReleasedEvent,
+            _waitHandler,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            handledEventsToo: true);
     }
 
     private void DetachWaitHandler()
@@ -140,6 +178,7 @@ public partial class TutorialOverlay : UserControl
 
     private static Control? FindControlByName(Control root, string name)
     {
+        if (string.IsNullOrEmpty(name)) return null;
         if (root.Name == name) return root;
         foreach (var child in root.GetVisualChildren())
         {
@@ -193,11 +232,41 @@ public partial class TutorialOverlay : UserControl
         _backdropPath.Height = winH;
     }
 
+    private void UpdateFullBackdrop(double winW, double winH)
+    {
+        if (_backdropPath == null) return;
+
+        var outer = new PathFigure
+        {
+            StartPoint = new Point(0, 0),
+            IsClosed = true,
+            Segments = new PathSegments
+            {
+                new LineSegment { Point = new Point(winW, 0) },
+                new LineSegment { Point = new Point(winW, winH) },
+                new LineSegment { Point = new Point(0, winH) }
+            }
+        };
+
+        _backdropPath.Data = new PathGeometry
+        {
+            FillRule = FillRule.EvenOdd,
+            Figures = new PathFigures { outer }
+        };
+
+        _backdropPath.Width = winW;
+        _backdropPath.Height = winH;
+    }
+
     private void PositionTooltip(TooltipAnchor anchor, double spotX, double spotY, double spotW, double spotH)
     {
-        if (_tooltipCard == null) return;
+        if (_tooltipCard == null || _window == null) return;
 
         const double gap = 12;
+        var winW = _window.Bounds.Width;
+        var winH = _window.Bounds.Height;
+        const double margin = 8;
+
         double tipX, tipY;
 
         switch (anchor)
@@ -212,13 +281,16 @@ public partial class TutorialOverlay : UserControl
                 break;
             case TooltipAnchor.Above:
                 tipX = spotX;
-                tipY = spotY - _tooltipCard.Bounds.Height - gap;
+                tipY = spotY - TooltipEstimatedHeight - gap;
                 break;
             default:
                 tipX = spotX;
                 tipY = spotY + spotH + gap;
                 break;
         }
+
+        tipX = Math.Max(margin, Math.Min(tipX, winW - TooltipMaxWidth - margin));
+        tipY = Math.Max(margin, Math.Min(tipY, winH - TooltipEstimatedHeight - margin));
 
         Canvas.SetLeft(_tooltipCard, tipX);
         Canvas.SetTop(_tooltipCard, tipY);

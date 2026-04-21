@@ -12,10 +12,10 @@ public sealed class TutorialService
     {
         new TutorialStep
         {
-            TargetElementName = "PlayingAsButton",
+            TargetElementName = "",
             Title = "Welcome to Leaf Client",
             Body = "Let's take a quick tour of everything available to you.",
-            TooltipAnchor = TooltipAnchor.Below
+            CenterTooltip = true
         },
         new TutorialStep
         {
