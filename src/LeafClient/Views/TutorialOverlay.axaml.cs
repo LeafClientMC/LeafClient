@@ -1,7 +1,11 @@
+using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using LeafClient.Models;
 using LeafClient.Services;
 
@@ -19,6 +23,9 @@ public partial class TutorialOverlay : UserControl
     private TextBlock? _tooltipBody;
     private Button? _nextBtn;
     private Button? _skipBtn;
+
+    private Control? _waitTarget;
+    private EventHandler<PointerReleasedEventArgs>? _waitHandler;
 
     public TutorialOverlay()
     {
@@ -44,6 +51,8 @@ public partial class TutorialOverlay : UserControl
         TutorialService.Instance.TutorialStarted += OnTutorialStarted;
         TutorialService.Instance.StepChanged += OnStepChanged;
         TutorialService.Instance.TutorialEnded += OnTutorialEnded;
+        TutorialService.Instance.TutorialHidden += OnTutorialHidden;
+        TutorialService.Instance.TutorialResumed += OnTutorialResumed;
     }
 
     private void OnTutorialStarted()
@@ -51,11 +60,19 @@ public partial class TutorialOverlay : UserControl
         IsVisible = true;
     }
 
-    private void OnStepChanged(TutorialStep step)
+    private async void OnStepChanged(TutorialStep step)
     {
+        IsVisible = true;
+        DetachWaitHandler();
+
+        if (step.NavigateToPage.HasValue)
+        {
+            await Task.Delay(200);
+        }
+
         if (_window == null) return;
 
-        var target = _window.FindControl<Control>(step.TargetElementName);
+        var target = FindControlByName(_window, step.TargetElementName);
         if (target == null) return;
 
         var pos = target.TranslatePoint(new Point(0, 0), this);
@@ -85,8 +102,54 @@ public partial class TutorialOverlay : UserControl
         if (_tooltipTitle != null) _tooltipTitle.Text = step.Title;
         if (_tooltipBody != null) _tooltipBody.Text = step.Body;
         if (_skipBtn != null) _skipBtn.IsVisible = step.IsSkippable;
+        if (_nextBtn != null) _nextBtn.IsVisible = string.IsNullOrEmpty(step.WaitForClickElement);
 
         PositionTooltip(step.TooltipAnchor, spotX, spotY, spotW, spotH);
+
+        if (!string.IsNullOrEmpty(step.WaitForClickElement))
+        {
+            var clickTarget = FindControlByName(_window, step.WaitForClickElement);
+            if (clickTarget != null)
+                AttachWaitHandler(clickTarget, step);
+        }
+    }
+
+    private void AttachWaitHandler(Control target, TutorialStep step)
+    {
+        _waitTarget = target;
+        _waitHandler = (_, _) =>
+        {
+            DetachWaitHandler();
+            if (step.HideOverlayAfterAction)
+                TutorialService.Instance.HideForAction();
+            else
+                TutorialService.Instance.Next();
+        };
+        _waitTarget.AddHandler(PointerReleasedEvent, _waitHandler, Avalonia.Interactivity.RoutingStrategies.Bubble);
+    }
+
+    private void DetachWaitHandler()
+    {
+        if (_waitTarget != null && _waitHandler != null)
+        {
+            _waitTarget.RemoveHandler(PointerReleasedEvent, _waitHandler);
+            _waitTarget = null;
+            _waitHandler = null;
+        }
+    }
+
+    private static Control? FindControlByName(Control root, string name)
+    {
+        if (root.Name == name) return root;
+        foreach (var child in root.GetVisualChildren())
+        {
+            if (child is Control c)
+            {
+                var found = FindControlByName(c, name);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private void UpdateBackdrop(double spotX, double spotY, double spotW, double spotH)
@@ -161,16 +224,30 @@ public partial class TutorialOverlay : UserControl
         Canvas.SetTop(_tooltipCard, tipY);
     }
 
+    private void OnTutorialHidden()
+    {
+        IsVisible = false;
+    }
+
+    private void OnTutorialResumed()
+    {
+        IsVisible = true;
+    }
+
     private void OnTutorialEnded()
     {
+        DetachWaitHandler();
         IsVisible = false;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        DetachWaitHandler();
         TutorialService.Instance.TutorialStarted -= OnTutorialStarted;
         TutorialService.Instance.StepChanged -= OnStepChanged;
         TutorialService.Instance.TutorialEnded -= OnTutorialEnded;
+        TutorialService.Instance.TutorialHidden -= OnTutorialHidden;
+        TutorialService.Instance.TutorialResumed -= OnTutorialResumed;
     }
 }

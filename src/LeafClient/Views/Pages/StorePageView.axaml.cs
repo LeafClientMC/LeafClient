@@ -13,6 +13,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LeafClient.Views.Pages
@@ -65,16 +66,25 @@ namespace LeafClient.Views.Pages
         private readonly List<CurrencyListItem> _currencyItems =
             CurrencyService.SupportedCurrencies.Select(c => new CurrencyListItem(c)).ToList();
 
+        private Border? _subscriptionBannerClip;
+        private Border? _subscriptionBanner;
+        private double _bannerFullHeight = double.NaN;
+        private bool _bannerVisible = true;
+        private CancellationTokenSource? _bannerAnimCts;
+
+        private static readonly TimeSpan BannerAnimDuration = TimeSpan.FromMilliseconds(250);
+        private static readonly TimeSpan BannerFrameTime    = TimeSpan.FromMilliseconds(16);
+
         private static readonly Dictionary<string, string> CheckoutUrls = new()
         {
-            ["wings-angel"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/22224900-456c-4302-949b-a1aa05121602",
-            ["aura-broken-hearts"]= "https://leafclient.lemonsqueezy.com/checkout/buy/f525eccc-6ee3-4ff0-b97e-eea836847208",
-            ["wings-dragon"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/ecd21dbd-9aa3-45b9-9afa-ea931e0e8e14",
-            ["hat-crown"]         = "https://leafclient.lemonsqueezy.com/checkout/buy/c8cc19c0-a9d8-4b79-b64e-88ec15ea7c2f",
-            ["aura-inferno"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/031569d7-6297-4376-8f03-0b133272e558",
-            ["wings-black"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/01f8bc6c-abe9-4ffb-a30a-c0f6deffb157",
-            ["hat-shadow-horns"]  = "https://leafclient.lemonsqueezy.com/checkout/buy/1052435e-151a-4518-90cd-ac81eb08f1fe",
-            ["wings-purple"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/d5e35f6f-3a41-406d-b69a-973588451bc5",
+            ["wings-angel"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/bd753f79-ca4f-4833-ac72-435fba8be613",
+            ["aura-broken-hearts"]= "https://leafclient.lemonsqueezy.com/checkout/buy/c9133e4f-dc8d-454a-9910-e230c84a625f",
+            ["wings-dragon"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/d84cbd23-0a2a-4432-972c-04459d8c2673",
+            ["hat-crown"]         = "https://leafclient.lemonsqueezy.com/checkout/buy/266cc978-3928-466f-a43a-cdd93f359535",
+            ["aura-inferno"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/31fa1081-8161-4f5f-8143-a0119a27b39f",
+            ["wings-black"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/baea8513-ec8d-46cc-b32f-acb92be81d50",
+            ["hat-shadow-horns"]  = "https://leafclient.lemonsqueezy.com/checkout/buy/b733e170-c038-4bec-ab23-bf54630278f2",
+            ["wings-purple"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/969cd6d0-48de-410e-86ee-a8c95b6a8188",
         };
 
         /// <summary>
@@ -115,6 +125,18 @@ namespace LeafClient.Views.Pages
             _host = host;
         }
 
+        public void RefreshOwnedList(System.Collections.Generic.HashSet<string> ownedIds)
+        {
+            if (!_storeInitialized) return;
+            PopulateStoreGrid();
+            if (!string.IsNullOrEmpty(_previewedItemId))
+            {
+                var current = StoreCatalog.FirstOrDefault(c => c.Id == _previewedItemId);
+                if (!string.IsNullOrEmpty(current.Id))
+                    UpdateStorePreviewPanel(current);
+            }
+        }
+
         // ── Store Catalog data ──────────────────────────────────────────────────
         // Only items that are actually published on LemonSqueezy are listed here.
         // BUY NOW is disabled for items whose CheckoutUrl is empty (URL not yet created).
@@ -148,6 +170,8 @@ namespace LeafClient.Views.Pages
 
         private void InitializeStoreControls()
         {
+            _subscriptionBannerClip = this.FindControl<Border>("SubscriptionBannerClip");
+            _subscriptionBanner     = this.FindControl<Border>("SubscriptionBanner");
             _storeGrid              = this.FindControl<WrapPanel>("StoreGrid");
             _storePreviewCard       = this.FindControl<Border>("StorePreviewCard");
             _storePreviewName       = this.FindControl<TextBlock>("StorePreviewName");
@@ -884,6 +908,13 @@ namespace LeafClient.Views.Pages
             _host.ShowPurchaseChoice(item.Id, item.Name, item.Preview, item.Rarity, displayPrice, coinPrice, checkoutUrl);
         }
 
+        public void SelectLeafCapeForTutorial()
+        {
+            var item = System.Array.Find(StoreCatalog, c => c.Id == "cape-leaf");
+            if (item.Id == null) return;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateStorePreviewPanel(item));
+        }
+
         public void RefreshAfterPurchase(string itemId)
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -893,6 +924,80 @@ namespace LeafClient.Views.Pages
                 if (catalogItem.Id != null)
                     UpdateStorePreviewPanel(catalogItem);
             });
+        }
+
+        private void OnStoreCatalogScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            if (_subscriptionBannerClip == null || _subscriptionBanner == null) return;
+
+            double current = e.OffsetDelta.Y;
+            if (current == 0) return;
+
+            bool shouldShow = current < 0;
+            if (shouldShow == _bannerVisible) return;
+
+            _bannerVisible = shouldShow;
+            AnimateBanner(shouldShow);
+        }
+
+        private async void AnimateBanner(bool show)
+        {
+            if (_subscriptionBannerClip == null || _subscriptionBanner == null) return;
+
+            if (double.IsNaN(_bannerFullHeight) || _bannerFullHeight <= 0)
+            {
+                _bannerFullHeight = _subscriptionBannerClip.Bounds.Height;
+                if (_bannerFullHeight <= 0)
+                    _bannerFullHeight = _subscriptionBanner.Bounds.Height + 16;
+            }
+
+            _bannerAnimCts?.Cancel();
+            _bannerAnimCts = new CancellationTokenSource();
+            var token = _bannerAnimCts.Token;
+
+            double currentClipHeight = _subscriptionBannerClip.Height;
+            double startHeight  = !double.IsNaN(currentClipHeight) ? currentClipHeight : (show ? 0 : _bannerFullHeight);
+            double targetHeight = show ? _bannerFullHeight : 0;
+            double startOpacity = _subscriptionBanner.Opacity;
+            double targetOpacity = show ? 1.0 : 0.0;
+
+            var start = DateTime.UtcNow;
+            try
+            {
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    var elapsed = DateTime.UtcNow - start;
+                    double t = Math.Clamp(elapsed.TotalMilliseconds / BannerAnimDuration.TotalMilliseconds, 0, 1);
+                    double eased = show
+                        ? 1 - Math.Pow(1 - t, 3)
+                        : Math.Pow(t, 2);
+
+                    double h2 = startHeight + (targetHeight - startHeight) * eased;
+                    double op = startOpacity + (targetOpacity - startOpacity) * eased;
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        _subscriptionBannerClip!.Height  = h2;
+                        _subscriptionBanner!.Opacity = op;
+                    });
+
+                    if (t >= 1) break;
+                    await Task.Delay(BannerFrameTime, token);
+                }
+
+                if (!token.IsCancellationRequested)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        _subscriptionBannerClip!.Height  = targetHeight;
+                        _subscriptionBanner!.Opacity = targetOpacity;
+                    });
+                }
+            }
+            catch (OperationCanceledException) { }
         }
     }
 }

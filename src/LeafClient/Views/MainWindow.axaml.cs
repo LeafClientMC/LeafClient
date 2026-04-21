@@ -1055,6 +1055,8 @@ namespace LeafClient.Views
             var tutorialOverlay = this.FindControl<TutorialOverlay>("TutorialOverlayControl");
             tutorialOverlay?.Initialize(this);
 
+            TutorialService.Instance.StepChanged += OnTutorialStepChanged;
+
             var replayBtn = this.FindControl<Button>("ReplayTutorialBtn");
             if (replayBtn != null)
                 replayBtn.Click += (_, _) => TutorialService.Instance.StartTutorial();
@@ -7593,6 +7595,8 @@ namespace LeafClient.Views
         {
             var overlay = this.FindControl<Grid>("CelebrationOverlay");
             if (overlay != null) overlay.IsVisible = false;
+            if (TutorialService.Instance.IsHiddenForAction)
+                TutorialService.Instance.ResumeAfterAction();
         }
 
         private void OnCelebrationBackdropTapped(object? sender, TappedEventArgs e) => CloseCelebrationOverlay();
@@ -12537,6 +12541,18 @@ namespace LeafClient.Views
         }
 
         // Debug: Ctrl+Shift+X triggers the crash report overlay with a fake exception.
+        private void OnTutorialStepChanged(LeafClient.Models.TutorialStep step)
+        {
+            if (step.NavigateToPage.HasValue)
+                SwitchToPage(step.NavigateToPage.Value);
+
+            if (step.OpenAccountPanel)
+                OpenAccountPanelClick();
+
+            if (step.OnEnter == LeafClient.Models.TutorialOnEnter.SelectLeafCapeInStore)
+                _storePage?.SelectLeafCapeForTutorial();
+        }
+
         private void OnDebugKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
         {
             var mods = e.KeyModifiers;

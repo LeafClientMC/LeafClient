@@ -12,60 +12,105 @@ public sealed class TutorialService
     {
         new TutorialStep
         {
-            TargetElementName = "GameButton",
+            TargetElementName = "PlayingAsButton",
+            Title = "Welcome to Leaf Client",
+            Body = "Let's take a quick tour of everything available to you.",
+            TooltipAnchor = TooltipAnchor.Below
+        },
+        new TutorialStep
+        {
+            TargetElementName = "NewProfileButton",
             Title = "Create a Profile",
-            Body = "Select your Minecraft version and create a profile to launch."
+            Body = "Click New Profile to set up your first Minecraft profile.",
+            NavigateToPage = 1,
+            WaitForClickElement = "NewProfileButton",
+            TooltipAnchor = TooltipAnchor.Right
         },
         new TutorialStep
         {
-            TargetElementName = "ModsButton",
+            TargetElementName = "ProfileEditorCard",
+            Title = "Set Up Your Profile",
+            Body = "Choose a name and Minecraft version for your profile.",
+            TooltipAnchor = TooltipAnchor.Right
+        },
+        new TutorialStep
+        {
+            TargetElementName = "PO_SaveButton",
+            Title = "Save Your Profile",
+            Body = "Click Create to save your new profile.",
+            WaitForClickElement = "PO_SaveButton",
+            TooltipAnchor = TooltipAnchor.Above
+        },
+        new TutorialStep
+        {
+            TargetElementName = "ModsTab_Mods",
             Title = "Browse Mods",
-            Body = "Find and install mods directly from Modrinth."
+            Body = "Discover and install mods directly from Modrinth.",
+            NavigateToPage = 3,
+            TooltipAnchor = TooltipAnchor.Below
         },
         new TutorialStep
         {
-            TargetElementName = "ModsButton",
+            TargetElementName = "ModsTab_Rp",
             Title = "Resource Packs",
-            Body = "Customise textures and sounds via the Mods -> Resource Packs tab."
+            Body = "Click the Resource Packs tab to manage textures and sounds.",
+            WaitForClickElement = "ModsTab_Rp",
+            TooltipAnchor = TooltipAnchor.Below
         },
         new TutorialStep
         {
-            TargetElementName = "ServersButton",
+            TargetElementName = "AddServerButton",
             Title = "Quick Play",
-            Body = "Save your favourite servers for quick access."
+            Body = "Save your favourite servers here for quick access.",
+            NavigateToPage = 2,
+            TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
-            TargetElementName = "StoreButton",
-            Title = "Get a Free Cape",
-            Body = "Visit the store to claim your free Leaf Cape."
+            TargetElementName = "StorePreviewActionBtn",
+            Title = "Claim Your Free Cape",
+            Body = "Every Leaf Client player gets a free Leaf Cape — click Claim to grab yours!",
+            NavigateToPage = 7,
+            OnEnter = TutorialOnEnter.SelectLeafCapeInStore,
+            WaitForClickElement = "StorePreviewActionBtn",
+            HideOverlayAfterAction = true,
+            TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
-            TargetElementName = "CosmeticsButton",
-            Title = "Equip Your Cape",
-            Body = "Equip cosmetics and preview them on your character."
+            TargetElementName = "CosTab_Capes",
+            Title = "Equip Cosmetics",
+            Body = "View and equip your cosmetics here.",
+            NavigateToPage = 6,
+            TooltipAnchor = TooltipAnchor.Below
         },
         new TutorialStep
         {
-            TargetElementName = "GameButton",
+            TargetElementName = "AccountPanel",
             Title = "Your Account",
-            Body = "Manage your Minecraft and Leaf Client accounts."
+            Body = "Manage your Minecraft and Leaf Client accounts.",
+            OpenAccountPanel = true,
+            TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
-            TargetElementName = "SettingsButton",
+            TargetElementName = "EditSkinButton",
             Title = "Edit Your Skin",
-            Body = "Customise your Minecraft skin."
+            Body = "Click here to customise your Minecraft skin.",
+            WaitForClickElement = "EditSkinButton",
+            TooltipAnchor = TooltipAnchor.Left
         }
     };
 
     public int CurrentStepIndex { get; private set; } = 0;
     public bool IsRunning { get; private set; } = false;
+    public bool IsHiddenForAction { get; private set; } = false;
 
     public event Action? TutorialStarted;
     public event Action<TutorialStep>? StepChanged;
     public event Action? TutorialEnded;
+    public event Action? TutorialHidden;
+    public event Action? TutorialResumed;
 
     private TutorialService() { }
 
@@ -73,6 +118,7 @@ public sealed class TutorialService
     {
         CurrentStepIndex = 0;
         IsRunning = true;
+        IsHiddenForAction = false;
         TutorialStarted?.Invoke();
         StepChanged?.Invoke(Steps[CurrentStepIndex]);
     }
@@ -94,9 +140,25 @@ public sealed class TutorialService
         EndTutorial();
     }
 
+    public void HideForAction()
+    {
+        if (!IsRunning) return;
+        IsHiddenForAction = true;
+        TutorialHidden?.Invoke();
+    }
+
+    public void ResumeAfterAction()
+    {
+        if (!IsRunning || !IsHiddenForAction) return;
+        IsHiddenForAction = false;
+        TutorialResumed?.Invoke();
+        Next();
+    }
+
     public void EndTutorial()
     {
         IsRunning = false;
+        IsHiddenForAction = false;
         TutorialEnded?.Invoke();
     }
 }
