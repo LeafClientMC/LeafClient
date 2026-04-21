@@ -1049,6 +1049,14 @@ namespace LeafClient.Views
             }
 
             InitializeComponent();
+
+            var tutorialOverlay = this.FindControl<TutorialOverlay>("TutorialOverlayControl");
+            tutorialOverlay?.Initialize(this);
+
+            var replayBtn = this.FindControl<Button>("ReplayTutorialBtn");
+            if (replayBtn != null)
+                replayBtn.Click += (_, _) => TutorialService.Instance.StartTutorial();
+
             ToastService.ToastRequested += OnToastRequested;
             InitializeNatureTheme();
             InitializeStartupControls();
@@ -1155,7 +1163,7 @@ namespace LeafClient.Views
                         await _settingsService.SaveSettingsAsync(_currentSettings);
 
                         await Task.Delay(500);
-                        OpenAboutLeafClient(null, new RoutedEventArgs());
+                        TutorialService.Instance.StartTutorial();
 
                         _currentSettings.IsFirstLaunch = false;
                         await _settingsService.SaveSettingsAsync(_currentSettings);

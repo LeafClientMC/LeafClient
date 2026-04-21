@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LeafClient.Views.TutorialOverlay"
+             IsHitTestVisible="True">
+    <Canvas x:Name="RootCanvas"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch">
+
+        <Path x:Name="BackdropPath"
+              Fill="#CC000000"
+              IsHitTestVisible="True"/>
+
+        <Border x:Name="SpotlightBorder"
+                BorderBrush="#8040BB"
+                BorderThickness="2"
+                CornerRadius="8"
+                IsHitTestVisible="False"/>
+
+        <Border x:Name="TooltipCard"
+                Background="#1E1E2E"
+                BorderBrush="#8040BB"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="16,12"
+                MaxWidth="260"
+                IsHitTestVisible="True">
+            <StackPanel Spacing="6">
+                <TextBlock x:Name="TooltipTitle"
+                           Foreground="White"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           TextWrapping="Wrap"/>
+                <TextBlock x:Name="TooltipBody"
+                           Foreground="#CCCCCC"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8"
+                            Margin="0,4,0,0">
+                    <Button x:Name="SkipBtn"
+                            Content="Skip"
+                            Foreground="#999999"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            FontSize="11"
+                            Cursor="Hand"/>
+                    <Button x:Name="NextBtn"
+                            Content="Next"
+                            Foreground="White"
+                            Background="#8040BB"
+                            BorderThickness="0"
+                            CornerRadius="6"
+                            Padding="12,4"
+                            FontSize="12"
+                            Cursor="Hand"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Canvas>
+</UserControl>
