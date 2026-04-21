@@ -351,7 +351,7 @@ namespace LeafClient.Views
 
         private int _po_ActiveTab = 0;
         private string _po_SelectedPreset = "balanced";
-        private string _po_SelectedVersion = "1.21.4";
+        private string _po_SelectedVersion = "";
         private bool _po_ShowAllVersionsFlag = false;
         private LauncherProfile? _po_EditingProfile;
 
@@ -441,9 +441,21 @@ namespace LeafClient.Views
         private Border? _modBrowserPanel;
         private Border? _modBrowserBackdrop;
         private WrapPanel? _modsResultsPanel;
+        private ItemsControl? _modsResultsGrid;
+        private ItemsControl? _modsSkeletonPanel;
         private StackPanel? _modsLoadingPanel;
         private StackPanel? _modsEmptyPanel;
+        private Button? _modsLoadMoreBtn;
+        private TextBlock? _modsResultCount;
         private TextBox? _modSearchBox;
+        private Button? _modSearchClearBtn;
+        private ComboBox? _modVersionDropdown;
+        private ComboBox? _modSortDropdown;
+        private StackPanel? _modCategorySidebar;
+        private Border? _modLoaderAllChip;
+        private Border? _modLoaderFabricChip;
+        private Border? _modLoaderForgeChip;
+        private Border? _modLoaderQuiltChip;
         private Border? _modDetailsSidebar;
         private Image? _modDetailsIcon;
         private TextBlock? _modDetailsTitle;
@@ -451,6 +463,45 @@ namespace LeafClient.Views
         private TextBlock? _modDetailsStats;
         private Button? _modDetailsDownloadButton;
         private ModrinthProject? _selectedMod;
+        private string _selectedLoader = "all";
+        private string? _selectedCategory;
+        private string _selectedSort = "downloads";
+        private string? _selectedMcVersion;
+        private int _modOffset;
+        private int _modTotalHits;
+        private string _currentModQuery = "";
+        private static readonly HashSet<string> BundledModIds = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "AANobbMI",
+            "gvQqBUqZ",
+            "uXXizFIs",
+            "oftqHBKC",
+            "NNAgCjsB",
+            "nmDcB62a",
+        };
+
+        private static readonly (string Id, string Label, string Icon)[] ModCategories = new[]
+        {
+            ("adventure", "Adventure", "🗺️"),
+            ("cursed", "Cursed", "😈"),
+            ("decoration", "Decoration", "🎨"),
+            ("economy", "Economy", "💰"),
+            ("equipment", "Equipment", "⚔️"),
+            ("food", "Food", "🍖"),
+            ("game-mechanics", "Game Mechanics", "⚙️"),
+            ("library", "Library", "📚"),
+            ("magic", "Magic", "✨"),
+            ("management", "Management", "📋"),
+            ("minigame", "Minigame", "🎮"),
+            ("mobs", "Mobs", "🐺"),
+            ("optimization", "Optimization", "⚡"),
+            ("social", "Social", "💬"),
+            ("storage", "Storage", "📦"),
+            ("technology", "Technology", "🔧"),
+            ("transportation", "Transportation", "🚂"),
+            ("utility", "Utility", "🛠️"),
+            ("worldgen", "World Gen", "🌍"),
+        };
         private StackPanel? _userModsPanel;
         private Border? _noUserModsMessage;
         private CancellationTokenSource? _modSearchCts;
@@ -747,13 +798,7 @@ namespace LeafClient.Views
                 Padding          = new Avalonia.Thickness(16, 10),
                 MaxWidth         = 320,
                 Opacity          = 0,
-                Child = new Avalonia.Controls.TextBlock
-                {
-                    Text            = message,
-                    Foreground      = Avalonia.Media.Brushes.White,
-                    FontSize        = 13,
-                    TextWrapping    = Avalonia.Media.TextWrapping.Wrap,
-                }
+                Child = BuildToastContent(message, type)
             };
 
             // Add to container
@@ -793,6 +838,61 @@ namespace LeafClient.Views
             };
             await fadeOut.RunAsync(toast);
             items.Remove(toast);
+        }
+
+        private static Avalonia.Controls.Control BuildToastContent(string message, ToastType type)
+        {
+            var parts = message.Split('\n', 2);
+            var primary = parts[0];
+            var detail = parts.Length > 1 ? parts[1] : null;
+
+            var icon = type switch
+            {
+                ToastType.Success => "✓",
+                ToastType.Error   => "⚠",
+                _                 => "ℹ"
+            };
+
+            var iconBlock = new Avalonia.Controls.TextBlock
+            {
+                Text = icon,
+                Foreground = Avalonia.Media.Brushes.White,
+                FontSize = 18,
+                FontWeight = Avalonia.Media.FontWeight.Bold,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Avalonia.Thickness(0, 0, 10, 0)
+            };
+
+            var textPanel = new Avalonia.Controls.StackPanel { Spacing = 2 };
+
+            textPanel.Children.Add(new Avalonia.Controls.TextBlock
+            {
+                Text = primary,
+                Foreground = Avalonia.Media.Brushes.White,
+                FontSize = 13,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+
+            if (detail != null)
+            {
+                textPanel.Children.Add(new Avalonia.Controls.TextBlock
+                {
+                    Text = detail,
+                    Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(180, 255, 255, 255)),
+                    FontSize = 11,
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                });
+            }
+
+            var row = new Avalonia.Controls.StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
+            };
+            row.Children.Add(iconBlock);
+            row.Children.Add(textPanel);
+            return row;
         }
 
         private void RefreshLeafPlusPrices()
@@ -2043,9 +2143,21 @@ namespace LeafClient.Views
             _modBrowserPanel = this.FindControl<Border>("ModBrowserPanel");
             _modBrowserBackdrop = this.FindControl<Border>("ModBrowserBackdrop");
             _modsResultsPanel = this.FindControl<WrapPanel>("ModsResultsPanel");
+            _modsResultsGrid = this.FindControl<ItemsControl>("ModsResultsGrid");
+            _modsSkeletonPanel = this.FindControl<ItemsControl>("ModsSkeletonPanel");
             _modsLoadingPanel = this.FindControl<StackPanel>("ModsLoadingPanel");
             _modsEmptyPanel = this.FindControl<StackPanel>("ModsEmptyPanel");
+            _modsLoadMoreBtn = this.FindControl<Button>("ModsLoadMoreBtn");
+            _modsResultCount = this.FindControl<TextBlock>("ModsResultCount");
             _modSearchBox = this.FindControl<TextBox>("ModSearchBox");
+            _modSearchClearBtn = this.FindControl<Button>("ModSearchClearBtn");
+            _modVersionDropdown = this.FindControl<ComboBox>("ModVersionDropdown");
+            _modSortDropdown = this.FindControl<ComboBox>("ModSortDropdown");
+            _modCategorySidebar = this.FindControl<StackPanel>("ModCategorySidebar");
+            _modLoaderAllChip = this.FindControl<Border>("ModLoaderAllChip");
+            _modLoaderFabricChip = this.FindControl<Border>("ModLoaderFabricChip");
+            _modLoaderForgeChip = this.FindControl<Border>("ModLoaderForgeChip");
+            _modLoaderQuiltChip = this.FindControl<Border>("ModLoaderQuiltChip");
 
             _modDetailsSidebar = this.FindControl<Border>("ModDetailsSidebar");
             _modDetailsIcon = this.FindControl<Image>("ModDetailsIcon");
@@ -2057,8 +2169,81 @@ namespace LeafClient.Views
             if (_modSearchBox != null)
                 _modSearchBox.TextChanged += OnModSearchTextChanged;
 
+            PopulateModVersionDropdown();
+            PopulateModCategorySidebar();
+
             _modrinthClient.DefaultRequestHeaders.Remove("User-Agent");
             _modrinthClient.DefaultRequestHeaders.Add("User-Agent", "LeafClient/1.1.0 (contact@leafclient.com)");
+        }
+
+        private void PopulateModVersionDropdown()
+        {
+            if (_modVersionDropdown == null) return;
+            var items = new List<ComboBoxItem>();
+            items.Add(new ComboBoxItem { Content = "Any version", Tag = null, IsSelected = true });
+            var sorted = LeafSupportedVersions
+                .OrderByDescending(v => v, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var v in sorted)
+            {
+                items.Add(new ComboBoxItem { Content = v, Tag = v });
+            }
+            _modVersionDropdown.ItemsSource = items;
+            _modVersionDropdown.SelectedIndex = 0;
+        }
+
+        private void PopulateModCategorySidebar()
+        {
+            if (_modCategorySidebar == null) return;
+
+            var allCategoryItem = BuildCategoryItem(null, "All mods", "🌟");
+            _modCategorySidebar.Children.Add(allCategoryItem);
+
+            foreach (var (id, label, icon) in ModCategories)
+            {
+                _modCategorySidebar.Children.Add(BuildCategoryItem(id, label, icon));
+            }
+
+            ApplyCategorySelection();
+        }
+
+        private Border BuildCategoryItem(string? categoryId, string label, string icon)
+        {
+            var border = new Border
+            {
+                Classes = { "CategoryItem" },
+                Background = Avalonia.Media.Brushes.Transparent,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 8),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Tag = categoryId,
+            };
+
+            var row = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 10,
+            };
+            row.Children.Add(new TextBlock
+            {
+                Text = icon,
+                FontSize = 13,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+            var text = new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            text.Classes.Add("CategoryItemText");
+            row.Children.Add(text);
+
+            border.Child = row;
+            border.PointerPressed += OnCategoryTapped;
+            return border;
         }
         #region Updater Important Variables
 
@@ -4826,7 +5011,6 @@ namespace LeafClient.Views
         {
             if (_modBrowserOverlay == null || _modBrowserPanel == null) return;
 
-            // Reset to closed state before showing so transitions play from the start
             _modBrowserPanel.Opacity = 0;
             _modBrowserPanel.RenderTransform = new ScaleTransform(0.92, 0.92);
             if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 0;
@@ -4834,7 +5018,11 @@ namespace LeafClient.Views
             _modBrowserOverlay.IsVisible = true;
 
             if (_modSearchBox != null) _modSearchBox.Text = "";
-            _ = SearchMods("");
+            if (_modSearchClearBtn != null) _modSearchClearBtn.IsVisible = false;
+            if (_modDetailsSidebar != null) _modDetailsSidebar.IsVisible = false;
+            _currentModQuery = "";
+            _modOffset = 0;
+            _ = SearchMods("", false);
 
             if (!AreAnimationsEnabled())
             {
@@ -4844,8 +5032,7 @@ namespace LeafClient.Views
                 return;
             }
 
-            // Let Avalonia transitions animate opacity + scale
-            await Task.Delay(16); // one frame delay so the reset state registers
+            await Task.Delay(16);
             _modBrowserPanel.Opacity = 1;
             _modBrowserPanel.RenderTransform = TransformOperations.Parse("scale(1,1)");
             if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 1;
@@ -4865,7 +5052,6 @@ namespace LeafClient.Views
             _modBrowserPanel.RenderTransform = TransformOperations.Parse("scale(0.92,0.92)");
             if (_modBrowserBackdrop != null) _modBrowserBackdrop.Opacity = 0;
 
-            // Wait for transition to finish (350ms for scale, 300ms for opacity)
             await Task.Delay(380);
             _modBrowserOverlay.IsVisible = false;
         }
@@ -4876,81 +5062,268 @@ namespace LeafClient.Views
             _modSearchCts = new CancellationTokenSource();
 
             var searchText = _modSearchBox?.Text ?? "";
+            if (_modSearchClearBtn != null) _modSearchClearBtn.IsVisible = !string.IsNullOrEmpty(searchText);
 
             try
             {
-                await Task.Delay(500, _modSearchCts.Token); 
-                await SearchMods(searchText);
+                await Task.Delay(400, _modSearchCts.Token);
+                _currentModQuery = searchText;
+                _modOffset = 0;
+                await SearchMods(searchText, false);
             }
             catch (OperationCanceledException)
             {
             }
         }
 
-        private async Task SearchMods(string query)
+        private void OnModSearchClear(object? sender, RoutedEventArgs e)
         {
-            if (_modsResultsPanel == null || _modsLoadingPanel == null || _modsEmptyPanel == null) return;
+            if (_modSearchBox != null) _modSearchBox.Text = "";
+            if (_modSearchClearBtn != null) _modSearchClearBtn.IsVisible = false;
+            _currentModQuery = "";
+            _modOffset = 0;
+            _ = SearchMods("", false);
+        }
 
-            _modsLoadingPanel.IsVisible = true;
-            _modsEmptyPanel.IsVisible = false;
-            _modsResultsPanel.IsVisible = false;
-            _modsResultsPanel.Children.Clear();
+        private void OnLoaderChipTapped(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Border chip) return;
+            var loader = chip.Tag?.ToString() ?? "all";
+            if (_selectedLoader == loader) return;
+            _selectedLoader = loader;
+            ApplyLoaderSelection();
+            _modOffset = 0;
+            _ = SearchMods(_currentModQuery, false);
+        }
 
-            try
+        private void ApplyLoaderSelection()
+        {
+            var chips = new[] { _modLoaderAllChip, _modLoaderFabricChip };
+            foreach (var chip in chips)
             {
-                string apiUrl;
-                if (string.IsNullOrWhiteSpace(query))
+                if (chip == null) continue;
+                var chipTag = chip.Tag?.ToString() ?? "";
+                bool active = chipTag == _selectedLoader;
+                if (active)
                 {
-                    apiUrl = "https://api.modrinth.com/v2/search?limit=20&index=downloads";
+                    if (!chip.Classes.Contains("Active")) chip.Classes.Add("Active");
+                    chip.Background = new SolidColorBrush(Color.Parse("#9333EA"));
+                    chip.BorderBrush = new SolidColorBrush(Color.Parse("#A855F7"));
                 }
                 else
                 {
-                    apiUrl = $"https://api.modrinth.com/v2/search?query={Uri.EscapeDataString(query)}&limit=30";
+                    chip.Classes.Remove("Active");
+                    chip.Background = Avalonia.Media.Brushes.Transparent;
+                    chip.BorderBrush = Avalonia.Media.Brushes.Transparent;
                 }
-
-                var response = await _modrinthClient.GetStringAsync(apiUrl);
-                try
+                if (chip.Child is TextBlock tb)
                 {
-
-                    var searchResponse = JsonSerializer.Deserialize(response, JsonContext.Default.ModrinthSearchResponse);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    if (active)
                     {
-                        _modsResultsPanel.Children.Clear();
-
-                        if (searchResponse?.hits == null || searchResponse.hits.Count == 0)
-                        {
-                            _modsEmptyPanel.IsVisible = true;
-                            _modsLoadingPanel.IsVisible = false;
-                            return;
-                        }
-
-                        foreach (var mod in searchResponse.hits)
-                        {
-                            var modCard = CreateModCard(mod);
-                            _modsResultsPanel.Children.Add(modCard);
-                        }
-
-                        _modsLoadingPanel.IsVisible = false;
-                        _modsResultsPanel.IsVisible = true;
-                    });
-
+                        if (!tb.Classes.Contains("Active")) tb.Classes.Add("Active");
+                        tb.Foreground = new SolidColorBrush(Color.Parse("#FFFFFF"));
+                    }
+                    else
+                    {
+                        tb.Classes.Remove("Active");
+                        tb.Foreground = new SolidColorBrush(Color.Parse("#94A3B8"));
+                    }
                 }
-                catch (NotSupportedException ex)
+            }
+        }
+
+        private void OnCategoryTapped(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Border item) return;
+            var cat = item.Tag as string;
+            if (_selectedCategory == cat) return;
+            _selectedCategory = cat;
+            ApplyCategorySelection();
+            _modOffset = 0;
+            _ = SearchMods(_currentModQuery, false);
+        }
+
+        private void ApplyCategorySelection()
+        {
+            if (_modCategorySidebar == null) return;
+            foreach (var child in _modCategorySidebar.Children)
+            {
+                if (child is not Border border) continue;
+                var tag = border.Tag as string;
+                bool active = tag == _selectedCategory;
+                if (active)
                 {
-                    Console.WriteLine($"[JSON ERROR in SearchMods] {ex.Message}");
-                    Console.WriteLine($"[JSON ERROR] Stack trace: {ex.StackTrace}");
-                    throw;
+                    if (!border.Classes.Contains("Active")) border.Classes.Add("Active");
+                    border.Background = new SolidColorBrush(Color.Parse("#1E1338"));
+                }
+                else
+                {
+                    border.Classes.Remove("Active");
+                    border.Background = Avalonia.Media.Brushes.Transparent;
                 }
 
+                if (border.Child is StackPanel sp && sp.Children.Count >= 2 && sp.Children[1] is TextBlock tb)
+                {
+                    if (active)
+                    {
+                        if (!tb.Classes.Contains("Active")) tb.Classes.Add("Active");
+                        tb.Foreground = new SolidColorBrush(Color.Parse("#C084FC"));
+                    }
+                    else
+                    {
+                        tb.Classes.Remove("Active");
+                        tb.Foreground = new SolidColorBrush(Color.Parse("#94A3B8"));
+                    }
+                }
+            }
+        }
 
+        private void OnModFilterChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_modVersionDropdown?.SelectedItem is ComboBoxItem vItem)
+            {
+                _selectedMcVersion = vItem.Tag as string;
+            }
+            if (_modSortDropdown?.SelectedItem is ComboBoxItem sItem)
+            {
+                _selectedSort = sItem.Tag as string ?? "downloads";
+            }
+            _modOffset = 0;
+            _ = SearchMods(_currentModQuery, false);
+        }
+
+        private void OnModsResetFilters(object? sender, RoutedEventArgs e)
+        {
+            _selectedLoader = "all";
+            _selectedCategory = null;
+            _selectedSort = "downloads";
+            _selectedMcVersion = null;
+            _currentModQuery = "";
+            if (_modSearchBox != null) _modSearchBox.Text = "";
+            if (_modSearchClearBtn != null) _modSearchClearBtn.IsVisible = false;
+            if (_modVersionDropdown != null) _modVersionDropdown.SelectedIndex = 0;
+            if (_modSortDropdown != null) _modSortDropdown.SelectedIndex = 0;
+            ApplyLoaderSelection();
+            ApplyCategorySelection();
+            _modOffset = 0;
+            _ = SearchMods("", false);
+        }
+
+        private async void OnModsLoadMore(object? sender, RoutedEventArgs e)
+        {
+            await SearchMods(_currentModQuery, true);
+        }
+
+        private string BuildModrinthUrl(string query, int offset, int limit)
+        {
+            var facets = new List<string>();
+            facets.Add("[\"project_type:mod\"]");
+            if (_selectedLoader != "all")
+            {
+                facets.Add($"[\"categories:{_selectedLoader}\"]");
+            }
+            if (!string.IsNullOrEmpty(_selectedCategory))
+            {
+                facets.Add($"[\"categories:{_selectedCategory}\"]");
+            }
+            if (!string.IsNullOrEmpty(_selectedMcVersion))
+            {
+                facets.Add($"[\"versions:{_selectedMcVersion}\"]");
+            }
+            var facetsJson = "[" + string.Join(",", facets) + "]";
+            var sb = new System.Text.StringBuilder("https://api.modrinth.com/v2/search?");
+            sb.Append($"limit={limit}");
+            sb.Append($"&offset={offset}");
+            sb.Append($"&index={Uri.EscapeDataString(_selectedSort)}");
+            sb.Append($"&facets={Uri.EscapeDataString(facetsJson)}");
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                sb.Append($"&query={Uri.EscapeDataString(query)}");
+            }
+            return sb.ToString();
+        }
+
+        private async Task SearchMods(string query, bool append)
+        {
+            if (_modsResultsGrid == null || _modsEmptyPanel == null || _modsSkeletonPanel == null || _modsLoadMoreBtn == null) return;
+
+            const int pageSize = 30;
+            if (!append)
+            {
+                _modOffset = 0;
+                _modsResultsGrid.ItemsSource = null;
+                _modsResultsGrid.Items.Clear();
+                _modsResultsGrid.IsVisible = false;
+                _modsEmptyPanel.IsVisible = false;
+                _modsLoadMoreBtn.IsVisible = false;
+                _modsSkeletonPanel.IsVisible = true;
+                if (_modsResultCount != null) _modsResultCount.Text = "Searching Modrinth…";
+            }
+            else
+            {
+                _modsLoadMoreBtn.Content = "Loading…";
+                _modsLoadMoreBtn.IsEnabled = false;
+            }
+
+            try
+            {
+                var apiUrl = BuildModrinthUrl(query, _modOffset, pageSize);
+                var response = await _modrinthClient.GetStringAsync(apiUrl);
+                var searchResponse = JsonSerializer.Deserialize(response, JsonContext.Default.ModrinthSearchResponse);
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _modsSkeletonPanel.IsVisible = false;
+
+                    if (!append)
+                    {
+                        _modsResultsGrid.Items.Clear();
+                    }
+
+                    if (searchResponse?.hits == null || (searchResponse.hits.Count == 0 && !append))
+                    {
+                        _modsEmptyPanel.IsVisible = true;
+                        _modsResultsGrid.IsVisible = false;
+                        _modsLoadMoreBtn.IsVisible = false;
+                        if (_modsResultCount != null) _modsResultCount.Text = "No results found";
+                        return;
+                    }
+
+                    _modTotalHits = searchResponse.total_hits;
+                    foreach (var mod in searchResponse.hits)
+                    {
+                        var modCard = CreateModCard(mod);
+                        _modsResultsGrid.Items.Add(modCard);
+                    }
+
+                    _modOffset += searchResponse.hits.Count;
+                    _modsResultsGrid.IsVisible = true;
+                    _modsEmptyPanel.IsVisible = false;
+
+                    if (_modsResultCount != null)
+                    {
+                        var scope = string.IsNullOrEmpty(query) ? "mods" : $"results for \"{query}\"";
+                        _modsResultCount.Text = $"Showing {_modOffset} of {FormatCount(_modTotalHits)} {scope}";
+                    }
+
+                    _modsLoadMoreBtn.Content = "Load more";
+                    _modsLoadMoreBtn.IsEnabled = true;
+                    _modsLoadMoreBtn.IsVisible = _modOffset < _modTotalHits;
+                });
             }
             catch (Exception ex)
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _modsLoadingPanel.IsVisible = false;
-                    _modsEmptyPanel.IsVisible = true;
+                    _modsSkeletonPanel.IsVisible = false;
+                    _modsLoadMoreBtn.Content = "Load more";
+                    _modsLoadMoreBtn.IsEnabled = true;
+                    if (!append)
+                    {
+                        _modsEmptyPanel.IsVisible = true;
+                        _modsResultsGrid.IsVisible = false;
+                        if (_modsResultCount != null) _modsResultCount.Text = "Unable to load mods";
+                    }
                     Console.WriteLine($"[Mod Browser] Error searching mods: {ex.Message}");
                 });
             }
@@ -4960,97 +5333,170 @@ namespace LeafClient.Views
         {
             var card = new Border
             {
-                Width = 200,
-                Background = GetBrush("CardBackgroundColor"),
-                CornerRadius = new CornerRadius(12),
+                Height = 300,
+                CornerRadius = new CornerRadius(14),
+                BorderBrush = new SolidColorBrush(Color.Parse("#1A2332")),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(6),
                 Cursor = new Cursor(StandardCursorType.Hand),
-                Margin = new Thickness(0, 0, 15, 15)
-            };
-
-            var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(120) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); 
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); 
-
-            var iconBorder = new Border
-            {
-                Background = GetBrush("HoverBackgroundBrush"),
-                CornerRadius = new CornerRadius(12),
                 ClipToBounds = true,
-                Margin = new Thickness(15, 15, 15, 5)
             };
+            card.Classes.Add("ModCard");
 
+            var bgGradient = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            };
+            bgGradient.GradientStops.Add(new GradientStop(Color.Parse("#101826"), 0));
+            bgGradient.GradientStops.Add(new GradientStop(Color.Parse("#0A1018"), 1));
+            card.Background = bgGradient;
+
+            var rootGrid = new Grid();
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(128) });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Star });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var bannerGradient = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            };
+            bannerGradient.GradientStops.Add(new GradientStop(Color.Parse("#1E1338"), 0));
+            bannerGradient.GradientStops.Add(new GradientStop(Color.Parse("#120A24"), 1));
+            var banner = new Border
+            {
+                Background = bannerGradient,
+                ClipToBounds = true,
+            };
+            Grid.SetRow(banner, 0);
+            rootGrid.Children.Add(banner);
+
+            var iconHolder = new Border
+            {
+                Width = 76,
+                Height = 76,
+                CornerRadius = new CornerRadius(14),
+                Background = new SolidColorBrush(Color.Parse("#0D1520")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#2E1B56")),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Padding = new Thickness(8),
+                BoxShadow = BoxShadows.Parse("0 12 30 0 #80000000"),
+            };
             var modIcon = new Image
             {
-                Width = 80,
-                Height = 80,
                 Stretch = Avalonia.Media.Stretch.Uniform,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
             };
             if (!string.IsNullOrEmpty(mod.icon_url)) _ = LoadModIcon(modIcon, mod.icon_url);
             else
                 modIcon.Source = new Avalonia.Media.Imaging.Bitmap(
                     AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
+            iconHolder.Child = modIcon;
+            Grid.SetRow(iconHolder, 0);
+            rootGrid.Children.Add(iconHolder);
 
-            iconBorder.Child = modIcon;
-            Grid.SetRow(iconBorder, 0);
-            grid.Children.Add(iconBorder);
-
-            var infoStack = new StackPanel { Spacing = 5, Margin = new Thickness(15, 0, 15, 0) };
-            var titleText = new TextBlock
+            if (mod.loaders != null && mod.loaders.Count > 0)
             {
-                Text = mod.title,
-                Foreground = GetBrush("PrimaryForegroundBrush"),
+                var primaryLoader = mod.loaders.FirstOrDefault(l =>
+                    l.Equals("fabric", StringComparison.OrdinalIgnoreCase) ||
+                    l.Equals("forge", StringComparison.OrdinalIgnoreCase) ||
+                    l.Equals("quilt", StringComparison.OrdinalIgnoreCase) ||
+                    l.Equals("neoforge", StringComparison.OrdinalIgnoreCase)) ?? mod.loaders[0];
+                var loaderBadge = new Border
+                {
+                    Background = new SolidColorBrush(Color.Parse("#CC0D1520")),
+                    BorderBrush = new SolidColorBrush(Color.Parse("#7C3AED")),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(7),
+                    Padding = new Thickness(8, 3),
+                    Margin = new Thickness(10),
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                };
+                loaderBadge.Child = new TextBlock
+                {
+                    Text = CapitalizeFirst(primaryLoader),
+                    FontSize = 10,
+                    FontWeight = FontWeight.Bold,
+                    Foreground = new SolidColorBrush(Color.Parse("#C4B5FD")),
+                };
+                Grid.SetRow(loaderBadge, 0);
+                rootGrid.Children.Add(loaderBadge);
+            }
+
+            var titleStack = new StackPanel
+            {
+                Spacing = 2,
+                Margin = new Thickness(16, 14, 16, 0),
+            };
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = mod.title ?? "Untitled mod",
+                Foreground = new SolidColorBrush(Color.Parse("#F8FAFC")),
                 FontWeight = FontWeight.Bold,
                 FontSize = 14,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                MaxHeight = 40,
-                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
-            };
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            });
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = $"by {mod.author ?? "unknown"}",
+                Foreground = new SolidColorBrush(Color.Parse("#64748B")),
+                FontSize = 11,
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            });
+            Grid.SetRow(titleStack, 1);
+            rootGrid.Children.Add(titleStack);
+
             var descText = new TextBlock
             {
-                Text = string.IsNullOrEmpty(mod.description)
-                    ? "No description available"
-                    : mod.description.Length > 100 ? mod.description.Substring(0, 100) + "..." : mod.description,
-                Foreground = GetBrush("SecondaryForegroundBrush"),
+                Text = string.IsNullOrWhiteSpace(mod.description) ? "No description available." : mod.description,
+                Foreground = new SolidColorBrush(Color.Parse("#94A3B8")),
                 FontSize = 11,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                LineHeight = 16,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                MaxLines = 3,
+                Margin = new Thickness(16, 8, 16, 12),
             };
-            infoStack.Children.Add(titleText);
-            infoStack.Children.Add(descText);
-            Grid.SetRow(infoStack, 1);
-            grid.Children.Add(infoStack);
+            Grid.SetRow(descText, 2);
+            rootGrid.Children.Add(descText);
 
-            var statsStack = new StackPanel
+            var statsRow = new Border
             {
-                Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Spacing = 10,
-                Margin = new Thickness(15, 8, 15, 12),
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                Background = new SolidColorBrush(Color.Parse("#080D14")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#1A2332")),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Padding = new Thickness(16, 10),
             };
-            var downloadsText = new TextBlock
-            {
-                Text = $"⬇️ {FormatCount(mod.downloads)}",
-                Foreground = GetBrush("SecondaryForegroundBrush"),
-                FontSize = 10
-            };
-            var followsText = new TextBlock
-            {
-                Text = $"❤️ {FormatCount(mod.follows)}",
-                Foreground = GetBrush("SecondaryForegroundBrush"),
-                FontSize = 10
-            };
-            statsStack.Children.Add(downloadsText);
-            statsStack.Children.Add(followsText);
-            Grid.SetRow(statsStack, 2);
-            grid.Children.Add(statsStack);
+            var statsGrid = new Grid();
+            statsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
+            statsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
+            var dl = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
+            dl.Children.Add(new TextBlock { Text = "⬇", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#A855F7")), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            dl.Children.Add(new TextBlock { Text = FormatCount(mod.downloads), FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.Parse("#CBD5E1")), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            Grid.SetColumn(dl, 0);
+            statsGrid.Children.Add(dl);
+            var fl = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+            fl.Children.Add(new TextBlock { Text = "♥", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#F472B6")), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            fl.Children.Add(new TextBlock { Text = FormatCount(mod.follows), FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.Parse("#CBD5E1")), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            Grid.SetColumn(fl, 1);
+            statsGrid.Children.Add(fl);
+            statsRow.Child = statsGrid;
+            Grid.SetRow(statsRow, 3);
+            rootGrid.Children.Add(statsRow);
 
-            card.Child = grid;
-
+            card.Child = rootGrid;
             card.PointerPressed += (s, e) => ShowModDetails(mod, modIcon.Source);
-
             return card;
+        }
+
+        private static string CapitalizeFirst(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+            return char.ToUpperInvariant(value[0]) + value.Substring(1).ToLowerInvariant();
         }
 
         private void ShowModDetails(ModrinthProject mod, IImage? iconSource)
@@ -5063,12 +5509,41 @@ namespace LeafClient.Views
                 _modDetailsDescription.Text = string.IsNullOrWhiteSpace(mod.description) ? "No description available." : mod.description;
 
             if (_modDetailsStats != null)
-                _modDetailsStats.Text = $"⬇️ {FormatCount(mod.downloads)}    ❤️ {FormatCount(mod.follows)}";
+            {
+                var author = string.IsNullOrWhiteSpace(mod.author) ? "unknown" : mod.author;
+                _modDetailsStats.Text = $"by {author}   •   ⬇ {FormatCount(mod.downloads)}   •   ♥ {FormatCount(mod.follows)}";
+            }
 
             if (_modDetailsIcon != null)
             {
                 if (iconSource != null) _modDetailsIcon.Source = iconSource;
                 else if (!string.IsNullOrEmpty(mod.icon_url)) _ = LoadModIcon(_modDetailsIcon, mod.icon_url);
+            }
+
+            if (_modDetailsDownloadButton != null)
+            {
+                bool isBundled = !string.IsNullOrEmpty(mod.project_id) && BundledModIds.Contains(mod.project_id);
+                bool supportsFabric = mod.loaders == null || mod.loaders.Count == 0 ||
+                    mod.loaders.Any(l => l.Equals("fabric", StringComparison.OrdinalIgnoreCase));
+
+                if (isBundled)
+                {
+                    _modDetailsDownloadButton.IsEnabled = false;
+                    _modDetailsDownloadButton.Content = "Already included with LeafClient";
+                    _modDetailsDownloadButton.Background = new SolidColorBrush(Color.Parse("#1A2332"));
+                }
+                else if (!supportsFabric)
+                {
+                    _modDetailsDownloadButton.IsEnabled = false;
+                    _modDetailsDownloadButton.Content = "Fabric only — not supported";
+                    _modDetailsDownloadButton.Background = new SolidColorBrush(Color.Parse("#1A2332"));
+                }
+                else
+                {
+                    _modDetailsDownloadButton.IsEnabled = true;
+                    _modDetailsDownloadButton.Content = "Download";
+                    _modDetailsDownloadButton.Background = new SolidColorBrush(Color.Parse("#9333EA"));
+                }
             }
         }
 
@@ -13112,7 +13587,7 @@ namespace LeafClient.Views
             _po_ShowAllVersionsFlag = false;
             var savedPreset = profile?.ModPreset ?? "balanced";
             _po_SelectedPreset = savedPreset == "none" ? "balanced" : savedPreset;
-            _po_SelectedVersion = profile?.MinecraftVersion ?? "1.21.4";
+            _po_SelectedVersion = profile?.MinecraftVersion ?? "";
 
             if (_po_TitleText != null)
                 _po_TitleText.Text = profile == null ? "New Profile" : $"Edit — {profile.Name}";
@@ -16731,7 +17206,7 @@ namespace LeafClient.Views
                 if (_versionDropdown != null)
                 {
                     _versionDropdown.SelectionChanged -= OnSubVersionSelected; 
-                    _versionDropdown.ItemsSource = subVersions.OrderByDescending(v => v.FullVersion).ToList();
+                    _versionDropdown.ItemsSource = subVersions.OrderByDescending(v => Version.TryParse(v.FullVersion, out var parsed) ? parsed : new Version(0, 0)).ToList();
 
                     if (_versionDropdown.ItemCount > 0)
                     {
@@ -16765,8 +17240,8 @@ namespace LeafClient.Views
             {
                 string selectedSubVersion = selectedVersionInfo.FullVersion;
                 _currentSettings.SelectedSubVersion = selectedSubVersion;
-                // Selecting a version explicitly in the dropdown overrides any active profile.
-                _currentSettings.ActiveProfileId = null;
+                if (!_isApplyingSettings)
+                    _currentSettings.ActiveProfileId = null;
 
                 var currentVersionInfo = _allVersions.FirstOrDefault(v => v.FullVersion == selectedSubVersion);
                 if (currentVersionInfo != null)
@@ -18351,6 +18826,20 @@ namespace LeafClient.Views
 
             _currentSettings.CustomServers ??= new List<ServerInfo>();
             _currentSettings.CustomSkins ??= new List<SkinInfo>();
+            _currentSettings.Profiles ??= new List<LauncherProfile>();
+
+            if (_currentSettings.Profiles.Count == 0)
+            {
+                var latestVersion = _allVersions.FirstOrDefault();
+                var defaultProfile = new LauncherProfile
+                {
+                    Name = "Default",
+                    MinecraftVersion = latestVersion?.FullVersion ?? "1.21.11"
+                };
+                _currentSettings.Profiles.Add(defaultProfile);
+                _currentSettings.ActiveProfileId = defaultProfile.Id;
+                await _settingsService.SaveSettingsAsync(_currentSettings);
+            }
 
             await InitializeDefaultServersAsync();
 
@@ -18724,7 +19213,7 @@ namespace LeafClient.Views
                     _currentSettings.SelectedMajorVersion = $"{parts[0]}.{parts[1]}";
                 }
             }
-            _currentSettings.SelectedSubVersion = (_versionDropdown?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "1.21.4";
+            _currentSettings.SelectedSubVersion = (_versionDropdown?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
             var sub = _currentSettings.SelectedSubVersion;
             if (!string.IsNullOrWhiteSpace(sub))
             {
