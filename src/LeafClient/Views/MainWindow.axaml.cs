@@ -11555,7 +11555,8 @@ namespace LeafClient.Views
                     "LeafClient");
                 Directory.CreateDirectory(dir);
                 var path = System.IO.Path.Combine(dir, "session.json");
-                var json = System.Text.Json.JsonSerializer.Serialize(new { jwt = jwt ?? "" });
+                var json = $"{{\"jwt\":\"{jwt ?? ""}\"}}";
+
                 File.WriteAllText(path, json);
             }
             catch (Exception ex)
