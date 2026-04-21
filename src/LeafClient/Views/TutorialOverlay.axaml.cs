@@ -9,6 +9,8 @@ namespace LeafClient.Views;
 
 public partial class TutorialOverlay : UserControl
 {
+    private const double TooltipMaxWidth = 260.0;
+    private bool _initialized;
     private MainWindow? _window;
     private Path? _backdropPath;
     private Border? _spotlightBorder;
@@ -25,6 +27,8 @@ public partial class TutorialOverlay : UserControl
 
     public void Initialize(MainWindow window)
     {
+        if (_initialized) return;
+        _initialized = true;
         _window = window;
         _backdropPath = this.FindControl<Path>("BackdropPath");
         _spotlightBorder = this.FindControl<Border>("SpotlightBorder");
@@ -140,7 +144,7 @@ public partial class TutorialOverlay : UserControl
                 tipY = spotY;
                 break;
             case TooltipAnchor.Left:
-                tipX = spotX - 260 - gap;
+                tipX = spotX - TooltipMaxWidth - gap;
                 tipY = spotY;
                 break;
             case TooltipAnchor.Above:
@@ -160,5 +164,13 @@ public partial class TutorialOverlay : UserControl
     private void OnTutorialEnded()
     {
         IsVisible = false;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        TutorialService.Instance.TutorialStarted -= OnTutorialStarted;
+        TutorialService.Instance.StepChanged -= OnStepChanged;
+        TutorialService.Instance.TutorialEnded -= OnTutorialEnded;
     }
 }
