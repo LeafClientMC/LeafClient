@@ -11558,7 +11558,10 @@ namespace LeafClient.Views
                 var json = System.Text.Json.JsonSerializer.Serialize(new { jwt = jwt ?? "" });
                 File.WriteAllText(path, json);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Session] Failed to write session.json: {ex.Message}");
+            }
         }
 
         private void StartRichPresenceIfEnabled()
