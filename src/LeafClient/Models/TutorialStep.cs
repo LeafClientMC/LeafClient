@@ -8,5 +8,5 @@ public class TutorialStep
     public required string Title { get; init; }
     public required string Body { get; init; }
     public TooltipAnchor TooltipAnchor { get; init; } = TooltipAnchor.Right;
-    public bool IsSkippable { get; init; } = false;
+    public bool IsSkippable { get; init; } = true;
 }

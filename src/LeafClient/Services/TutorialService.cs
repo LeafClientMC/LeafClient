@@ -56,8 +56,7 @@ public sealed class TutorialService
         {
             TargetElementName = "SettingsButton",
             Title = "Edit Your Skin",
-            Body = "Customise your Minecraft skin.",
-            IsSkippable = true
+            Body = "Customise your Minecraft skin."
         }
     };
 

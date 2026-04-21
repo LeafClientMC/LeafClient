@@ -18602,6 +18602,7 @@ namespace LeafClient.Views
                             account.LeafApiRefreshToken = apiResult.RefreshToken;
                             await _settingsService.SaveSettingsAsync(_currentSettings);
                             _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+                            WriteSessionJson(apiResult.AccessToken);
                             Console.WriteLine("[Accounts] Silently re-linked Microsoft account JWT on switch.");
                             await SyncOwnedCosmeticsFromApiAsync();
                         }
@@ -18730,6 +18731,7 @@ namespace LeafClient.Views
                                     }
                                     await _settingsService.SaveSettingsAsync(_currentSettings);
                                     _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+                                    WriteSessionJson(apiResult.AccessToken);
                                     Console.WriteLine("[Accounts] LeafClient API linked for Microsoft account.");
                                     _ownedCosmeticIds.Clear();
                                     await SyncOwnedCosmeticsFromApiAsync();
