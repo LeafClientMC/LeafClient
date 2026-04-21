@@ -4279,8 +4279,22 @@
 								</ScrollViewer>
 							</Border>
 
-							<Grid Grid.Column="1" RowDefinitions="*,Auto">
-								<ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="24,8,24,16">
+							<Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+								<Border x:Name="ModsBrowserVersionNotice"
+										Grid.Row="0"
+										IsVisible="False"
+										Background="#1C1500"
+										BorderBrush="#92400E"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="12,8"
+										Margin="0,0,0,8">
+									<TextBlock x:Name="ModsBrowserVersionNoticeText"
+											   Foreground="#FDE68A"
+											   FontSize="12"
+											   TextWrapping="Wrap"/>
+								</Border>
+								<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,8,24,16">
 									<Grid>
 										<ItemsControl x:Name="ModsResultsGrid">
 											<ItemsControl.ItemsPanel>
@@ -4362,7 +4376,7 @@
 								</ScrollViewer>
 
 								<Button x:Name="ModsLoadMoreBtn"
-										Grid.Row="1"
+										Grid.Row="2"
 										Content="Load more"
 										Classes="ColorBtn"
 										HorizontalAlignment="Center"

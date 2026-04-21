@@ -447,6 +447,8 @@ namespace LeafClient.Views
         private StackPanel? _modsEmptyPanel;
         private Button? _modsLoadMoreBtn;
         private TextBlock? _modsResultCount;
+        private Border? _modsBrowserVersionNotice;
+        private TextBlock? _modsBrowserVersionNoticeText;
         private TextBox? _modSearchBox;
         private Button? _modSearchClearBtn;
         private ComboBox? _modVersionDropdown;
@@ -2182,6 +2184,9 @@ namespace LeafClient.Views
 
             _modrinthClient.DefaultRequestHeaders.Remove("User-Agent");
             _modrinthClient.DefaultRequestHeaders.Add("User-Agent", "LeafClient/1.1.0 (contact@leafclient.com)");
+
+            _modsBrowserVersionNotice = this.FindControl<Border>("ModsBrowserVersionNotice");
+            _modsBrowserVersionNoticeText = this.FindControl<TextBlock>("ModsBrowserVersionNoticeText");
         }
 
         private void PopulateModVersionDropdown()
@@ -5224,6 +5229,11 @@ namespace LeafClient.Views
 
         private string BuildModrinthUrl(string query, int offset, int limit)
         {
+            return BuildModrinthSearchUrl(query, _selectedMcVersion ?? "", offset, limit);
+        }
+
+        private string BuildModrinthSearchUrl(string query, string version, int offset, int limit)
+        {
             var facets = new List<string>();
             facets.Add("[\"project_type:mod\"]");
             if (_selectedLoader != "all")
@@ -5234,9 +5244,9 @@ namespace LeafClient.Views
             {
                 facets.Add($"[\"categories:{_selectedCategory}\"]");
             }
-            if (!string.IsNullOrEmpty(_selectedMcVersion))
+            if (!string.IsNullOrEmpty(version))
             {
-                facets.Add($"[\"versions:{_selectedMcVersion}\"]");
+                facets.Add($"[\"versions:{version}\"]");
             }
             var facetsJson = "[" + string.Join(",", facets) + "]";
             var sb = new System.Text.StringBuilder("https://api.modrinth.com/v2/search?");
@@ -5279,6 +5289,27 @@ namespace LeafClient.Views
                 var response = await _modrinthClient.GetStringAsync(apiUrl);
                 var searchResponse = JsonSerializer.Deserialize(response, JsonContext.Default.ModrinthSearchResponse);
 
+                string? usedFallbackVersion = null;
+
+                if (searchResponse?.hits == null || (searchResponse.hits.Count == 0 && !append))
+                {
+                    if (!string.IsNullOrEmpty(_selectedMcVersion))
+                    {
+                        var fallback = ModrinthVersionFallback.GetFallbackVersion(_selectedMcVersion);
+                        if (fallback != null)
+                        {
+                            var fallbackUrl = BuildModrinthSearchUrl(query, fallback, _modOffset, pageSize);
+                            var fallbackJson = await _modrinthClient.GetStringAsync(fallbackUrl);
+                            var fallbackResponse = JsonSerializer.Deserialize(fallbackJson, JsonContext.Default.ModrinthSearchResponse);
+                            if (fallbackResponse?.hits != null && fallbackResponse.hits.Count > 0)
+                            {
+                                usedFallbackVersion = fallback;
+                                searchResponse = fallbackResponse;
+                            }
+                        }
+                    }
+                }
+
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     _modsSkeletonPanel.IsVisible = false;
@@ -5290,11 +5321,24 @@ namespace LeafClient.Views
 
                     if (searchResponse?.hits == null || (searchResponse.hits.Count == 0 && !append))
                     {
+                        if (_modsBrowserVersionNotice != null) _modsBrowserVersionNotice.IsVisible = false;
                         _modsEmptyPanel.IsVisible = true;
                         _modsResultsGrid.IsVisible = false;
                         _modsLoadMoreBtn.IsVisible = false;
                         if (_modsResultCount != null) _modsResultCount.Text = "No results found";
                         return;
+                    }
+
+                    if (usedFallbackVersion != null)
+                    {
+                        if (_modsBrowserVersionNotice != null) _modsBrowserVersionNotice.IsVisible = true;
+                        if (_modsBrowserVersionNoticeText != null)
+                            _modsBrowserVersionNoticeText.Text =
+                                $"No mods found for {_selectedMcVersion} yet — showing compatible {usedFallbackVersion} mods instead";
+                    }
+                    else
+                    {
+                        if (_modsBrowserVersionNotice != null) _modsBrowserVersionNotice.IsVisible = false;
                     }
 
                     _modTotalHits = searchResponse.total_hits;
@@ -5618,8 +5662,7 @@ namespace LeafClient.Views
 
                     if (compatibleVersion == null)
                     {
-                        await ShowSimpleDialog("Install Failed",
-                            $"No compatible version found for Minecraft {currentVersion} with Fabric.");
+                        ToastService.Show($"Installation failed\nNo compatible version for Minecraft {currentVersion} + Fabric.", ToastType.Error);
                         return;
                     }
 
@@ -5628,7 +5671,7 @@ namespace LeafClient.Views
 
                     if (modFile == null)
                     {
-                        await ShowSimpleDialog("Install Failed", "No valid mod file found.");
+                        ToastService.Show("Installation failed\nNo valid .jar file found.", ToastType.Error);
                         return;
                     }
 
@@ -5674,10 +5717,7 @@ namespace LeafClient.Views
 
                     await Dispatcher.UIThread.InvokeAsync(() => { LoadUserMods(); });
 
-                    await ShowSimpleDialog("Success",
-                        $"'{mod.title}' has been installed successfully!");
-
-                    CloseModBrowser(null, new RoutedEventArgs());
+                    ToastService.Show($"'{mod.title}' installed\nFind it in Installed Mods.", ToastType.Success);
 
                 }
                 catch (NotSupportedException ex)
@@ -5690,13 +5730,11 @@ namespace LeafClient.Views
             }
             catch (JsonException jsonEx)
             {
-                await ShowSimpleDialog("Install Failed",
-                    $"JSON parsing error: {jsonEx.Message}. The mod data format may have changed.");
+                ToastService.Show($"Install failed\nJSON error: {jsonEx.Message}", ToastType.Error);
             }
             catch (Exception ex)
             {
-                await ShowSimpleDialog("Install Failed",
-                    $"Failed to install '{mod.title}': {ex.Message}");
+                ToastService.Show($"Install failed\n{ex.Message}", ToastType.Error);
             }
         }
 
