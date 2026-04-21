@@ -5374,6 +5374,8 @@ namespace LeafClient.Views
                     {
                         _modsEmptyPanel.IsVisible = true;
                         _modsResultsGrid.IsVisible = false;
+                        _modsLoadMoreBtn.IsVisible = false;
+                        if (_modsBrowserVersionNotice != null) _modsBrowserVersionNotice.IsVisible = false;
                         if (_modsResultCount != null) _modsResultCount.Text = "Unable to load mods";
                     }
                     Console.WriteLine($"[Mod Browser] Error searching mods: {ex.Message}");
