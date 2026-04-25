@@ -102,10 +102,10 @@ namespace LeafClient.Services
                     wpObj["show_beam"] = wp.ShowBeam.ToString().ToLower();
                     wpObj["show_distance"] = wp.ShowDistance.ToString().ToLower();
 
-                    waypointsArray.Add(wpObj);
+                    waypointsArray.Add((System.Text.Json.Nodes.JsonNode)wpObj);
                 }
 
-                JsonObject waypointsSection = rootNode["WAYPOINTS"] as JsonObject;
+                JsonObject? waypointsSection = rootNode["WAYPOINTS"] as JsonObject;
                 if (waypointsSection == null)
                 {
                     waypointsSection = new JsonObject();
@@ -118,7 +118,7 @@ namespace LeafClient.Services
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 await File.WriteAllTextAsync(_filePath, rootNode.ToJsonString(options));
             }
-            catch (Exception ex) { }
+            catch (Exception) { }
         }
     }
 

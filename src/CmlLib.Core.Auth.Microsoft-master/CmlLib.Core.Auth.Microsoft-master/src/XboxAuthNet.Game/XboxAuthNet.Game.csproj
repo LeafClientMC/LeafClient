@@ -12,6 +12,7 @@
 		<!-- Force assembly identity to 1.4.0.0 -->
 		<AssemblyVersion>1.4.0.0</AssemblyVersion>
 		<FileVersion>1.4.0.0</FileVersion>
+		<IsAotCompatible>false</IsAotCompatible>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -32,7 +33,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
 		<PackageReference Include="XboxAuthNet" Version="3.0.4" />
-		<!-- This is the base XboxAuthNet, not XboxAuthNet.Game -->
+		<PackageReference Include="System.Text.Json" Version="9.0.1" />
 	</ItemGroup>
 
 	<!-- private assets -->

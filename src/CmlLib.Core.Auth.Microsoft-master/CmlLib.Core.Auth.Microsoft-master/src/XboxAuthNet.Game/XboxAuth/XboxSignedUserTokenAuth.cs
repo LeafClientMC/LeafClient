@@ -1,3 +1,4 @@
+#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
 using XboxAuthNet.Game.Authenticators;
 using XboxAuthNet.Game.SessionStorages;
 using XboxAuthNet.OAuth;

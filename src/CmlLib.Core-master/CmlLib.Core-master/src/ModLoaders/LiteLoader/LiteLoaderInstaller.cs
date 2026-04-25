@@ -1,4 +1,5 @@
-﻿using CmlLib.Core.CommandParser;
+﻿#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
+using CmlLib.Core.CommandParser;
 using CmlLib.Core.Files;
 using CmlLib.Core.Internals;
 using CmlLib.Core.ProcessBuilder;
@@ -70,11 +71,12 @@ public class LiteLoaderInstaller
                 if (loaderElement == null)
                     continue;
 
-                // Fix: Use the correct overload for JsonElement
+#pragma warning disable IL3050, IL2026
                 var latestLiteLoader = loaderElement.Value.Deserialize<LiteLoaderVersion>(new JsonSerializerOptions
                 {
                     TypeInfoResolver = CmlLibJsonContext.Default
                 });
+#pragma warning restore IL3050, IL2026
 
                 if (latestLiteLoader == null)
                     continue;
@@ -135,10 +137,12 @@ public class LiteLoaderInstaller
             minecraftArguments = string.Join(" ", createGameArguments())
         };
 
+#pragma warning disable IL3050, IL2026
         await JsonSerializer.SerializeAsync(versionJsonFile, versionData, new JsonSerializerOptions
         {
             TypeInfoResolver = CmlLibJsonContext.Default
         });
+#pragma warning restore IL3050, IL2026
         return versionName;
     }
 }

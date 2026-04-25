@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using LeafClient.Models;
 using LeafClient.Services;
@@ -15,6 +16,9 @@ public partial class TutorialOverlay : UserControl
 {
     private const double TooltipMaxWidth = 260.0;
     private const double TooltipEstimatedHeight = 120.0;
+    private const double WelcomeCardWidth = 480.0;
+    private const double WelcomeCardEstimatedHeight = 440.0;
+
     private bool _initialized;
     private MainWindow? _window;
     private Path? _backdropPath;
@@ -22,8 +26,12 @@ public partial class TutorialOverlay : UserControl
     private Border? _tooltipCard;
     private TextBlock? _tooltipTitle;
     private TextBlock? _tooltipBody;
-    private Button? _nextBtn;
-    private Button? _skipBtn;
+    private Button? _tooltipSkip;
+    private Border? _welcomeCard;
+    private TextBlock? _welcomeTitle;
+    private TextBlock? _welcomeBody;
+    private Button? _welcomeStartBtn;
+    private TextBlock? _welcomeStartBtnText;
 
     private Control? _waitTarget;
     private EventHandler<PointerReleasedEventArgs>? _waitHandler;
@@ -43,11 +51,15 @@ public partial class TutorialOverlay : UserControl
         _tooltipCard = this.FindControl<Border>("TooltipCard");
         _tooltipTitle = this.FindControl<TextBlock>("TooltipTitle");
         _tooltipBody = this.FindControl<TextBlock>("TooltipBody");
-        _nextBtn = this.FindControl<Button>("NextBtn");
-        _skipBtn = this.FindControl<Button>("SkipBtn");
+        _tooltipSkip = this.FindControl<Button>("TooltipSkip");
+        _welcomeCard = this.FindControl<Border>("WelcomeCard");
+        _welcomeTitle = this.FindControl<TextBlock>("WelcomeTitle");
+        _welcomeBody = this.FindControl<TextBlock>("WelcomeBody");
+        _welcomeStartBtn = this.FindControl<Button>("WelcomeStartBtn");
+        _welcomeStartBtnText = this.FindControl<TextBlock>("WelcomeStartBtnText");
 
-        if (_nextBtn != null) _nextBtn.Click += (_, _) => TutorialService.Instance.Next();
-        if (_skipBtn != null) _skipBtn.Click += (_, _) => TutorialService.Instance.Skip();
+        if (_welcomeStartBtn != null) _welcomeStartBtn.Click += (_, _) => TutorialService.Instance.Next();
+        if (_tooltipSkip != null) _tooltipSkip.Click += (_, _) => { DetachWaitHandler(); TutorialService.Instance.Next(); };
 
         TutorialService.Instance.TutorialStarted += OnTutorialStarted;
         TutorialService.Instance.StepChanged += OnStepChanged;
@@ -63,27 +75,45 @@ public partial class TutorialOverlay : UserControl
 
     private async void OnStepChanged(TutorialStep step)
     {
-        IsVisible = true;
         DetachWaitHandler();
 
-        if (step.NavigateToPage.HasValue || step.OpenAccountPanel)
+        bool hasDelay = step.NavigateToPage.HasValue || step.OpenAccountPanel || step.OnEnter != TutorialOnEnter.None;
+        if (hasDelay)
         {
-            await Task.Delay(500);
+            IsVisible = false;
+            if (step.NavigateToPage.HasValue || step.OpenAccountPanel)
+                await Task.Delay(500);
+            if (step.OnEnter != TutorialOnEnter.None)
+                await Task.Delay(1000);
         }
 
         if (_window == null) return;
 
         if (step.CenterTooltip)
         {
-            ShowCentered(step);
+            ShowWelcome(step);
+            IsVisible = true;
             return;
         }
 
-        var target = FindControlByName(_window, step.TargetElementName);
-        if (target == null) return;
+        if (_welcomeCard != null) _welcomeCard.IsVisible = false;
+        if (_tooltipCard != null) _tooltipCard.IsVisible = true;
 
-        var pos = target.TranslatePoint(new Point(0, 0), this);
-        if (pos == null) return;
+        Control? target = null;
+        Point? pos = null;
+        for (int i = 0; i < 20; i++)
+        {
+            target = FindControlByName(_window, step.TargetElementName);
+            if (target != null)
+            {
+                pos = target.TranslatePoint(new Point(0, 0), this);
+                if (pos != null && target.Bounds.Width > 0) break;
+            }
+            target = null;
+            pos = null;
+            await Task.Delay(100);
+        }
+        if (target == null || pos == null) return;
 
         var x = pos.Value.X;
         var y = pos.Value.Y;
@@ -109,10 +139,15 @@ public partial class TutorialOverlay : UserControl
 
         if (_tooltipTitle != null) _tooltipTitle.Text = step.Title;
         if (_tooltipBody != null) _tooltipBody.Text = step.Body;
-        if (_skipBtn != null) _skipBtn.IsVisible = step.IsSkippable;
-        if (_nextBtn != null) _nextBtn.IsVisible = string.IsNullOrEmpty(step.WaitForClickElement);
+        if (_tooltipSkip != null)
+        {
+            _tooltipSkip.Content = step.SkipLabel;
+            _tooltipSkip.IsVisible = step.IsSkippable;
+        }
 
         PositionTooltip(step.TooltipAnchor, spotX, spotY, spotW, spotH);
+
+        IsVisible = true;
 
         if (!string.IsNullOrEmpty(step.WaitForClickElement))
         {
@@ -122,7 +157,7 @@ public partial class TutorialOverlay : UserControl
         }
     }
 
-    private void ShowCentered(TutorialStep step)
+    private void ShowWelcome(TutorialStep step)
     {
         if (_window == null) return;
 
@@ -131,20 +166,20 @@ public partial class TutorialOverlay : UserControl
 
         UpdateFullBackdrop(winW, winH);
 
-        if (_spotlightBorder != null)
-            _spotlightBorder.IsVisible = false;
+        if (_spotlightBorder != null) _spotlightBorder.IsVisible = false;
+        if (_tooltipCard != null) _tooltipCard.IsVisible = false;
 
-        if (_tooltipTitle != null) _tooltipTitle.Text = step.Title;
-        if (_tooltipBody != null) _tooltipBody.Text = step.Body;
-        if (_skipBtn != null) _skipBtn.IsVisible = step.IsSkippable;
-        if (_nextBtn != null) _nextBtn.IsVisible = true;
+        if (_welcomeTitle != null) _welcomeTitle.Text = step.Title;
+        if (_welcomeBody != null) _welcomeBody.Text = step.Body;
+        if (_welcomeStartBtnText != null) _welcomeStartBtnText.Text = step.CenterBtnLabel;
 
-        if (_tooltipCard != null)
+        if (_welcomeCard != null)
         {
-            var tipX = (winW - TooltipMaxWidth) / 2.0;
-            var tipY = (winH / 2.0) - (TooltipEstimatedHeight / 2.0);
-            Canvas.SetLeft(_tooltipCard, tipX);
-            Canvas.SetTop(_tooltipCard, tipY);
+            _welcomeCard.IsVisible = true;
+            var cardX = (winW - WelcomeCardWidth) / 2.0;
+            var cardY = (winH - WelcomeCardEstimatedHeight) / 2.0;
+            Canvas.SetLeft(_welcomeCard, Math.Max(16, cardX));
+            Canvas.SetTop(_welcomeCard, Math.Max(16, cardY));
         }
     }
 
@@ -154,10 +189,13 @@ public partial class TutorialOverlay : UserControl
         _waitHandler = (_, _) =>
         {
             DetachWaitHandler();
-            if (step.HideOverlayAfterAction)
-                TutorialService.Instance.HideForAction();
-            else
-                TutorialService.Instance.Next();
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (step.HideOverlayAfterAction)
+                    TutorialService.Instance.HideForAction();
+                else
+                    TutorialService.Instance.Next();
+            }, DispatcherPriority.Background);
         };
         _waitTarget.AddHandler(
             PointerReleasedEvent,

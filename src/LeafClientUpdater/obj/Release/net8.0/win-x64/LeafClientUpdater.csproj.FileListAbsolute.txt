@@ -1,3 +1,4 @@
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.exe
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.deps.json
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.runtimeconfig.json
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.dll
@@ -209,6 +210,7 @@ C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Re
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\hostfxr.dll
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\hostpolicy.dll
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\mscordaccore.dll
+C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2526.11203.dll
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\mscordbi.dll
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\mscorrc.dll
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\msquic.dll
@@ -226,5 +228,3 @@ C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Re
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\LeafClientUpdater.pdb
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\LeafClientUpdater.genruntimeconfig.cache
 C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\obj\Release\net8.0\win-x64\ref\LeafClientUpdater.dll
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\LeafClientUpdater.exe
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2325.60607.dll

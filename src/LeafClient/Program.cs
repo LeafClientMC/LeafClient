@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Logging;
+using Avalonia.WebView.Desktop;
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -18,6 +19,18 @@ namespace LeafClient
 
             Console.WriteLine("[Program] Application starting...");
             Console.WriteLine("[Program] Base directory: " + AppContext.BaseDirectory);
+
+            // Apply any staged update BEFORE UI loads
+            try
+            {
+                if (Services.UpdateService.ApplyPendingUpdate())
+                    Console.WriteLine("[Program] Staged update applied successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Program] Update apply failed (non-fatal): {ex.Message}");
+            }
+
             try
             {
                 var asm = Assembly.Load("XboxAuthNet.Game");
@@ -55,7 +68,8 @@ namespace LeafClient
             var builder = AppBuilder
                 .Configure<App>()
                 .UsePlatformDetect()
-                .WithInterFont();
+                .WithInterFont()
+                .UseDesktopWebView();
 
             // Override Avalonia logger sink
             Logger.Sink = new SilentAvaloniaSink();
@@ -67,7 +81,7 @@ namespace LeafClient
         {
             public bool IsEnabled(LogEventLevel level, string area) => false;
             public void Log(LogEventLevel level, string area, object? source, string messageTemplate) { /* no-op */ }
-            public void Log(LogEventLevel level, string area, object? source, string messageTemplate, object[] propertyValues) { /* no-op */ }
+            public void Log(LogEventLevel level, string area, object? source, string messageTemplate, params object?[] propertyValues) { }
         }
     }
 }

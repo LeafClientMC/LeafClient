@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using LeafClient.Services;
 using LeafClient.ViewModels;
 using LeafClient.Views;
+using LeafClient.Models;
 using System;
 using System.Threading.Tasks;
 using Avalonia.Diagnostics;
@@ -30,8 +31,8 @@ namespace LeafClient
 
         public class NoOpTraceListener : System.Diagnostics.TraceListener
         {
-            public override void Write(string message) { /* nothing */ }
-            public override void WriteLine(string message) { /* nothing */ }
+            public override void Write(string? message) { }
+            public override void WriteLine(string? message) { }
         }
 
         public void SafeShutdown()
@@ -81,6 +82,45 @@ namespace LeafClient
                     {
                         Console.WriteLine($"[SUPPRESSED] Prevented system alert for: {e.Exception.GetType().Name}");
                         e.Handled = true;
+                    }
+                    else
+                    {
+                        // Capture screenshot immediately before the overlay appears
+                        byte[]? screenshot = ScreenshotCaptureService.CaptureScreenAsPng();
+
+                        // Mark handled so the app stays alive
+                        e.Handled = true;
+
+                        Console.WriteLine($"[CRASH] Caught unhandled exception: {e.Exception.GetType().Name} — showing crash overlay");
+
+                        var caughtEx = e.Exception;
+                        // Delay 1 second, then show the in-window overlay
+                        Task.Run(async () =>
+                        {
+                            await Task.Delay(1000);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime dl
+                                    && dl.MainWindow is MainWindow mw)
+                                {
+                                    mw.ShowCrashReportOverlay(caughtEx, screenshot);
+                                }
+                                else
+                                {
+                                    // No MainWindow available — submit silently
+                                    Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            var ss = new SettingsService();
+                                            var settings = await ss.LoadSettingsAsync();
+                                            await CrashReportService.SendAsync(caughtEx, screenshot, settings);
+                                        }
+                                        catch { /* silent */ }
+                                    });
+                                }
+                            });
+                        });
                     }
                 };
 
@@ -155,17 +195,21 @@ namespace LeafClient
                 Console.WriteLine($"[App] LoginCompleted - success: {success}");
                 if (success)
                 {
-                    // Show MainWindow first, then close the LoginWindow to avoid race conditions
-                    Dispatcher.UIThread.InvokeAsync(() =>
+                    // Close login window immediately — LoginSuccessful is already true so the
+                    // Closed handler won't trigger a shutdown, even before MainWindow appears.
+                    loginWindow.Close();
+
+                    try
                     {
                         var mainWindow = new MainWindow();
                         desktop.MainWindow = mainWindow;
                         mainWindow.Show();
                         mainWindow.Activate();
-
-                        // Close login AFTER main is shown
-                        loginWindow.Close();
-                    }, DispatcherPriority.Normal);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[FATAL] Failed to create MainWindow: {ex}");
+                    }
                 }
             };
 
@@ -209,11 +253,19 @@ namespace LeafClient
                 Console.WriteLine($"[App] Login completed: {success}");
                 if (success)
                 {
-                    var mainWindow = new MainWindow();
-                    desktop.MainWindow = mainWindow;
-                    mainWindow.Show();
-                    mainWindow.Activate();
                     loginWindow.Close();
+
+                    try
+                    {
+                        var mainWindow = new MainWindow();
+                        desktop.MainWindow = mainWindow;
+                        mainWindow.Show();
+                        mainWindow.Activate();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[FATAL] Failed to create MainWindow: {ex}");
+                    }
                 }
             };
 
@@ -267,10 +319,17 @@ namespace LeafClient
             // Clear swap flag when main is active
             IsSwapToLogin = false;
 
-            var mainWindow = new MainWindow();
-            desktop.MainWindow = mainWindow;
-            mainWindow.Show();
-            mainWindow.Activate();
+            try
+            {
+                var mainWindow = new MainWindow();
+                desktop.MainWindow = mainWindow;
+                mainWindow.Show();
+                mainWindow.Activate();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FATAL] Failed to create MainWindow: {ex}");
+            }
         }
 
     }

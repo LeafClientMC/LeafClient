@@ -1,6 +1,7 @@
 // reference
 // https://github.com/PrismarineJS/prismarine-auth/blob/master/src/TokenManagers/MinecraftBedrockTokenManager.js
 
+#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;

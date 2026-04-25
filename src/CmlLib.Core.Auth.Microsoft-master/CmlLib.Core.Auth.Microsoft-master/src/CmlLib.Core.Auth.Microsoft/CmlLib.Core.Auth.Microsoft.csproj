@@ -22,6 +22,7 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageId>CmlLib.Core.Auth.Microsoft</PackageId>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<IsAotCompatible>false</IsAotCompatible>
 	</PropertyGroup>
 
 	<!-- private assets -->

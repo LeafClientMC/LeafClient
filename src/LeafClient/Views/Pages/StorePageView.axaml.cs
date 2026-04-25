@@ -447,6 +447,7 @@ namespace LeafClient.Views.Pages
 
             var card = new Border
             {
+                Name            = item.Id == "cape-leaf" ? "LeafCapeStoreCard" : null,
                 Width           = 178,
                 Height          = 310,
                 CornerRadius    = new CornerRadius(18),
@@ -890,6 +891,8 @@ namespace LeafClient.Views.Pages
             (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
         {
             if (_host == null) return;
+            if (TutorialService.Instance.IsRunning)
+                TutorialService.Instance.HideForAction();
             _host.AddOwnedCosmetic(item.Id);
             _host.ShowPurchaseCelebration(item.Id, item.Name, item.Preview, item.Rarity);
             PopulateStoreGrid();
@@ -912,7 +915,16 @@ namespace LeafClient.Views.Pages
         {
             var item = System.Array.Find(StoreCatalog, c => c.Id == "cape-leaf");
             if (item.Id == null) return;
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateStorePreviewPanel(item));
+            UpdateStorePreviewPanel(item);
+            if (_storeGrid == null) return;
+            foreach (var child in _storeGrid.Children)
+            {
+                if (child is Control c && c.Tag?.ToString() == "cape-leaf")
+                {
+                    c.BringIntoView();
+                    break;
+                }
+            }
         }
 
         public void RefreshAfterPurchase(string itemId)

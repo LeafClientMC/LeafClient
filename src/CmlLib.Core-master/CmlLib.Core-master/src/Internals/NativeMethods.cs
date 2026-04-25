@@ -75,7 +75,9 @@ internal static class NativeMethods
     [SecurityCritical]
     public static string GetWindowsVersion(string fallback)
     {
+#pragma warning disable IL3050, IL2026
         var osVersionInfo = new OSVERSIONINFOEX { OSVersionInfoSize = Marshal.SizeOf(typeof(OSVERSIONINFOEX)) };
+#pragma warning restore IL3050, IL2026
         if (RtlGetVersion(ref osVersionInfo) != 0) // NTSTATUS.STATUS_SUCCESS
             return fallback;
         return $"{osVersionInfo.MajorVersion}.{osVersionInfo.MinorVersion}.{osVersionInfo.BuildNumber}";

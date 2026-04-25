@@ -97,7 +97,34 @@ namespace LeafClient.Services
 
         public void SetBool(string key, bool value) => SetRawValue(key, value ? "true" : "false");
         public void SetInt(string key, int value) => SetRawValue(key, value.ToString());
-        public void SetFloat(string key, double value) => SetRawValue(key, value.ToString("0.##"));
+        public void SetFloat(string key, double value) => SetRawValue(key, value.ToString("0.##########", System.Globalization.CultureInfo.InvariantCulture));
         public void SetEnum(string key, string value) => SetRawValue(key, value);
+
+        public bool GetBool(string key, bool fallback = false)
+        {
+            var raw = GetRawValue(key);
+            if (raw == null) return fallback;
+            return raw.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetInt(string key, int fallback = 0)
+        {
+            var raw = GetRawValue(key);
+            if (raw == null || !int.TryParse(raw, out var v)) return fallback;
+            return v;
+        }
+
+        public double GetDouble(string key, double fallback = 0.0)
+        {
+            var raw = GetRawValue(key);
+            if (raw == null || !double.TryParse(raw,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var v)) return fallback;
+            return v;
+        }
+
+        public string GetEnum(string key, string fallback = "") => GetRawValue(key) ?? fallback;
+
+        public bool HasKey(string key) => _kv.ContainsKey(key);
     }
 }

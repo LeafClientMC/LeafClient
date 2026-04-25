@@ -1,5 +1,5 @@
-// File: C:\Users\ziadf\source\repos\CmlLib.Core.Auth.Microsoft-master\CmlLib.Core.Auth.Microsoft-master\src\XboxAuthNet.Game\XboxAuth\XboxUserTokenAuth.cs
-using System; // Required for Console.WriteLine
+#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
+using System;
 using XboxAuthNet.Game.Authenticators;
 using XboxAuthNet.Game.SessionStorages;
 using XboxAuthNet.OAuth;

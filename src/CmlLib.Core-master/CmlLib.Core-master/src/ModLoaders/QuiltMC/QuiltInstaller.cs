@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
+using System.Text.Json;
 using CmlLib.Core.Internals;
 using CmlLib.Core.Json;
 
@@ -81,11 +82,12 @@ public class QuiltInstaller
             if (loaderElement == null)
                 continue;
 
-            // Fix: Use the correct overload for JsonElement
+#pragma warning disable IL3050, IL2026
             var loader = loaderElement.Value.Deserialize<QuiltLoader>(new JsonSerializerOptions
             {
                 TypeInfoResolver = CmlLibJsonContext.Default
             });
+#pragma warning restore IL3050, IL2026
 
             if (loader != null)
                 yield return loader;

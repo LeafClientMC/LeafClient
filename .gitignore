@@ -72,6 +72,9 @@ replay_pid*
 *.swo
 *.bak
 *.orig
+*.exe
+*.jar
+*.zip
 
 # ==================================================================
 # Logs
@@ -139,6 +142,7 @@ RELEASE-CHECKLIST.md
 UPTIMEROBOT-SETUP.md
 NOTES.md
 TODO-private.md
+CLAUDE.md
 SECRETS.md
 ROADMAP.md
 *.private.md

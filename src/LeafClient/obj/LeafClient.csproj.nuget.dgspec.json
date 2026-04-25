@@ -28,6 +28,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -88,7 +89,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.23, )",
+              "version": "[8.0.25, )",
               "autoReferenced": true
             },
             "SharpZipLib": {
@@ -97,7 +98,7 @@
             },
             "System.Text.Json": {
               "target": "Package",
-              "version": "[8.0.5, )"
+              "version": "[9.0.1, )"
             },
             "System.Threading.Tasks.Dataflow": {
               "target": "Package",
@@ -126,7 +127,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104/PortableRuntimeIdentifierGraph.json"
         },
         "netstandard2.0": {
           "targetAlias": "netstandard2.0",
@@ -164,7 +165,7 @@
             },
             "System.Text.Json": {
               "target": "Package",
-              "version": "[8.0.5, )"
+              "version": "[9.0.1, )"
             },
             "System.Threading.Tasks.Dataflow": {
               "target": "Package",
@@ -188,7 +189,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -214,6 +215,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -280,7 +282,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -306,6 +308,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -369,7 +372,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -395,6 +398,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -447,6 +451,10 @@
               "target": "Package",
               "version": "[2.0.3, )",
               "autoReferenced": true
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.1, )"
             }
           },
           "imports": [
@@ -466,7 +474,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -492,6 +500,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -537,6 +546,10 @@
               "version": "[2.0.3, )",
               "autoReferenced": true
             },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.1, )"
+            },
             "XboxAuthNet": {
               "target": "Package",
               "version": "[3.0.4, )"
@@ -559,7 +572,7 @@
               "version": "[5.0.0, 5.0.0]"
             }
           ],
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
@@ -585,6 +598,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -617,7 +631,7 @@
             },
             "System.Text.Json": {
               "target": "Package",
-              "version": "[8.0.3, )"
+              "version": "[9.0.1, )"
             }
           },
           "imports": [
@@ -631,12 +645,12 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\RuntimeIdentifierGraph.json"
         }
       }
     },
     "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj": {
-      "version": "1.4.0",
+      "version": "1.5.0",
       "restore": {
         "projectUniqueName": "C:\\Users\\ziadf\\OneDrive\\Documents\\GitHub\\LeafClient\\src\\LeafClient\\LeafClient.csproj",
         "projectName": "LeafClient",
@@ -657,6 +671,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -712,8 +727,6 @@
               "version": "[11.3.8, )"
             },
             "Avalonia.Diagnostics": {
-              "include": "None",
-              "suppressParent": "All",
               "target": "Package",
               "version": "[11.3.8, )"
             },
@@ -737,12 +750,6 @@
               "target": "Package",
               "version": "[1.6.1.70, )"
             },
-            "Microsoft.DotNet.ILCompiler": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.23, )",
-              "autoReferenced": true
-            },
             "Microsoft.Identity.Client.Extensions.Msal": {
               "target": "Package",
               "version": "[4.79.2, )"
@@ -750,7 +757,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.23, )",
+              "version": "[8.0.25, )",
               "autoReferenced": true
             },
             "Mojang.Api.Skins": {
@@ -772,6 +779,26 @@
             "SixLabors.ImageSharp.Drawing": {
               "target": "Package",
               "version": "[2.1.7, )"
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.1, )"
+            },
+            "Tmds.DBus.Protocol": {
+              "target": "Package",
+              "version": "[0.92.0, )"
+            },
+            "WebView.Avalonia": {
+              "target": "Package",
+              "version": "[11.0.0.1, )"
+            },
+            "WebView.Avalonia.Desktop": {
+              "target": "Package",
+              "version": "[11.0.0.1, )"
+            },
+            "WebView.Avalonia.Windows": {
+              "target": "Package",
+              "version": "[11.0.0.1, )"
             }
           },
           "imports": [
@@ -787,8 +814,52 @@
           "warn": true,
           "downloadDependencies": [
             {
-              "name": "runtime.win-x64.Microsoft.DotNet.ILCompiler",
-              "version": "[8.0.23, 8.0.23]"
+              "name": "Microsoft.AspNetCore.App.Runtime.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.win-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+              "version": "[8.0.25, 8.0.25]"
             }
           ],
           "frameworkReferences": {
@@ -796,7 +867,21 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104/PortableRuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "linux-x64": {
+          "#import": []
+        },
+        "osx-arm64": {
+          "#import": []
+        },
+        "osx-x64": {
+          "#import": []
+        },
+        "win-x64": {
+          "#import": []
         }
       }
     },
@@ -822,6 +907,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -863,7 +949,7 @@
             },
             "System.Text.Json": {
               "target": "Package",
-              "version": "[8.0.5, )"
+              "version": "[9.0.1, )"
             }
           },
           "imports": [
@@ -882,7 +968,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

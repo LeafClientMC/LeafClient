@@ -144,7 +144,7 @@ namespace LeafClient.Services
             {
                 if (NextChangeDate.GetValueOrDefault(0L) > 0)
                 {
-                    DateTimeOffset dateTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(NextChangeDate.Value);
+                    DateTimeOffset dateTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(NextChangeDate!.Value);
                     return dateTimeOffset.LocalDateTime.ToString("MMMM dd, yyyy 'at' hh:mm tt");
                 }
                 return "N/A (check Mojang's official site)";

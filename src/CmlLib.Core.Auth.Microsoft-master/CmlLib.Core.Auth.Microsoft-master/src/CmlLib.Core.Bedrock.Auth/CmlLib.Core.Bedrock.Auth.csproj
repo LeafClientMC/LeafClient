@@ -21,6 +21,7 @@
         <RepositoryType>git</RepositoryType>
         <PackageId>CmlLib.Core.Bedrock.Auth</PackageId>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <IsAotCompatible>false</IsAotCompatible>
     </PropertyGroup>
 
     <!-- private assets -->

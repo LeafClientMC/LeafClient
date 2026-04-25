@@ -26,6 +26,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -59,8 +60,6 @@
               "version": "[11.3.8, )"
             },
             "Avalonia.Diagnostics": {
-              "include": "None",
-              "suppressParent": "All",
               "target": "Package",
               "version": "[11.3.8, )"
             },
@@ -75,8 +74,12 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.23, )",
+              "version": "[8.0.25, )",
               "autoReferenced": true
+            },
+            "Tmds.DBus.Protocol": {
+              "target": "Package",
+              "version": "[0.92.0, )"
             }
           },
           "imports": [
@@ -92,16 +95,52 @@
           "warn": true,
           "downloadDependencies": [
             {
+              "name": "Microsoft.AspNetCore.App.Runtime.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
               "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[8.0.23, 8.0.23]"
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.linux-x64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.osx-arm64",
+              "version": "[8.0.25, 8.0.25]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.osx-x64",
+              "version": "[8.0.25, 8.0.25]"
             },
             {
               "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[8.0.23, 8.0.23]"
+              "version": "[8.0.25, 8.0.25]"
             },
             {
               "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
-              "version": "[8.0.23, 8.0.23]"
+              "version": "[8.0.25, 8.0.25]"
             }
           ],
           "frameworkReferences": {
@@ -109,10 +148,19 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.104/PortableRuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {
+        "linux-x64": {
+          "#import": []
+        },
+        "osx-arm64": {
+          "#import": []
+        },
+        "osx-x64": {
+          "#import": []
+        },
         "win-x64": {
           "#import": []
         }

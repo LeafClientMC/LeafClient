@@ -40,23 +40,101 @@ namespace LeafClient.Models
         public bool Enabled { get; set; } = true;
         public DateTime InstallDate { get; set; } = DateTime.Now;
         public string IconUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// True for mods installed automatically by the launcher (Sodium, Lithium, Fabric API, etc.)
+        /// as part of a mod preset. These are managed by the launcher and should NOT appear in the
+        /// user-facing "Installed Mods" list — only user-added mods via Browse should show there.
+        /// </summary>
+        public bool IsAutoInstalled { get; set; } = false;
     }
 
-    public enum PrayerCalculationMethod
+    /// <summary>
+    /// Represents a saved account (Microsoft or Offline) that can be switched to.
+    /// </summary>
+    public class AccountEntry
     {
-        Jafari = 0,       // Ithna Ashari
-        Karachi = 1,      // University of Islamic Sciences, Karachi
-        ISNA = 2,         // Islamic Society of North America
-        MWL = 3,          // Muslim World League
-        Makkah = 4,       // Umm Al-Qura University, Makkah
-        Egypt = 5,        // Egyptian General Authority of Survey
-        Tehran = 7,       // Institute of Geophysics, University of Tehran
-        Dubai = 9,        // Dubai (Official)
-        Kuwait = 10,      // Kuwait (Official)
-        Qatar = 11,       // Qatar
-        Singapore = 12,   // Majlis Ugama Islam Singapura
-        Turkey = 13,      // Diyanet İşleri Başkanlığı
-        Russia = 14       // Spiritual Administration of Muslims of Russia
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string AccountType { get; set; } = "offline";
+        public string Username { get; set; } = "";
+        public string? Uuid { get; set; }
+        public string? AccessToken { get; set; }
+        public string? Xuid { get; set; }
+        public DateTime AddedDate { get; set; } = DateTime.Now;
+        public string? LeafApiJwt { get; set; }
+        public string? LeafApiRefreshToken { get; set; }
+        public EquippedCosmetics Equipped { get; set; } = new EquippedCosmetics();
+        public List<string> OwnedCosmeticIds { get; set; } = new List<string>();
+    }
+
+    /// <summary>
+    /// Tracks which cosmetics are currently equipped.
+    /// Also written to equipped.json for the Fabric mod to read.
+    /// </summary>
+    public class EquippedCosmetics
+    {
+        public string? CapeId { get; set; }
+        public string? HatId { get; set; }
+        public string? WingsId { get; set; }
+        public string? BackItemId { get; set; }
+        public string? AuraId { get; set; }
+    }
+
+    /// <summary>
+    /// A user-saved cosmetic loadout preset. Each preset captures a full set of
+    /// equipped cosmetics under a user-chosen name so they can switch outfits quickly.
+    /// </summary>
+    public class CosmeticPreset
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = "Untitled";
+        public EquippedCosmetics Equipped { get; set; } = new EquippedCosmetics();
+        public DateTime CreatedDate { get; set; } = DateTime.Now;
+    }
+
+    public class LauncherProfile
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = "Default";
+        public string MinecraftVersion { get; set; } = "";
+        public string AccountSetting { get; set; } = "active";
+        public string JavaSetting { get; set; } = "bundled";
+        public string? CustomJavaPath { get; set; }
+        public double AllocatedMemoryGb { get; set; } = 3.0;
+        public string ModPreset { get; set; } = "none";
+        public string AccentColor { get; set; } = "#7B2CBF";
+        public DateTime CreatedDate { get; set; } = DateTime.Now;
+
+        // ── NEW: Per-profile launch overrides ───────────────────────────
+        // All of these are OPTIONAL. When null/empty, the launcher falls
+        // back to the global LauncherSettings value.
+
+        /// <summary>Extra JVM arguments appended after the base args and global override.</summary>
+        public string? JvmArgumentsOverride { get; set; }
+
+        /// <summary>If true, use WidthOverride/HeightOverride at launch. Null = fall back to global.</summary>
+        public bool? UseCustomResolutionOverride { get; set; }
+        public int? GameResolutionWidthOverride { get; set; }
+        public int? GameResolutionHeightOverride { get; set; }
+
+        /// <summary>If set, auto-join this server on launch regardless of the global quick-join flag.</summary>
+        public string? QuickJoinServerAddressOverride { get; set; }
+        public string? QuickJoinServerPortOverride { get; set; }
+
+        /// <summary>Optional user-facing description.</summary>
+        public string Description { get; set; } = "";
+
+        /// <summary>Optional emoji shown on the profile card avatar (e.g. "⚡" for a tryhard profile).</summary>
+        public string IconEmoji { get; set; } = "";
+
+        /// <summary>Times this profile has been used at launch. Incremented on every successful launch.</summary>
+        public int LaunchCount { get; set; } = 0;
+
+        /// <summary>Total playtime accumulated while this profile was active (seconds).</summary>
+        public long PlaytimeSeconds { get; set; } = 0;
+
+        /// <summary>Last time this profile was used to launch the game.</summary>
+        public DateTime LastUsed { get; set; } = DateTime.MinValue;
     }
 
     public class LauncherSettings
@@ -74,7 +152,14 @@ namespace LeafClient.Models
         public string? SessionUuid { get; set; }
         public string? SessionAccessToken { get; set; }
         public string? SessionXuid { get; set; }
+        public string? MicrosoftRefreshToken { get; set; }
+        public string? LeafApiJwt { get; set; }
+        public string? LeafApiRefreshToken { get; set; }
         public string? SuggestionUserId { get; set; }
+
+        // Multi-account support
+        public List<AccountEntry> SavedAccounts { get; set; } = new List<AccountEntry>();
+        public string? ActiveAccountId { get; set; }
 
         //////////////////////////////////////////////////////////////////////
         // GENERAL SETTINGS
@@ -84,20 +169,12 @@ namespace LeafClient.Models
         public bool DiscordRichPresence { get; set; } = true;
         public bool AnimationsEnabled { get; set; } = true;
         public string Theme { get; set; } = "Dark"; // "Dark", "Light", "Auto"
+        public string SelectedCurrency { get; set; } = "EUR";
 
         // NEW: Discord Rich Presence Username Visibility
         public bool ShowUsernameInDiscordRichPresence { get; set; } = true;
         // NEW: Launcher Visibility on Game Launch
         public LauncherVisibility LauncherVisibilityOnGameLaunch { get; set; } = LauncherVisibility.KeepOpen;
-
-        //////////////////////////////////////////////////////////////////////
-        // ISLAMIC FEATURES SETTINGS
-        //////////////////////////////////////////////////////////////////////
-        public bool EnablePrayerTimeReminder { get; set; } = false;
-        public string PrayerTimeCountry { get; set; } = "United Arab Emirates"; // Default country
-        public string PrayerTimeCity { get; set; } = "Dubai"; // Default city
-        public PrayerCalculationMethod PrayerTimeCalculationMethod { get; set; } = PrayerCalculationMethod.Dubai; // Default calculation method
-        public int PrayerReminderMinutesBefore { get; set; } = 10; // Default 10 minutes, minimum 10
 
         //////////////////////////////////////////////////////////////////////
         // LAUNCH OPTIONS
@@ -176,12 +253,20 @@ namespace LeafClient.Models
         public bool EnableUpdateNotifications { get; set; } = true;
         public bool EnableNewContentIndicators { get; set; } = true;
 
+        public bool EnableNatureTheme { get; set; } = false;
+
+
+        //////////////////////////////////////////////////////////////////////
+        // PROFILES
+        //////////////////////////////////////////////////////////////////////
+        public List<LauncherProfile> Profiles { get; set; } = new List<LauncherProfile>();
+        public string? ActiveProfileId { get; set; }
 
         //////////////////////////////////////////////////////////////////////
         // VERSION SETTINGS
         //////////////////////////////////////////////////////////////////////
         public string SelectedMajorVersion { get; set; } = "1.21";
-        public string SelectedSubVersion { get; set; } = "1.21.4";
+        public string SelectedSubVersion { get; set; } = "";
 
         //////////////////////////////////////////////////////////////////////
         // MOD SETTINGS
@@ -189,9 +274,9 @@ namespace LeafClient.Models
 
         public Dictionary<string, bool> OptiFineEnabledByVersion { get; set; } =
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        public bool IsLithiumEnabled { get; set; } = false;
         public bool IsOptiFineEnabled { get; set; } = false;
-        public bool IsSodiumEnabled { get; set; } = true;
+        public bool IsTestMode { get; set; } = false;
+        public string TestModeModProjectPath { get; set; } = @"C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClientMod\LeafClientMod";
 
         // This list now correctly refers to the top-level InstalledMod class
         public List<InstalledMod> InstalledMods { get; set; } = new List<InstalledMod>();
@@ -202,6 +287,30 @@ namespace LeafClient.Models
         public List<SkinInfo> CustomSkins { get; set; } = new List<SkinInfo>();
         public string? SelectedSkinId { get; set; }
 
+
+        //////////////////////////////////////////////////////////////////////
+        // COSMETICS
+        //////////////////////////////////////////////////////////////////////
+        public EquippedCosmetics Equipped { get; set; } = new EquippedCosmetics();
+        public List<CosmeticPreset> CosmeticPresets { get; set; } = new List<CosmeticPreset>();
+
+        //////////////////////////////////////////////////////////////////////
+        // PLAYTIME & STATS TRACKING
+        //////////////////////////////////////////////////////////////////////
+        public long TotalPlaytimeSeconds { get; set; } = 0;
+        public int TotalLaunchCount { get; set; } = 0;
+        public long CurrentSessionSeconds { get; set; } = 0; // last session length
+        public DateTime LastLaunchTime { get; set; } = DateTime.MinValue;
+        public DateTime LastExitTime { get; set; } = DateTime.MinValue;
+        // Per-version playtime (seconds) — keyed by Minecraft version string
+        public Dictionary<string, long> PlaytimeByVersion { get; set; } =
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        // Per-version launch count — keyed by Minecraft version string
+        public Dictionary<string, int> LaunchCountByVersion { get; set; } =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Per-server playtime (seconds) — keyed by server address
+        public Dictionary<string, long> PlaytimeByServer { get; set; } =
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         //////////////////////////////////////////////////////////////////////
         // CONSTRUCTOR WITH DEFAULT VALUES
@@ -241,6 +350,9 @@ namespace LeafClient.Models
             SessionUuid = null;
             SessionAccessToken = null;
             SessionXuid = null;
+            MicrosoftRefreshToken = null;
+            LeafApiJwt = null;
+            LeafApiRefreshToken = null;
         }
 
         public int GetRenderCloudsMode()
@@ -270,14 +382,21 @@ namespace LeafClient.Models
                 SessionUuid = this.SessionUuid,
                 SessionAccessToken = this.SessionAccessToken,
                 SessionXuid = this.SessionXuid,
+                MicrosoftRefreshToken = this.MicrosoftRefreshToken,
+                LeafApiJwt = this.LeafApiJwt,
+                LeafApiRefreshToken = this.LeafApiRefreshToken,
+                SavedAccounts = new List<AccountEntry>(this.SavedAccounts.Select(a => new AccountEntry
+                {
+                    Id = a.Id, AccountType = a.AccountType, Username = a.Username,
+                    Uuid = a.Uuid, AccessToken = a.AccessToken, Xuid = a.Xuid, AddedDate = a.AddedDate,
+                    LeafApiJwt = a.LeafApiJwt, LeafApiRefreshToken = a.LeafApiRefreshToken,
+                    Equipped = new EquippedCosmetics { CapeId = a.Equipped.CapeId, HatId = a.Equipped.HatId, WingsId = a.Equipped.WingsId, BackItemId = a.Equipped.BackItemId, AuraId = a.Equipped.AuraId },
+                    OwnedCosmeticIds = new List<string>(a.OwnedCosmeticIds)
+                })),
+                ActiveAccountId = this.ActiveAccountId,
                 LaunchOnStartup = this.LaunchOnStartup,
                 MinimizeToTray = this.MinimizeToTray,
                 DiscordRichPresence = this.DiscordRichPresence,
-                EnablePrayerTimeReminder = this.EnablePrayerTimeReminder,                 // NEW
-                PrayerTimeCountry = this.PrayerTimeCountry,                               // NEW
-                PrayerTimeCity = this.PrayerTimeCity,                                     // NEW
-                PrayerTimeCalculationMethod = this.PrayerTimeCalculationMethod,           // NEW
-                PrayerReminderMinutesBefore = this.PrayerReminderMinutesBefore,
                 ShowUsernameInDiscordRichPresence = this.ShowUsernameInDiscordRichPresence, // NEW
                 LauncherVisibilityOnGameLaunch = this.LauncherVisibilityOnGameLaunch,     // NEW
                 MinRamAllocationMb = this.MinRamAllocationMb,
@@ -318,6 +437,7 @@ namespace LeafClient.Models
                 PlayerMainHand = this.PlayerMainHand,
                 Theme = this.Theme,
                 AnimationsEnabled = this.AnimationsEnabled,
+                SelectedCurrency = this.SelectedCurrency,
                 GameUpdateDelivery = this.GameUpdateDelivery,                             // NEW
                 ClosingNotificationsPreference = this.ClosingNotificationsPreference,     // NEW
                 EnableUpdateNotifications = this.EnableUpdateNotifications,               // NEW
@@ -346,7 +466,15 @@ namespace LeafClient.Models
                     Enabled = m.Enabled,
                     InstallDate = m.InstallDate,
                     IconUrl = m.IconUrl
-                }))
+                })),
+                Equipped = new EquippedCosmetics
+                {
+                    CapeId = this.Equipped?.CapeId,
+                    HatId = this.Equipped?.HatId,
+                    WingsId = this.Equipped?.WingsId,
+                    BackItemId = this.Equipped?.BackItemId,
+                    AuraId = this.Equipped?.AuraId,
+                }
             };
         }
 
@@ -367,13 +495,6 @@ namespace LeafClient.Models
                 AccountType != "microsoft" &&
                 AccountType != "offline")
                 return false;
-
-            if (EnablePrayerTimeReminder)
-            {
-                if (string.IsNullOrWhiteSpace(PrayerTimeCountry)) return false;
-                if (string.IsNullOrWhiteSpace(PrayerTimeCity)) return false;
-                if (PrayerReminderMinutesBefore < 10) return false;
-            }
 
             // NEW: Game Resolution validation
             if (UseCustomGameResolution)
@@ -412,6 +533,9 @@ namespace LeafClient.Models
             var tempSessionUuid = this.SessionUuid;
             var tempSessionAccessToken = this.SessionAccessToken;
             var tempSessionXuid = this.SessionXuid;
+            var tempMicrosoftRefreshToken = this.MicrosoftRefreshToken;
+            var tempLeafApiJwt = this.LeafApiJwt;
+            var tempLeafApiRefreshToken = this.LeafApiRefreshToken;
             var tempSelectedFabricProfileName = this.SelectedFabricProfileName;
 
             // Manually reset all other properties to their defaults
@@ -461,22 +585,17 @@ namespace LeafClient.Models
             this.PlayerMainHand = defaults.PlayerMainHand;
             this.Theme = defaults.Theme;
             this.AnimationsEnabled = defaults.AnimationsEnabled;
+            this.SelectedCurrency = defaults.SelectedCurrency;
             this.GameUpdateDelivery = defaults.GameUpdateDelivery;                             // NEW
             this.ClosingNotificationsPreference = defaults.ClosingNotificationsPreference;     // NEW
             this.EnableUpdateNotifications = defaults.EnableUpdateNotifications;               // NEW
             this.EnableNewContentIndicators = defaults.EnableNewContentIndicators;             // NEW
-            this.EnablePrayerTimeReminder = defaults.EnablePrayerTimeReminder;                 // NEW
-            this.PrayerTimeCountry = defaults.PrayerTimeCountry;                               // NEW
-            this.PrayerTimeCity = defaults.PrayerTimeCity;                                     // NEW
-            this.PrayerTimeCalculationMethod = defaults.PrayerTimeCalculationMethod;           // NEW
-            this.PrayerReminderMinutesBefore = defaults.PrayerReminderMinutesBefore;           // NEW
             this.SelectedMajorVersion = defaults.SelectedMajorVersion;
             this.SelectedSubVersion = defaults.SelectedSubVersion;
             this.OptiFineEnabledByVersion = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-            this.IsLithiumEnabled = defaults.IsLithiumEnabled;
             this.IsOptiFineEnabled = defaults.IsOptiFineEnabled;
-            this.IsSodiumEnabled = defaults.IsSodiumEnabled;
             this.InstalledMods = new List<InstalledMod>(); // Reset installed mods list
+            this.Equipped = new EquippedCosmetics(); // Reset equipped cosmetics
 
             // Restore authentication data
             this.IsLoggedIn = tempIsLoggedIn;
@@ -486,6 +605,9 @@ namespace LeafClient.Models
             this.SessionUuid = tempSessionUuid;
             this.SessionAccessToken = tempSessionAccessToken;
             this.SessionXuid = tempSessionXuid;
+            this.MicrosoftRefreshToken = tempMicrosoftRefreshToken;
+            this.LeafApiJwt = tempLeafApiJwt;
+            this.LeafApiRefreshToken = tempLeafApiRefreshToken;
             this.SelectedFabricProfileName = tempSelectedFabricProfileName;
         }
     }

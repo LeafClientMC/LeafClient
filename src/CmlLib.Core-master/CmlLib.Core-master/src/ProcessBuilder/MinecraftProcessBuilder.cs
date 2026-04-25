@@ -1,4 +1,5 @@
-﻿using CmlLib.Core.Rules;
+﻿#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
+using CmlLib.Core.Rules;
 using CmlLib.Core.Version;
 using CmlLib.Core.Internals;
 using System.Diagnostics;

@@ -15,12 +15,12 @@
   </ItemGroup>
   <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <Import Project="$(NuGetPackageRoot)skiasharp.nativeassets.webassembly\2.88.9\buildTransitive\netstandard1.0\SkiaSharp.NativeAssets.WebAssembly.props" Condition="Exists('$(NuGetPackageRoot)skiasharp.nativeassets.webassembly\2.88.9\buildTransitive\netstandard1.0\SkiaSharp.NativeAssets.WebAssembly.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.net.illink.tasks\8.0.23\build\Microsoft.NET.ILLink.Tasks.props" Condition="Exists('$(NuGetPackageRoot)microsoft.net.illink.tasks\8.0.23\build\Microsoft.NET.ILLink.Tasks.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.net.illink.tasks\8.0.25\build\Microsoft.NET.ILLink.Tasks.props" Condition="Exists('$(NuGetPackageRoot)microsoft.net.illink.tasks\8.0.25\build\Microsoft.NET.ILLink.Tasks.props')" />
     <Import Project="$(NuGetPackageRoot)harfbuzzsharp.nativeassets.webassembly\8.3.1.1\buildTransitive\netstandard1.0\HarfBuzzSharp.NativeAssets.WebAssembly.props" Condition="Exists('$(NuGetPackageRoot)harfbuzzsharp.nativeassets.webassembly\8.3.1.1\buildTransitive\netstandard1.0\HarfBuzzSharp.NativeAssets.WebAssembly.props')" />
     <Import Project="$(NuGetPackageRoot)avalonia\11.3.8\buildTransitive\Avalonia.props" Condition="Exists('$(NuGetPackageRoot)avalonia\11.3.8\buildTransitive\Avalonia.props')" />
   </ImportGroup>
   <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
-    <PkgMicrosoft_NET_ILLink_Tasks Condition=" '$(PkgMicrosoft_NET_ILLink_Tasks)' == '' ">C:\Users\ziadf\.nuget\packages\microsoft.net.illink.tasks\8.0.23</PkgMicrosoft_NET_ILLink_Tasks>
+    <PkgMicrosoft_NET_ILLink_Tasks Condition=" '$(PkgMicrosoft_NET_ILLink_Tasks)' == '' ">C:\Users\ziadf\.nuget\packages\microsoft.net.illink.tasks\8.0.25</PkgMicrosoft_NET_ILLink_Tasks>
     <PkgAvalonia_BuildServices Condition=" '$(PkgAvalonia_BuildServices)' == '' ">C:\Users\ziadf\.nuget\packages\avalonia.buildservices\11.3.1</PkgAvalonia_BuildServices>
     <PkgAvalonia Condition=" '$(PkgAvalonia)' == '' ">C:\Users\ziadf\.nuget\packages\avalonia\11.3.8</PkgAvalonia>
   </PropertyGroup>

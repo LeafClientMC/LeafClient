@@ -289,6 +289,13 @@ namespace LeafClient.Views
         private Border? _noServersMessage;
         private StackPanel? _quickPlayServersContainer;
 
+        private Grid? _addServerOverlay;
+        private TextBox? _addServerNameBox;
+        private TextBox? _addServerAddressBox;
+        private TextBox? _addServerPortBox;
+        private TextBlock? _addServerStatusText;
+        private Button? _addServerSaveButton;
+
         private static readonly List<ServerInfo> _featuredServers = new()
         {
             new ServerInfo { Id = "featured_hypixel",   Name = "Hypixel",   Address = "mc.hypixel.net",     Port = 25565 },
@@ -652,11 +659,6 @@ namespace LeafClient.Views
         private bool _isCrashAnimating = false;
         private Exception? _currentCrashException;
         private byte[]? _currentScreenshotBytes;
-
-        private Button? _plannedUpdatesButton;
-        private Grid? _plannedUpdatesOverlay;
-        private Border? _plannedUpdatesPanel;
-        private CancellationTokenSource? _plannedUpdatesCts;
 
         private ModCleanupService? _modCleanupService;
 
@@ -1057,9 +1059,15 @@ namespace LeafClient.Views
             var tutorialOverlay = this.FindControl<TutorialOverlay>("TutorialOverlayControl");
             tutorialOverlay?.Initialize(this);
 
+            BuildAddServerOverlay();
+
             var replayBtn = this.FindControl<Button>("ReplayTutorialBtn");
             if (replayBtn != null)
-                replayBtn.Click += (_, _) => TutorialService.Instance.StartTutorial();
+                replayBtn.Click += (_, _) =>
+                {
+                    TutorialService.Instance.SetCrackedAccount(_currentSettings?.AccountType == "offline");
+                    TutorialService.Instance.StartTutorial();
+                };
 
             ToastService.ToastRequested += OnToastRequested;
             InitializeNatureTheme();
@@ -1167,6 +1175,7 @@ namespace LeafClient.Views
                         await _settingsService.SaveSettingsAsync(_currentSettings);
 
                         await Task.Delay(500);
+                        TutorialService.Instance.SetCrackedAccount(_currentSettings?.AccountType == "offline");
                         TutorialService.Instance.StartTutorial();
 
                         _currentSettings.IsFirstLaunch = false;
@@ -2932,7 +2941,6 @@ namespace LeafClient.Views
 
             InitializeModBrowserControls();
             InitializeModManagementControls();
-            InitializePlannedUpdatesControls();
             InitializeAAdsSystem();
 
             _gameWindowPendingText = this.FindControl<TextBlock>("GameWindowPendingText");
@@ -3650,102 +3658,6 @@ namespace LeafClient.Views
             }
         }
 
-        private void InitializePlannedUpdatesControls()
-        {
-            _plannedUpdatesButton = this.FindControl<Button>("PlannedUpdatesButton");
-            _plannedUpdatesOverlay = this.FindControl<Grid>("PlannedUpdatesOverlay");
-            _plannedUpdatesPanel = this.FindControl<Border>("PlannedUpdatesPanel");
-        }
-
-        private async void OpenPlannedUpdates(object? sender, PointerEventArgs e)
-        {
-            _plannedUpdatesCts?.Cancel(); 
-            _plannedUpdatesCts = new CancellationTokenSource(); 
-            var token = _plannedUpdatesCts.Token;
-
-            if (_plannedUpdatesOverlay == null || _plannedUpdatesPanel == null) return;
-
-            _plannedUpdatesOverlay.IsVisible = true;
-
-            if (_plannedUpdatesPanel.Opacity == 0)
-            {
-                if (_plannedUpdatesPanel.RenderTransform is TranslateTransform tt) tt.Y = 20;
-                if (_plannedUpdatesPanel.Effect is BlurEffect blur) blur.Radius = 10;
-            }
-
-            if (!AreAnimationsEnabled())
-            {
-                _plannedUpdatesPanel.Opacity = 1;
-                if (_plannedUpdatesPanel.RenderTransform is TranslateTransform t) t.Y = 0;
-                if (_plannedUpdatesPanel.Effect is BlurEffect b) b.Radius = 0;
-                return;
-            }
-
-            const int steps = 20;
-            for (int i = 0; i <= steps; i++)
-            {
-                if (token.IsCancellationRequested) return;
-
-                double t = (double)i / steps;
-                double easeOut = 1 - Math.Pow(1 - t, 3); 
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (_plannedUpdatesPanel == null) return;
-                    _plannedUpdatesPanel.Opacity = t;
-                    if (_plannedUpdatesPanel.RenderTransform is TranslateTransform trans)
-                        trans.Y = 20 - (20 * easeOut);
-                    if (_plannedUpdatesPanel.Effect is BlurEffect b)
-                        b.Radius = 10 - (10 * t);
-                });
-                await Task.Delay(10);
-            }
-        }
-
-        private void ClosePlannedUpdates(object? sender, PointerEventArgs e)
-        {
-            _plannedUpdatesCts?.Cancel();
-            _plannedUpdatesCts = new CancellationTokenSource();
-            var token = _plannedUpdatesCts.Token;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Dispatcher.UIThread.InvokeAsync(async () =>
-                    {
-                        if (_plannedUpdatesOverlay == null || _plannedUpdatesPanel == null) return;
-
-                        if (!AreAnimationsEnabled())
-                        {
-                            _plannedUpdatesOverlay.IsVisible = false;
-                            return;
-                        }
-
-                        const int steps = 15;
-                        for (int i = 0; i <= steps; i++)
-                        {
-                            if (token.IsCancellationRequested) return;
-
-                            double t = (double)i / steps;
-                            double easeIn = t * t;
-
-                            _plannedUpdatesPanel.Opacity = 1 - t;
-                            if (_plannedUpdatesPanel.RenderTransform is TranslateTransform trans)
-                                trans.Y = 0 + (20 * easeIn);
-                            if (_plannedUpdatesPanel.Effect is BlurEffect b)
-                                b.Radius = 0 + (10 * t);
-
-                            await Task.Delay(10);
-                        }
-
-                        if (!token.IsCancellationRequested)
-                            _plannedUpdatesOverlay.IsVisible = false;
-                    });
-                }
-                catch (TaskCanceledException) {  }
-            });
-        }
 
 
         private string MaskUsername(string username)
@@ -12541,8 +12453,14 @@ namespace LeafClient.Views
         }
 
         // Debug: Ctrl+Shift+X triggers the crash report overlay with a fake exception.
-        private void OnTutorialStepChanged(LeafClient.Models.TutorialStep step)
+        private async void OnTutorialStepChanged(LeafClient.Models.TutorialStep step)
         {
+            if (_addServerOverlay?.IsVisible == true && step.TargetElementName != "AddServerModalCard")
+                HideAddServerOverlay();
+
+            if (_modBrowserOverlay?.IsVisible == true && step.TargetElementName != "ModBrowserPanel")
+                _modBrowserOverlay.IsVisible = false;
+
             if (step.NavigateToPage.HasValue)
                 SwitchToPage(step.NavigateToPage.Value);
 
@@ -12550,7 +12468,10 @@ namespace LeafClient.Views
                 OpenAccountPanelClick();
 
             if (step.OnEnter == LeafClient.Models.TutorialOnEnter.SelectLeafCapeInStore)
+            {
+                await Task.Delay(600);
                 _storePage?.SelectLeafCapeForTutorial();
+            }
         }
 
         private void OnDebugKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
@@ -15594,132 +15515,266 @@ namespace LeafClient.Views
             });
         }
 
-        private async void AddServerButton_Click(object? sender, RoutedEventArgs e)
+        private void AddServerButton_Click(object? sender, RoutedEventArgs e)
         {
-            var dialog = new Window
+            ShowAddServerOverlay();
+        }
+
+        private void ShowAddServerOverlay()
+        {
+            if (_addServerOverlay == null)
+                BuildAddServerOverlay();
+
+            if (_addServerNameBox != null) _addServerNameBox.Text = "";
+            if (_addServerAddressBox != null) _addServerAddressBox.Text = "";
+            if (_addServerPortBox != null) _addServerPortBox.Text = "25565";
+            if (_addServerStatusText != null) _addServerStatusText.Text = "";
+            if (_addServerSaveButton != null) _addServerSaveButton.IsEnabled = true;
+
+            if (_addServerOverlay != null) _addServerOverlay.IsVisible = true;
+            if (_mainContentGrid != null) _mainContentGrid.Effect = new BlurEffect { Radius = 7 };
+        }
+
+        private void HideAddServerOverlay()
+        {
+            if (_addServerOverlay != null) _addServerOverlay.IsVisible = false;
+            if (_mainContentGrid != null) _mainContentGrid.Effect = null;
+        }
+
+        private void BuildAddServerOverlay()
+        {
+            var overlay = new Grid
             {
-                Title = "Add Server",
-                Width = 450,
-                Height = 400,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                CanResize = false
+                Name = "AddServerOverlay",
+                Background = SolidColorBrush.Parse("#AA000000"),
+                ZIndex = 200
+            };
+            Grid.SetRowSpan(overlay, 99);
+            Grid.SetColumnSpan(overlay, 99);
+
+            var card = new Border
+            {
+                Name = "AddServerModalCard",
+                Width = 420,
+                CornerRadius = new CornerRadius(18),
+                BorderBrush = SolidColorBrush.Parse("#162030"),
+                BorderThickness = new Thickness(1),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                    GradientStops = new GradientStops
+                    {
+                        new GradientStop(Color.Parse("#0D1520"), 0),
+                        new GradientStop(Color.Parse("#080C14"), 1)
+                    }
+                },
+                BoxShadow = new BoxShadows(new BoxShadow
+                {
+                    Color = Color.Parse("#CC000000"),
+                    Blur = 40,
+                    OffsetX = 0,
+                    OffsetY = 8
+                }),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Padding = new Thickness(28, 24, 28, 28)
             };
 
-            var panel = new StackPanel { Margin = new Thickness(20), Spacing = 15 };
+            var stack = new StackPanel { Spacing = 14 };
 
-            panel.Children.Add(new TextBlock
+            var titleRow = new Grid();
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+
+            var titleText = new TextBlock
             {
-                Text = "Server Name",
-                FontWeight = FontWeight.Bold
-            });
-            var nameBox = new TextBox
+                Text = "Add Server",
+                FontSize = 20,
+                FontWeight = FontWeight.Bold,
+                Foreground = Brushes.White,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            Grid.SetColumn(titleText, 0);
+
+            var closeBtn = new Button
+            {
+                Content = "✕",
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = SolidColorBrush.Parse("#888888"),
+                FontSize = 16,
+                Padding = new Thickness(6),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+            };
+            closeBtn.Click += (_, _) =>
+            {
+                HideAddServerOverlay();
+                if (LeafClient.Services.TutorialService.Instance.IsRunning)
+                    LeafClient.Services.TutorialService.Instance.Next();
+            };
+            Grid.SetColumn(closeBtn, 1);
+
+            titleRow.Children.Add(titleText);
+            titleRow.Children.Add(closeBtn);
+            stack.Children.Add(titleRow);
+
+            stack.Children.Add(new TextBlock { Text = "Server Name", Foreground = SolidColorBrush.Parse("#9BAFCA"), FontSize = 13 });
+            _addServerNameBox = new TextBox
             {
                 Watermark = "My Awesome Server",
-                MinWidth = 300
+                Background = SolidColorBrush.Parse("#0A1220"),
+                Foreground = Brushes.White,
+                BorderBrush = SolidColorBrush.Parse("#1E2D40"),
+                CaretBrush = Brushes.White,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 10)
             };
-            panel.Children.Add(nameBox);
+            stack.Children.Add(_addServerNameBox);
 
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Server Address",
-                FontWeight = FontWeight.Bold,
-                Margin = new Thickness(0, 10, 0, 0)
-            });
-            var addressBox = new TextBox
+            stack.Children.Add(new TextBlock { Text = "Server Address", Foreground = SolidColorBrush.Parse("#9BAFCA"), FontSize = 13 });
+            _addServerAddressBox = new TextBox
             {
                 Watermark = "play.example.com",
-                MinWidth = 300
+                Background = SolidColorBrush.Parse("#0A1220"),
+                Foreground = Brushes.White,
+                BorderBrush = SolidColorBrush.Parse("#1E2D40"),
+                CaretBrush = Brushes.White,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 10)
             };
-            panel.Children.Add(addressBox);
+            stack.Children.Add(_addServerAddressBox);
 
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Port (optional, default: 25565)",
-                FontWeight = FontWeight.Bold,
-                Margin = new Thickness(0, 10, 0, 0)
-            });
-            var portBox = new TextBox
+            stack.Children.Add(new TextBlock { Text = "Port (optional, default 25565)", Foreground = SolidColorBrush.Parse("#9BAFCA"), FontSize = 13 });
+            _addServerPortBox = new TextBox
             {
                 Text = "25565",
-                MinWidth = 300
+                Background = SolidColorBrush.Parse("#0A1220"),
+                Foreground = Brushes.White,
+                BorderBrush = SolidColorBrush.Parse("#1E2D40"),
+                CaretBrush = Brushes.White,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 10)
             };
-            panel.Children.Add(portBox);
+            stack.Children.Add(_addServerPortBox);
 
-            var statusText = new TextBlock
+            _addServerStatusText = new TextBlock
             {
                 Text = "",
                 Foreground = Brushes.Gray,
-                FontSize = 11
+                FontSize = 12,
+                Margin = new Thickness(0, 2, 0, 0)
             };
-            panel.Children.Add(statusText);
+            stack.Children.Add(_addServerStatusText);
 
-            var buttonPanel = new StackPanel
+            var btnRow = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
                 Spacing = 10,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                Margin = new Thickness(0, 10, 0, 0)
+                Margin = new Thickness(0, 6, 0, 0)
             };
 
-            var cancelButton = new Button { Content = "Cancel", Padding = new Thickness(15, 8) };
-            cancelButton.Click += (s, args) => dialog.Close();
-
-            var addButton = new Button
+            var cancelBtn = new Button
             {
+                Content = "Cancel",
+                Padding = new Thickness(20, 10),
+                Background = SolidColorBrush.Parse("#0E1928"),
+                Foreground = SolidColorBrush.Parse("#9BAFCA"),
+                BorderBrush = SolidColorBrush.Parse("#1E2D40"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+            };
+            cancelBtn.Click += (_, _) =>
+            {
+                HideAddServerOverlay();
+                if (LeafClient.Services.TutorialService.Instance.IsRunning)
+                    LeafClient.Services.TutorialService.Instance.Next();
+            };
+
+            _addServerSaveButton = new Button
+            {
+                Name = "AddServerModalSaveButton",
                 Content = "Add Server",
-                Padding = new Thickness(15, 8),
-                Background = Brushes.Green
+                Padding = new Thickness(20, 10),
+                Background = SolidColorBrush.Parse("#16532A"),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(10),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
             };
+            _addServerSaveButton.Click += AddServerOverlay_SaveClick;
 
-            addButton.Click += async (s, args) =>
+            btnRow.Children.Add(cancelBtn);
+            btnRow.Children.Add(_addServerSaveButton);
+            stack.Children.Add(btnRow);
+
+            card.Child = stack;
+            overlay.Children.Add(card);
+
+            overlay.PointerPressed += (s, e) =>
             {
-                if (string.IsNullOrWhiteSpace(nameBox.Text) || string.IsNullOrWhiteSpace(addressBox.Text))
-                {
-                    statusText.Text = "❌ Please enter both name and address";
-                    statusText.Foreground = Brushes.Red;
-                    return;
-                }
-
-                int port = 25565;
-                if (!int.TryParse(portBox.Text, out port))
-                    port = 25565;
-
-                statusText.Text = "⏳ Validating server...";
-                statusText.Foreground = Brushes.Orange;
-                addButton.IsEnabled = false;
-
-                var serverStatus = await _serverChecker.GetServerStatusAsync(addressBox.Text, port);
-
-                if (!serverStatus.IsOnline)
-                {
-                    statusText.Text = "⚠️ Server appears offline, but you can still add it";
-                    statusText.Foreground = Brushes.Orange;
-                    await Task.Delay(1500);
-                }
-
-                var newServer = new ServerInfo
-                {
-                    Name = nameBox.Text,
-                    Address = addressBox.Text,
-                    Port = port,
-                    IconBase64 = serverStatus.IconData ?? ""
-                };
-
-                _currentSettings.CustomServers.Add(newServer);
-                await _settingsService.SaveSettingsAsync(_currentSettings);
-
-                dialog.Close();
-                LoadServers();
-                RefreshQuickPlayBar();
-                await RefreshAllServerStatusesAsync();
+                if (e.Source == overlay)
+                    HideAddServerOverlay();
             };
 
-            buttonPanel.Children.Add(cancelButton);
-            buttonPanel.Children.Add(addButton);
-            panel.Children.Add(buttonPanel);
+            _addServerOverlay = overlay;
+            overlay.IsVisible = false;
 
-            dialog.Content = panel;
-            await dialog.ShowDialog(this);
+            var rootGrid = this.FindControl<Grid>("RootGrid") ?? (Content as Grid);
+            rootGrid?.Children.Add(overlay);
+        }
+
+        private async void AddServerOverlay_SaveClick(object? sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_addServerNameBox?.Text) || string.IsNullOrWhiteSpace(_addServerAddressBox?.Text))
+            {
+                if (_addServerStatusText != null)
+                {
+                    _addServerStatusText.Text = "Please enter both name and address";
+                    _addServerStatusText.Foreground = Brushes.Red;
+                }
+                return;
+            }
+
+            if (!int.TryParse(_addServerPortBox?.Text, out int port))
+                port = 25565;
+
+            if (_addServerStatusText != null)
+            {
+                _addServerStatusText.Text = "Validating server...";
+                _addServerStatusText.Foreground = Brushes.Orange;
+            }
+            if (_addServerSaveButton != null) _addServerSaveButton.IsEnabled = false;
+
+            var serverStatus = await _serverChecker.GetServerStatusAsync(_addServerAddressBox!.Text, port);
+
+            if (!serverStatus.IsOnline)
+            {
+                if (_addServerStatusText != null)
+                {
+                    _addServerStatusText.Text = "Server appears offline, but you can still add it";
+                    _addServerStatusText.Foreground = Brushes.Orange;
+                }
+                await Task.Delay(1500);
+            }
+
+            var newServer = new ServerInfo
+            {
+                Name = _addServerNameBox!.Text,
+                Address = _addServerAddressBox!.Text,
+                Port = port,
+                IconBase64 = serverStatus.IconData ?? ""
+            };
+
+            _currentSettings.CustomServers.Add(newServer);
+            await _settingsService.SaveSettingsAsync(_currentSettings);
+
+            HideAddServerOverlay();
+            LoadServers();
+            RefreshQuickPlayBar();
+            await RefreshAllServerStatusesAsync();
         }
 
 
@@ -18266,18 +18321,14 @@ namespace LeafClient.Views
         {
             try
             {
-                await LoadSessionAsync();
-
-                var settings = await _settingsService.LoadSettingsAsync();
-                var username = _session?.Username ?? settings.SessionUsername;
-                var uuid = _session?.UUID ?? settings.SessionUuid;
+                var username = _session?.Username ?? _currentSettings?.SessionUsername;
+                var uuid = _session?.UUID ?? _currentSettings?.SessionUuid;
 
                 if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(uuid))
                 {
                     await Task.Delay(250);
-                    settings = await _settingsService.LoadSettingsAsync();
-                    username = _session?.Username ?? settings.SessionUsername;
-                    uuid = _session?.UUID ?? settings.SessionUuid;
+                    username = _session?.Username ?? _currentSettings?.SessionUsername;
+                    uuid = _session?.UUID ?? _currentSettings?.SessionUuid;
                 }
 
                 var largePose = _skinRenderService.GetRandomLargePoseName();

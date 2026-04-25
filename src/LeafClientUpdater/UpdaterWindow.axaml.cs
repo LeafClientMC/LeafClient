@@ -258,6 +258,24 @@ namespace LeafClientUpdater.Views
                     throw new Exception($"Extraction failed: {ex.Message}");
                 }
 
+                if (!OperatingSystem.IsWindows())
+                {
+                    var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                             | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                             | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+
+                    foreach (var file in Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories))
+                    {
+                        var name = System.IO.Path.GetFileName(file);
+                        if (name.Equals("LeafClient", StringComparison.Ordinal)
+                            || name.Equals("LeafClientUpdater", StringComparison.Ordinal)
+                            || name.EndsWith(".sh", StringComparison.Ordinal))
+                        {
+                            try { File.SetUnixFileMode(file, mode); } catch { }
+                        }
+                    }
+                }
+
                 if (File.Exists(zipFilePath)) File.Delete(zipFilePath);
 
                 UpdateStatus("Update Complete! Launching...");

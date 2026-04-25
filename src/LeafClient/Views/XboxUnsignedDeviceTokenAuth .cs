@@ -9,6 +9,23 @@ using XboxAuthNet.XboxLive.Responses;
 
 namespace LeafClient.Views;
 
+/// <summary>Named request body for XboxUnsignedDeviceTokenAuth — replaces anonymous type for AOT compatibility.</summary>
+public sealed class XboxDeviceTokenRequestBody
+{
+    public string RelyingParty { get; set; } = string.Empty;
+    public string TokenType { get; set; } = string.Empty;
+    public XboxDeviceTokenRequestProperties Properties { get; set; } = new();
+}
+
+public sealed class XboxDeviceTokenRequestProperties
+{
+    public string AuthMethod { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
+    public string DeviceType { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public object ProofKey { get; set; } = new();
+}
+
 public class XboxUnsignedDeviceTokenAuth : SessionAuthenticator<XboxAuthTokens>
 {
     private readonly string _deviceType;
@@ -32,11 +49,11 @@ public class XboxUnsignedDeviceTokenAuth : SessionAuthenticator<XboxAuthTokens>
             // Create a custom device token request without signed authentication
             var request = new HttpRequestMessage(HttpMethod.Post, "https://device.auth.xboxlive.com/device/authenticate");
 
-            var requestBody = new
+            var requestBody = new XboxDeviceTokenRequestBody
             {
                 RelyingParty = "http://auth.xboxlive.com",
                 TokenType = "JWT",
-                Properties = new
+                Properties = new XboxDeviceTokenRequestProperties
                 {
                     AuthMethod = "ProofOfPossession",
                     Id = Guid.NewGuid().ToString(),
@@ -46,7 +63,7 @@ public class XboxUnsignedDeviceTokenAuth : SessionAuthenticator<XboxAuthTokens>
                 }
             };
 
-            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody, JsonContext.Default.XboxDeviceTokenRequestBody);
             request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
             var response = await context.HttpClient.SendAsync(request);
@@ -54,8 +71,7 @@ public class XboxUnsignedDeviceTokenAuth : SessionAuthenticator<XboxAuthTokens>
 
             if (response.IsSuccessStatusCode)
             {
-                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var deviceTokenResponse = System.Text.Json.JsonSerializer.Deserialize<XboxAuthResponse>(responseBody, options);
+                var deviceTokenResponse = System.Text.Json.JsonSerializer.Deserialize(responseBody, JsonContext.Default.XboxAuthResponse);
                 xboxTokens.DeviceToken = deviceTokenResponse;
 
                 Console.WriteLine($"[XboxUnsignedDeviceTokenAuth] Device token obtained successfully");

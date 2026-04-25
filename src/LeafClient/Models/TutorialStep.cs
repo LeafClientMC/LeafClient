@@ -17,4 +17,7 @@ public class TutorialStep
     public bool HideOverlayAfterAction { get; init; }
     public TutorialOnEnter OnEnter { get; init; } = TutorialOnEnter.None;
     public bool CenterTooltip { get; init; }
+    public string SkipLabel { get; init; } = "Skip →";
+    public string CenterBtnLabel { get; init; } = "Get Started →";
+    public bool SkipIfCracked { get; init; } = false;
 }

@@ -24,30 +24,41 @@ public sealed class TutorialService
             Body = "Click New Profile to set up your first Minecraft profile.",
             NavigateToPage = 1,
             WaitForClickElement = "NewProfileButton",
-            TooltipAnchor = TooltipAnchor.Right
+            TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
             TargetElementName = "ProfileEditorCard",
             Title = "Set Up Your Profile",
-            Body = "Choose a name and Minecraft version for your profile.",
+            Body = "Fill in a name and Minecraft version, then click Create.",
+            WaitForClickElement = "PO_SaveButton",
             TooltipAnchor = TooltipAnchor.Right
         },
         new TutorialStep
         {
-            TargetElementName = "PO_SaveButton",
-            Title = "Save Your Profile",
-            Body = "Click Create to save your new profile.",
-            WaitForClickElement = "PO_SaveButton",
-            TooltipAnchor = TooltipAnchor.Above
+            TargetElementName = "ModsTab_Mods",
+            Title = "Mods",
+            Body = "This is the Mods page. Click the Mods tab to continue.",
+            NavigateToPage = 3,
+            WaitForClickElement = "ModsTab_Mods",
+            TooltipAnchor = TooltipAnchor.Below
         },
         new TutorialStep
         {
-            TargetElementName = "ModsTab_Mods",
+            TargetElementName = "ModsBrowseBtn",
             Title = "Browse Mods",
-            Body = "Discover and install mods directly from Modrinth.",
-            NavigateToPage = 3,
+            Body = "Click Browse Mods to discover and install mods from Modrinth.",
+            WaitForClickElement = "ModsBrowseBtn",
             TooltipAnchor = TooltipAnchor.Below
+        },
+        new TutorialStep
+        {
+            TargetElementName = "ModBrowserPanel",
+            Title = "Mod Browser",
+            Body = "Search for mods and click Install to add them to your profile.",
+            IsSkippable = true,
+            SkipLabel = "Next →",
+            TooltipAnchor = TooltipAnchor.Right
         },
         new TutorialStep
         {
@@ -59,38 +70,66 @@ public sealed class TutorialService
         },
         new TutorialStep
         {
+            TargetElementName = "Tab_Browse",
+            Title = "Browse Resource Packs",
+            Body = "Click Browse to discover and install resource packs from Modrinth.",
+            WaitForClickElement = "Tab_Browse",
+            TooltipAnchor = TooltipAnchor.Below
+        },
+        new TutorialStep
+        {
+            TargetElementName = "BrowsePanel",
+            Title = "Resource Pack Browser",
+            Body = "Search for resource packs and click Install to add them to your profile.",
+            IsSkippable = true,
+            SkipLabel = "Next →",
+            TooltipAnchor = TooltipAnchor.Right
+        },
+        new TutorialStep
+        {
             TargetElementName = "AddServerButton",
             Title = "Quick Play",
-            Body = "Save your favourite servers here for quick access.",
+            Body = "Save your favourite servers here for quick access — click Add Server to try it.",
             NavigateToPage = 2,
+            WaitForClickElement = "AddServerButton",
             TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
-            TargetElementName = "StorePreviewActionBtn",
+            TargetElementName = "AddServerModalCard",
+            Title = "Add a Server",
+            Body = "Fill in your server details and click Add Server. Skip if you don't have one.",
+            WaitForClickElement = "AddServerModalSaveButton",
+            IsSkippable = true,
+            TooltipAnchor = TooltipAnchor.Right
+        },
+        new TutorialStep
+        {
+            TargetElementName = "LeafCapeStoreCard",
             Title = "Claim Your Free Cape",
-            Body = "Every Leaf Client player gets a free Leaf Cape — click Claim to grab yours!",
+            Body = "Every Leaf Client player gets a free Leaf Cape — click GET FREE to grab yours! Skip if you've already claimed it.",
             NavigateToPage = 7,
             OnEnter = TutorialOnEnter.SelectLeafCapeInStore,
-            WaitForClickElement = "StorePreviewActionBtn",
-            HideOverlayAfterAction = true,
+            IsSkippable = true,
             TooltipAnchor = TooltipAnchor.Left
         },
         new TutorialStep
         {
-            TargetElementName = "CosTab_Capes",
+            TargetElementName = "CosmeticsContentPanel",
             Title = "Equip Cosmetics",
-            Body = "View and equip your cosmetics here.",
+            Body = "View and equip your cosmetics here. Take a moment to equip what you like.",
             NavigateToPage = 6,
-            TooltipAnchor = TooltipAnchor.Below
+            TooltipAnchor = TooltipAnchor.Left,
+            SkipLabel = "Next →"
         },
         new TutorialStep
         {
             TargetElementName = "AccountPanel",
             Title = "Your Account",
-            Body = "Manage your Minecraft and Leaf Client accounts.",
+            Body = "Manage your Minecraft and Leaf Client accounts from here.",
             OpenAccountPanel = true,
-            TooltipAnchor = TooltipAnchor.Left
+            TooltipAnchor = TooltipAnchor.Left,
+            SkipLabel = "Next →"
         },
         new TutorialStep
         {
@@ -98,13 +137,27 @@ public sealed class TutorialService
             Title = "Edit Your Skin",
             Body = "Click here to customise your Minecraft skin.",
             WaitForClickElement = "EditSkinButton",
-            TooltipAnchor = TooltipAnchor.Left
+            IsSkippable = false,
+            TooltipAnchor = TooltipAnchor.Left,
+            SkipIfCracked = true
+        },
+        new TutorialStep
+        {
+            TargetElementName = "",
+            Title = "You're All Set!",
+            Body = "That's everything! Enjoy Leaf Client — you can replay this tour anytime from the Settings page.",
+            CenterTooltip = true,
+            NavigateToPage = 0,
+            CenterBtnLabel = "Let's go!"
         }
     };
 
     public int CurrentStepIndex { get; private set; } = 0;
     public bool IsRunning { get; private set; } = false;
     public bool IsHiddenForAction { get; private set; } = false;
+    public bool IsCrackedAccount { get; private set; } = false;
+
+    public void SetCrackedAccount(bool cracked) => IsCrackedAccount = cracked;
 
     public event Action? TutorialStarted;
     public event Action<TutorialStep>? StepChanged;
@@ -127,6 +180,8 @@ public sealed class TutorialService
     {
         if (!IsRunning) return;
         CurrentStepIndex++;
+        while (CurrentStepIndex < Steps.Count && IsCrackedAccount && Steps[CurrentStepIndex].SkipIfCracked)
+            CurrentStepIndex++;
         if (CurrentStepIndex >= Steps.Count)
         {
             EndTutorial();

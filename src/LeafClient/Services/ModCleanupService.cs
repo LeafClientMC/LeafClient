@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using LeafClient;
 
 namespace LeafClient.Services
 {
@@ -32,7 +33,7 @@ namespace LeafClient.Services
                     try
                     {
                         var json = File.ReadAllText(_cleanupFilePath);
-                        _cleanupList = JsonSerializer.Deserialize<List<ModCleanupEntry>>(json, Json.Options) ?? new List<ModCleanupEntry>();
+                        _cleanupList = JsonSerializer.Deserialize(json, JsonContext.Default.ListModCleanupEntry) ?? new List<ModCleanupEntry>();
                         Console.WriteLine($"[ModCleanupService] Loaded {_cleanupList.Count} cleanup entries from {_cleanupFilePath}");
                     }
                     catch (JsonException ex)
@@ -62,7 +63,7 @@ namespace LeafClient.Services
             {
                 try
                 {
-                    var json = JsonSerializer.Serialize(_cleanupList, Json.Options);
+                    var json = JsonSerializer.Serialize(_cleanupList, JsonContext.Default.ListModCleanupEntry);
                     File.WriteAllText(_cleanupFilePath, json);
                     Console.WriteLine($"[ModCleanupService] Saved {_cleanupList.Count} cleanup entries to {_cleanupFilePath}");
                 }

@@ -17,10 +17,11 @@
 		<Authors>AlphaBs</Authors>
 		<PackageReleaseNotes />
 		<PackageId>CmlLib.Core.Commons</PackageId>
+		<IsAotCompatible>false</IsAotCompatible>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="System.Text.Json" Version="8.0.3" />
+		<PackageReference Include="System.Text.Json" Version="9.0.1" />
 		<None Include="icon.png" Pack="true" Visible="false" PackagePath="" />
 	</ItemGroup>
 

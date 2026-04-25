@@ -22,12 +22,14 @@
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryType>git</RepositoryType>
 		<PackageId>XboxAuthNet.Game.Msal</PackageId>
+		<IsAotCompatible>false</IsAotCompatible>
 	</PropertyGroup>
 
 	<!-- package refernces-->
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Identity.Client" Version="4.61.3" />
 		<PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.61.3" />
+		<PackageReference Include="System.Text.Json" Version="9.0.1" />
 	</ItemGroup>
 	
 	<!-- private assets-->

@@ -22,7 +22,7 @@ public class SkinRendererControl : UserControl
     private float _rotationY = 25f;
     private float _rotationX = -10f;
     private bool _isDragging;
-    private DateTime _dragStartTime = DateTime.MinValue;
+    private DateTime _lastInteractionTime = DateTime.MinValue;
     private AvaloniaPoint _lastMouse;
     private float _autoRotation;
     private bool _hasSkin;
@@ -53,11 +53,10 @@ public class SkinRendererControl : UserControl
         _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _animTimer.Tick += (_, _) =>
         {
-            if (_isDragging && (DateTime.UtcNow - _dragStartTime).TotalSeconds > 2)
-                _isDragging = false;
-
-            if (!_isDragging)
+            bool userActive = (DateTime.UtcNow - _lastInteractionTime).TotalMilliseconds < 500;
+            if (!userActive)
             {
+                if (_isDragging) _isDragging = false;
                 _autoRotation += 0.8f;
                 _rotationY = _autoRotation;
             }
@@ -219,7 +218,7 @@ public class SkinRendererControl : UserControl
     private void OnPointerPress(object? s, PointerPressedEventArgs e)
     {
         _isDragging = true;
-        _dragStartTime = DateTime.UtcNow;
+        _lastInteractionTime = DateTime.UtcNow;
         _lastMouse = e.GetPosition(this);
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -233,7 +232,7 @@ public class SkinRendererControl : UserControl
             _isDragging = false;
             return;
         }
-        _dragStartTime = DateTime.UtcNow;
+        _lastInteractionTime = DateTime.UtcNow;
         var pos = e.GetPosition(this);
         float dx = (float)(pos.X - _lastMouse.X);
         float dy = (float)(pos.Y - _lastMouse.Y);
@@ -292,7 +291,11 @@ public class SkinRendererControl : UserControl
 
             if (buf != null)
             {
-                if (_renderTarget == null || _renderTarget.PixelSize.Width != w || _renderTarget.PixelSize.Height != h)
+                bool sizeChanged = _renderTarget == null ||
+                                   _renderTarget.PixelSize.Width != w ||
+                                   _renderTarget.PixelSize.Height != h;
+
+                if (sizeChanged)
                 {
                     _renderTarget = new WriteableBitmap(
                         new PixelSize(w, h),
@@ -301,25 +304,25 @@ public class SkinRendererControl : UserControl
                         Avalonia.Platform.AlphaFormat.Premul);
                 }
 
-                using var fb = _renderTarget.Lock();
-                Marshal.Copy(buf, 0, fb.Address, buf.Length);
+                using (var fb = _renderTarget!.Lock())
+                {
+                    Marshal.Copy(buf, 0, fb.Address, buf.Length);
+                }
 
                 if (_renderedImage == null)
                 {
                     _renderedImage = new Avalonia.Controls.Image
                     {
-                        Source              = _renderTarget,
                         Stretch             = Stretch.None,
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                         VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
                     };
                     Content = _renderedImage;
                 }
-                else
-                {
-                    _renderedImage.Source = _renderTarget;
-                }
-                InvalidateVisual();
+
+                _renderedImage.Source = null;
+                _renderedImage.Source = _renderTarget;
+                _renderedImage.InvalidateVisual();
             }
         }
         catch (Exception ex)
@@ -385,7 +388,6 @@ public class SkinRendererControl : UserControl
             var stl = Project(tl); var str = Project(tr);
             var sbr = Project(br); var sbl = Project(bl);
 
-            // Per-vertex Z for pixel-accurate depth interpolation
             float ztl = ProjectZ(tl), ztr = ProjectZ(tr);
             float zbr = ProjectZ(br), zbl = ProjectZ(bl);
 
@@ -394,10 +396,10 @@ public class SkinRendererControl : UserControl
             float minY = MathF.Min(MathF.Min(stl.Y, str.Y), MathF.Min(sbr.Y, sbl.Y));
             float maxY = MathF.Max(MathF.Max(stl.Y, str.Y), MathF.Max(sbr.Y, sbl.Y));
 
-            int x0 = Math.Max(0, (int)minX);
-            int x1 = Math.Min(w - 1, (int)maxX + 1);
-            int y0 = Math.Max(0, (int)minY);
-            int y1 = Math.Min(h - 1, (int)maxY + 1);
+            int x0 = Math.Max(0, (int)MathF.Floor(minX));
+            int x1 = Math.Min(w - 1, (int)MathF.Ceiling(maxX));
+            int y0 = Math.Max(0, (int)MathF.Floor(minY));
+            int y1 = Math.Min(h - 1, (int)MathF.Ceiling(maxY));
 
             for (int py = y0; py <= y1; py++)
             {
@@ -410,8 +412,6 @@ public class SkinRendererControl : UserControl
                     bool hit = false;
                     if (PointInTriangle(pt, stl, str, sbr, out u, out v))
                     {
-                        // Triangle 1 (tl, tr, br): vertex UVs are (0,0), (1,0), (1,1)
-                        // Barycentric weights: w_tl=1-u-v, w_tr=u, w_br=v
                         texU = u + v;
                         texV = v;
                         pixelZ = (1 - u - v) * ztl + u * ztr + v * zbr;
@@ -419,8 +419,6 @@ public class SkinRendererControl : UserControl
                     }
                     else if (PointInTriangle(pt, stl, sbr, sbl, out u, out v))
                     {
-                        // Triangle 2 (tl, br, bl): vertex UVs are (0,0), (1,1), (0,1)
-                        // Barycentric weights: w_tl=1-u-v, w_br=u, w_bl=v
                         texU = u;
                         texV = u + v;
                         pixelZ = (1 - u - v) * ztl + u * zbr + v * zbl;
@@ -430,10 +428,12 @@ public class SkinRendererControl : UserControl
                     if (hit)
                     {
                         int zIdx = py * w + px;
-                        if (pixelZ > zBuf[zIdx]) continue;
+                        if (pixelZ >= zBuf[zIdx]) continue;
 
-                        int su = uvX + (int)(texU * (uvW - 0.01f));
-                        int sv = uvY + (int)(texV * (uvH - 0.01f));
+                        int su = uvX + (int)(texU * uvW);
+                        int sv = uvY + (int)(texV * uvH);
+                        if (su >= uvX + uvW) su = uvX + uvW - 1;
+                        if (sv >= uvY + uvH) sv = uvY + uvH - 1;
                         var color = GetSkinPixel(su, sv);
                         if (color.A > 0)
                         {
@@ -445,27 +445,38 @@ public class SkinRendererControl : UserControl
             }
         }
 
-        // Base layers
-        DrawBodyPart(DrawFace, -4, -24, -2, 4, 12, 4, 0, 16, 4, 12, 4);     // right leg
-        DrawBodyPart(DrawFace, 0, -24, -2, 4, 12, 4, 16, 48, 4, 12, 4);      // left leg
-        // Body: skip side x-faces (hidden behind the arms, would z-fight with arm inner faces)
-        DrawBodyPart(DrawFace, -4, -12, -2, 8, 12, 4, 16, 16, 8, 12, 4, 16 | 32);
-        DrawBodyPart(DrawFace, -8, -12, -2, 4, 12, 4, 40, 16, 4, 12, 4);     // right arm
-        DrawBodyPart(DrawFace, 4, -12, -2, 4, 12, 4, 32, 48, 4, 12, 4);      // left arm
-        DrawBodyPart(DrawFace, -4, 0, -4, 8, 8, 8, 0, 0, 8, 8, 8);           // head
+        bool classic = skinImage.Height < 64;
+        bool slim = false;
+        if (!classic && skinImage.Width > 54 && skinImage.Height > 20)
+        {
+            slim = skinImage[54, 20].A == 0;
+        }
+        int armW = slim ? 3 : 4;
+        float armWf = armW;
 
-        // Overlay / second layers (slightly inflated to sit on top of base)
+        DrawBodyPart(DrawFace, -4, -24, -2, 4, 12, 4, 0, 16, 4, 12, 4);
+        if (classic)
+            DrawBodyPart(DrawFace, 0, -24, -2, 4, 12, 4, 0, 16, 4, 12, 4);
+        else
+            DrawBodyPart(DrawFace, 0, -24, -2, 4, 12, 4, 16, 48, 4, 12, 4);
+        DrawBodyPart(DrawFace, -4, -12, -2, 8, 12, 4, 16, 16, 8, 12, 4, 16 | 32);
+        DrawBodyPart(DrawFace, -4 - armWf, -12, -2, armWf, 12, 4, 40, 16, armW, 12, 4);
+        if (classic)
+            DrawBodyPart(DrawFace, 4, -12, -2, armWf, 12, 4, 40, 16, armW, 12, 4);
+        else
+            DrawBodyPart(DrawFace, 4, -12, -2, armWf, 12, 4, 32, 48, armW, 12, 4);
+        DrawBodyPart(DrawFace, -4, 0, -4, 8, 8, 8, 0, 0, 8, 8, 8);
+
         float inf = 0.5f;
-        // Head overlay (exists in both 64x32 and 64x64 skins)
         DrawBodyPart(DrawFace, -4-inf, -inf, -4-inf, 8+2*inf, 8+2*inf, 8+2*inf, 32, 0, 8, 8, 8);
 
         if (skinImage.Height >= 64)
         {
-            DrawBodyPart(DrawFace, -4-inf, -24-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 0, 32, 4, 12, 4);     // right leg overlay
-            DrawBodyPart(DrawFace, -inf, -24-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 0, 48, 4, 12, 4);        // left leg overlay
-            DrawBodyPart(DrawFace, -4-inf, -12-inf, -2-inf, 8+2*inf, 12+2*inf, 4+2*inf, 16, 32, 8, 12, 4, 16 | 32);  // body overlay (skip side x-faces)
-            DrawBodyPart(DrawFace, -8-inf, -12-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 40, 32, 4, 12, 4);     // right arm overlay
-            DrawBodyPart(DrawFace, 4-inf, -12-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 48, 48, 4, 12, 4);      // left arm overlay
+            DrawBodyPart(DrawFace, -4-inf, -24-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 0, 32, 4, 12, 4);
+            DrawBodyPart(DrawFace, -inf, -24-inf, -2-inf, 4+2*inf, 12+2*inf, 4+2*inf, 0, 48, 4, 12, 4);
+            DrawBodyPart(DrawFace, -4-inf, -12-inf, -2-inf, 8+2*inf, 12+2*inf, 4+2*inf, 16, 32, 8, 12, 4, 16 | 32);
+            DrawBodyPart(DrawFace, -4 - armWf - inf, -12-inf, -2-inf, armWf + 2*inf, 12+2*inf, 4+2*inf, 40, 32, armW, 12, 4);
+            DrawBodyPart(DrawFace, 4-inf, -12-inf, -2-inf, armWf + 2*inf, 12+2*inf, 4+2*inf, 48, 48, armW, 12, 4);
         }
 
         // ── Solid-color quad renderer (for wing bones, horns, etc.) ──────────────
@@ -480,10 +491,10 @@ public class SkinRendererControl : UserControl
             float maxX = MathF.Max(MathF.Max(stl.X, str.X), MathF.Max(sbr.X, sbl.X));
             float minY = MathF.Min(MathF.Min(stl.Y, str.Y), MathF.Min(sbr.Y, sbl.Y));
             float maxY = MathF.Max(MathF.Max(stl.Y, str.Y), MathF.Max(sbr.Y, sbl.Y));
-            int x0 = Math.Max(0, (int)minX);
-            int x1 = Math.Min(w - 1, (int)maxX + 1);
-            int y0 = Math.Max(0, (int)minY);
-            int y1 = Math.Min(h - 1, (int)maxY + 1);
+            int x0 = Math.Max(0, (int)MathF.Floor(minX));
+            int x1 = Math.Min(w - 1, (int)MathF.Ceiling(maxX));
+            int y0 = Math.Max(0, (int)MathF.Floor(minY));
+            int y1 = Math.Min(h - 1, (int)MathF.Ceiling(maxY));
             var solidColor = new Rgba32(r, g, b, 255);
             for (int py = y0; py <= y1; py++)
             {
@@ -506,7 +517,7 @@ public class SkinRendererControl : UserControl
                     if (hit)
                     {
                         int zIdx = py * w + px2;
-                        if (pixelZ > zBuf[zIdx]) continue;
+                        if (pixelZ >= zBuf[zIdx]) continue;
                         zBuf[zIdx] = pixelZ;
                         SetPixel(buf, stride, w, h, px2, py, solidColor, shade);
                     }
@@ -572,10 +583,10 @@ public class SkinRendererControl : UserControl
                 float maxX = MathF.Max(MathF.Max(stl.X, str.X), MathF.Max(sbr.X, sbl.X));
                 float minY = MathF.Min(MathF.Min(stl.Y, str.Y), MathF.Min(sbr.Y, sbl.Y));
                 float maxY = MathF.Max(MathF.Max(stl.Y, str.Y), MathF.Max(sbr.Y, sbl.Y));
-                int x0 = Math.Max(0, (int)minX);
-                int x1 = Math.Min(w - 1, (int)maxX + 1);
-                int y0 = Math.Max(0, (int)minY);
-                int y1 = Math.Min(h - 1, (int)maxY + 1);
+                int x0 = Math.Max(0, (int)MathF.Floor(minX) - 1);
+                int x1 = Math.Min(w - 1, (int)MathF.Ceiling(maxX) + 1);
+                int y0 = Math.Max(0, (int)MathF.Floor(minY) - 1);
+                int y1 = Math.Min(h - 1, (int)MathF.Ceiling(maxY) + 1);
                 for (int py = y0; py <= y1; py++)
                 {
                     for (int px2 = x0; px2 <= x1; px2++)
@@ -767,10 +778,10 @@ public class SkinRendererControl : UserControl
                 float maxX = MathF.Max(MathF.Max(stl.X, str.X), MathF.Max(sbr.X, sbl.X));
                 float minY = MathF.Min(MathF.Min(stl.Y, str.Y), MathF.Min(sbr.Y, sbl.Y));
                 float maxY = MathF.Max(MathF.Max(stl.Y, str.Y), MathF.Max(sbr.Y, sbl.Y));
-                int x0 = Math.Max(0, (int)minX);
-                int x1 = Math.Min(w - 1, (int)maxX + 1);
-                int y0 = Math.Max(0, (int)minY);
-                int y1 = Math.Min(h - 1, (int)maxY + 1);
+                int x0 = Math.Max(0, (int)MathF.Floor(minX));
+                int x1 = Math.Min(w - 1, (int)MathF.Ceiling(maxX));
+                int y0 = Math.Max(0, (int)MathF.Floor(minY));
+                int y1 = Math.Min(h - 1, (int)MathF.Ceiling(maxY));
                 for (int py = y0; py <= y1; py++)
                 {
                     for (int px = x0; px <= x1; px++)
@@ -794,7 +805,7 @@ public class SkinRendererControl : UserControl
                         if (hit)
                         {
                             int zIdx = py * w + px;
-                            if (pixelZ > zBuf[zIdx]) continue;
+                            if (pixelZ >= zBuf[zIdx]) continue;
                             int su = uvX + (int)(texU * (uvW - 0.01f));
                             int sv = uvY + (int)(texV * (uvH - 0.01f));
                             var color = GetHatPixel(su, sv);
@@ -881,10 +892,10 @@ public class SkinRendererControl : UserControl
                 float maxX = MathF.Max(MathF.Max(stl.X, str.X), MathF.Max(sbr.X, sbl.X));
                 float minY = MathF.Min(MathF.Min(stl.Y, str.Y), MathF.Min(sbr.Y, sbl.Y));
                 float maxY = MathF.Max(MathF.Max(stl.Y, str.Y), MathF.Max(sbr.Y, sbl.Y));
-                int x0 = Math.Max(0, (int)minX);
-                int x1 = Math.Min(w - 1, (int)maxX + 1);
-                int y0 = Math.Max(0, (int)minY);
-                int y1 = Math.Min(h - 1, (int)maxY + 1);
+                int x0 = Math.Max(0, (int)MathF.Floor(minX));
+                int x1 = Math.Min(w - 1, (int)MathF.Ceiling(maxX));
+                int y0 = Math.Max(0, (int)MathF.Floor(minY));
+                int y1 = Math.Min(h - 1, (int)MathF.Ceiling(maxY));
                 for (int py = y0; py <= y1; py++)
                 {
                     for (int px = x0; px <= x1; px++)
@@ -908,7 +919,7 @@ public class SkinRendererControl : UserControl
                         if (hit)
                         {
                             int zIdx = py * w + px;
-                            if (pixelZ > zBuf[zIdx]) continue;
+                            if (pixelZ >= zBuf[zIdx]) continue;
                             int su = uvX + (int)(texU * (uvW - 0.01f));
                             int sv = uvY + (int)(texV * (uvH - 0.01f));
                             var color = GetCapePixel(su, sv);
@@ -1344,7 +1355,7 @@ public class SkinRendererControl : UserControl
         float uu = (dot11 * dot02 - dot01 * dot12) * inv;
         float vv = (dot00 * dot12 - dot01 * dot02) * inv;
 
-        if (uu >= 0 && vv >= 0 && uu + vv <= 1)
+        if (uu >= 0f && vv >= 0f && uu + vv <= 1f)
         {
             u = vv;
             v = uu;

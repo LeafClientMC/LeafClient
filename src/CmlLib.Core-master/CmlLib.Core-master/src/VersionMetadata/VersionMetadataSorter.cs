@@ -18,7 +18,9 @@ public class VersionMetadataSorter
 
         var propertyList = new List<MVersionSortPropertyOption>();
         propertyList.Add(option.PropertyOrderBy);
+#pragma warning disable IL3050, IL2026
         foreach (MVersionSortPropertyOption item in Enum.GetValues(typeof(MVersionSortPropertyOption)))
+#pragma warning restore IL3050, IL2026
         {
             if (option.PropertyOrderBy != item)
                 propertyList.Add(item);

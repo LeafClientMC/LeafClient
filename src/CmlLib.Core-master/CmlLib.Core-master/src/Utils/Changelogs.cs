@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8618, CS8620
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using CmlLib.Core.Internals;
 

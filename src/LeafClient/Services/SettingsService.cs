@@ -1,18 +1,17 @@
-﻿using LeafClient.Models;
+using LeafClient.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LeafClient.Services
 {
     public class SettingsService
     {
+        private static readonly SemaphoreSlim _fileLock = new(1, 1);
         private readonly string _settingsFilePath;
-
-        // AOT-FIX: Removed the reflection-based JsonSerializerOptions.
-        // We will now use the source-generated JsonContext.
 
         public SettingsService()
         {
@@ -24,9 +23,9 @@ namespace LeafClient.Services
 
         public async Task SaveSettingsAsync(LauncherSettings settings)
         {
+            await _fileLock.WaitAsync();
             try
             {
-                // AOT-CHANGE: Use the source-generated context for serialization.
                 var jsonString = JsonSerializer.Serialize(settings, JsonContext.Default.LauncherSettings);
                 await File.WriteAllTextAsync(_settingsFilePath, jsonString);
                 Console.WriteLine("Settings saved successfully.");
@@ -34,6 +33,10 @@ namespace LeafClient.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"Error saving settings: {ex.Message}");
+            }
+            finally
+            {
+                _fileLock.Release();
             }
         }
 
@@ -45,10 +48,10 @@ namespace LeafClient.Services
                 return new LauncherSettings();
             }
 
+            await _fileLock.WaitAsync();
             try
             {
                 var jsonString = await File.ReadAllTextAsync(_settingsFilePath);
-                // AOT-CHANGE: Use the source-generated context for deserialization.
                 var settings = JsonSerializer.Deserialize(jsonString, JsonContext.Default.LauncherSettings);
 
                 if (settings != null)
@@ -68,6 +71,10 @@ namespace LeafClient.Services
             {
                 Console.WriteLine($"Error loading settings: {ex.Message}. Loading default settings.");
                 return new LauncherSettings();
+            }
+            finally
+            {
+                _fileLock.Release();
             }
         }
     }
