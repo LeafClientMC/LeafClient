@@ -86,6 +86,7 @@ logs/
 # Private / Sensitive data
 # ==================================================================
 src/LeafClient/PrivateServices/
+#.ps1
 
 # ==================================================================
 # PARTIAL OPEN-SOURCE: hide design + runnables
