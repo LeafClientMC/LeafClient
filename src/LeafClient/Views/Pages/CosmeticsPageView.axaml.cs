@@ -84,6 +84,10 @@ namespace LeafClient.Views.Pages
                 _cosmeticsInitialized = true;
             }
 
+            // Pull any cosmetic changes the mod wrote to equipped.json since
+            // we were last shown (e.g. user equipped/unequipped in-game).
+            await LoadEquippedJsonFromDiskAsync();
+
             // Refresh the loadout preset bar every time the page is shown
             RefreshLoadoutPresetBar();
 
@@ -425,6 +429,88 @@ namespace LeafClient.Views.Pages
             {
                 Console.WriteLine($"[Cosmetics] Failed to save equipped.json: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Reads equipped.json from disk and merges it back into the in-memory
+        /// settings if it differs. This keeps the launcher in sync with cosmetic
+        /// changes made inside the Fabric mod (which writes the same file).
+        /// Persists the updated settings if anything changed.
+        /// </summary>
+        private async Task LoadEquippedJsonFromDiskAsync()
+        {
+            if (_host?.CurrentSettings == null) return;
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient");
+                var path = System.IO.Path.Combine(dir, "equipped.json");
+                if (!File.Exists(path)) return;
+
+                string json;
+                try { json = File.ReadAllText(path); }
+                catch (IOException) { return; }
+                if (string.IsNullOrWhiteSpace(json)) return;
+
+                EquippedCosmetics? fromDisk;
+                try
+                {
+                    fromDisk = JsonSerializer.Deserialize(
+                        json, LeafClient.JsonContext.Default.EquippedCosmetics);
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"[Cosmetics] equipped.json malformed, ignoring: {ex.Message}");
+                    return;
+                }
+                if (fromDisk == null) return;
+
+                var current = _host.CurrentSettings.Equipped ?? new EquippedCosmetics();
+                if (EquippedEquals(current, fromDisk)) return;
+
+                Console.WriteLine("[Cosmetics] equipped.json changed on disk — syncing into launcher state.");
+                _host.CurrentSettings.Equipped = fromDisk;
+
+                // Mirror to the active account so it survives full settings save/load round-trips.
+                if (_host.CurrentSettings.SavedAccounts != null)
+                {
+                    foreach (var acct in _host.CurrentSettings.SavedAccounts)
+                    {
+                        if (acct == null) continue;
+                        if (string.Equals(acct.Username, _host.CurrentSettings.SessionUsername,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            acct.Equipped = new EquippedCosmetics
+                            {
+                                CapeId = fromDisk.CapeId,
+                                HatId = fromDisk.HatId,
+                                WingsId = fromDisk.WingsId,
+                                BackItemId = fromDisk.BackItemId,
+                                AuraId = fromDisk.AuraId,
+                            };
+                            break;
+                        }
+                    }
+                }
+
+                if (_host.SettingsService != null)
+                {
+                    await _host.SettingsService.SaveSettingsAsync(_host.CurrentSettings);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] Failed to load equipped.json: {ex.Message}");
+            }
+        }
+
+        private static bool EquippedEquals(EquippedCosmetics a, EquippedCosmetics b)
+        {
+            return string.Equals(a.CapeId,     b.CapeId,     StringComparison.Ordinal)
+                && string.Equals(a.HatId,      b.HatId,      StringComparison.Ordinal)
+                && string.Equals(a.WingsId,    b.WingsId,    StringComparison.Ordinal)
+                && string.Equals(a.BackItemId, b.BackItemId, StringComparison.Ordinal)
+                && string.Equals(a.AuraId,     b.AuraId,     StringComparison.Ordinal);
         }
 
         private void OnCosmeticTabTapped(object? sender, TappedEventArgs e)
