@@ -130,6 +130,7 @@ src/LeafClient/wing_*.png
 latestexe/
 latestjars/
 latestversion.txt
+untrack-private.ps1
 
 # ── Top-level branding / icons ────────────────────────────────────
 /Leaf Client Process.ico
