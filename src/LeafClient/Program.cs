@@ -1,6 +1,5 @@
 ﻿using Avalonia;
 using Avalonia.Logging;
-using Avalonia.WebView.Desktop;
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -68,8 +67,7 @@ namespace LeafClient
             var builder = AppBuilder
                 .Configure<App>()
                 .UsePlatformDetect()
-                .WithInterFont()
-                .UseDesktopWebView();
+                .WithInterFont();
 
             // Override Avalonia logger sink
             Logger.Sink = new SilentAvaloniaSink();

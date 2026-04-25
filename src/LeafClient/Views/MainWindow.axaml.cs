@@ -32,7 +32,6 @@ using LeafClient.ViewModels;
 using Microsoft.Extensions.Logging;
 using Mojang;
 using MojangAPI;
-using AvaloniaWebView;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -365,7 +364,7 @@ namespace LeafClient.Views
         private static readonly string[] _po_RecommendedVersions =
         {
             "1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4",
-            "1.21.3", "1.21.2", "1.21.1", "1.21", "1.20.2", "1.20.1"
+            "1.21.3", "1.21.2", "1.21.1", "1.21", "1.20.2", "1.20.1", "1.8.9"
         };
         // Side nav: 54px height + 8px spacing = 62px per nav item
 
@@ -408,7 +407,6 @@ namespace LeafClient.Views
 
         private Grid? _checkoutOverlay;
         private Border? _checkoutPanel;
-        private WebView? _checkoutWebView;
         private bool _isCheckoutAnimating = false;
         private CancellationTokenSource? _checkoutPollCts;
         private HashSet<string>? _checkoutPreOwnedIds;
@@ -2294,6 +2292,7 @@ namespace LeafClient.Views
             "1.21.9",
             "1.21.10",
             "1.21.11",
+            "1.8.9",
         };
 
         private static bool IsLeafRuntimeVersion(string? version)
@@ -3142,17 +3141,6 @@ namespace LeafClient.Views
 
             _checkoutOverlay = this.FindControl<Grid>("CheckoutOverlay");
             _checkoutPanel = this.FindControl<Border>("CheckoutPanel");
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                _checkoutWebView = this.FindControl<WebView>("CheckoutWebView");
-            }
-            else
-            {
-                var unsupportedLabel = this.FindControl<TextBlock>("CheckoutUnsupportedLabel");
-                if (unsupportedLabel != null) unsupportedLabel.IsVisible = true;
-                var webViewCtrl = this.FindControl<WebView>("CheckoutWebView");
-                if (webViewCtrl != null) webViewCtrl.IsVisible = false;
-            }
 
             _jvmArgumentsEditButton = this.FindControl<Button>("JvmArgumentsEditButton");
             if (_jvmArgumentsEditButton != null)
@@ -6523,27 +6511,17 @@ namespace LeafClient.Views
             _ = PollForCheckoutPurchaseAsync(_checkoutPollCts.Token);
             _checkoutOverlay.IsVisible = true;
 
-            // Make the WebView visible BEFORE setting the URL.  The backing
-            // WebView2 HWND silently drops navigation requests issued while it
-            // is hidden, which is why subsequent opens rendered an empty panel
-            // after the first checkout was closed.
-            if (_checkoutWebView != null)
+            try
             {
-                _checkoutWebView.IsVisible = true;
-
-                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
-                await Task.Delay(50);
-
-                try
+                Process.Start(new ProcessStartInfo
                 {
-                    _checkoutWebView.Url = new Uri(url);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Checkout] Failed to load URL in WebView: {ex.Message}");
-                }
-
-                _ = RetryCheckoutNavigationAsync(url);
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Checkout] Failed to open browser: {ex.Message}");
             }
 
             var tt = _checkoutPanel.RenderTransform as TranslateTransform;
@@ -6587,24 +6565,6 @@ namespace LeafClient.Views
             }
         }
 
-        private async Task RetryCheckoutNavigationAsync(string url)
-        {
-            await Task.Delay(600);
-            if (_checkoutWebView == null || !_checkoutWebView.IsVisible) return;
-            try
-            {
-                if (_checkoutWebView.Url == null || _checkoutWebView.Url.AbsoluteUri == "about:blank")
-                {
-                    Console.WriteLine("[Checkout] Retrying navigation — first attempt may have been dropped.");
-                    _checkoutWebView.Url = new Uri(url);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Checkout] Retry navigation failed: {ex.Message}");
-            }
-        }
-
         private async void CloseCheckout()
         {
             if (_checkoutOverlay == null || _checkoutPanel == null) return;
@@ -6614,13 +6574,6 @@ namespace LeafClient.Views
 
             _checkoutPollCts?.Cancel();
             _checkoutPollCts = null;
-
-            if (_checkoutWebView != null)
-            {
-                try { _checkoutWebView.Url = new Uri("about:blank"); } catch { }
-                await Task.Delay(60);
-                _checkoutWebView.IsVisible = false;
-            }
 
             var tt = _checkoutPanel.RenderTransform as TranslateTransform;
             if (tt == null)
@@ -10502,6 +10455,7 @@ namespace LeafClient.Views
         {
             if (_isLaunching) return;
 
+            Console.WriteLine($"[Launch] Starting game: version={version}, fabric={isFabric}, user={_currentUsername ?? "(none)"}");
             InitializeLauncher();
 
             _isLaunching = true;
@@ -11478,6 +11432,25 @@ namespace LeafClient.Views
             catch (Exception ex)
             {
                 Console.WriteLine($"[Session] Failed to write session.json: {ex.Message}");
+            }
+        }
+
+        private static void WriteEquippedJson(EquippedCosmetics? eq)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "LeafClient");
+                Directory.CreateDirectory(dir);
+                var path = System.IO.Path.Combine(dir, "equipped.json");
+                var snapshot = eq ?? new EquippedCosmetics();
+                var json = System.Text.Json.JsonSerializer.Serialize(snapshot, JsonContext.Default.EquippedCosmetics);
+                File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Equipped] Failed to write equipped.json: {ex.Message}");
             }
         }
 
@@ -16698,6 +16671,7 @@ namespace LeafClient.Views
                 var settings = await _settingsService.LoadSettingsAsync();
 
                 var username = _session?.Username ?? settings.SessionUsername;
+                Console.WriteLine($"[UserInfo] Refreshing user info: username={username ?? "(none)"}, type={settings.AccountType}");
                 var uuid = _session?.UUID ?? settings.SessionUuid;
 
                 _currentUsername = username;
@@ -17163,8 +17137,12 @@ namespace LeafClient.Views
             }, Avalonia.Threading.DispatcherPriority.Render);
         }
 
+        private static readonly string[] _pageNames = { "Home", "Versions", "Servers", "Mods", "Settings", "Skins", "Cosmetics", "Store", "Screenshots" };
+
         private async void SwitchToPage(int index)
         {
+            var name = index >= 0 && index < _pageNames.Length ? _pageNames[index] : index.ToString();
+            Console.WriteLine($"[Nav] Navigating to page: {name} (index {index})");
             int navToken = ++_navigationToken;
 
             int previousSelectedIndex = _currentSelectedIndex;
@@ -17546,7 +17524,7 @@ namespace LeafClient.Views
             _allVersions.Add(new VersionInfo("1.12.2", "1.12", "Classic", "Vanilla", "September 18, 2017", "Most popular modded version with thousands of mods available."));
             _allVersions.Add(new VersionInfo("1.12.1", "1.12", "Legacy", "Vanilla", "June 2, 2017", "Bug fixes for the World of Color Update."));
             _allVersions.Add(new VersionInfo("1.12", "1.12", "Release", "Vanilla", "June 7, 2017", "World of Color Update: terracotta, glazed terracotta, concrete, and parrots."));
-            _allVersions.Add(new VersionInfo("1.8.9", "1.8", "Classic", "Vanilla", "December 9, 2015", "Most popular PvP version, widely used for Hypixel and competitive play."));
+            _allVersions.Add(new VersionInfo("1.8.9", "1.8", "Classic PvP", "Forge", "December 9, 2015", "Most popular PvP version, widely used for Hypixel and competitive play. Leaf Client for 1.8.9 runs on Forge."));
             _allVersions.Add(new VersionInfo("1.8.8", "1.8", "Legacy", "Vanilla", "September 28, 2015", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8.7", "1.8", "Legacy", "Vanilla", "July 1, 2015", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8.6", "1.8", "Legacy", "Vanilla", "June 25, 2015", "Bug fixes for 1.8."));
@@ -18598,6 +18576,7 @@ namespace LeafClient.Views
             _currentSettings.LeafApiJwt = account.LeafApiJwt;
             _currentSettings.LeafApiRefreshToken = account.LeafApiRefreshToken;
             _onlineCountService?.UpdateAccessToken(account.LeafApiJwt);
+            WriteSessionJson(account.LeafApiJwt);
             _currentSettings.Equipped = new EquippedCosmetics
             {
                 CapeId = account.Equipped.CapeId,
@@ -18606,6 +18585,7 @@ namespace LeafClient.Views
                 BackItemId = account.Equipped.BackItemId,
                 AuraId = account.Equipped.AuraId
             };
+            WriteEquippedJson(_currentSettings.Equipped);
             _ownedCosmeticIds.Clear();
             foreach (var id in account.OwnedCosmeticIds)
                 _ownedCosmeticIds.Add(id);
@@ -18613,6 +18593,8 @@ namespace LeafClient.Views
             {
                 _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
                 _storePage?.RefreshOwnedList(_ownedCosmeticIds);
+                _cosmeticsPage?.OnAccountChanged();
+                _storePage?.OnAccountChanged();
             });
         }
 
@@ -18621,6 +18603,7 @@ namespace LeafClient.Views
             if (sender is not Border b || b.Tag is not string accountId) return;
             var account = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == accountId);
             if (account == null || _currentSettings == null) return;
+            Console.WriteLine($"[Accounts] Switching to account: {account.Username} (type: {account.AccountType})");
 
             SaveCurrentAccountState();
 
@@ -18653,6 +18636,7 @@ namespace LeafClient.Views
             await _settingsService.SaveSettingsAsync(_currentSettings);
             PopulateAccountsListPanel();
             await LoadUserInfoAsync();
+            SwitchToPage(_currentSelectedIndex);
 
             if (string.IsNullOrEmpty(account.LeafApiJwt) && account.AccountType == "microsoft" &&
                 !string.IsNullOrWhiteSpace(account.Uuid) && !string.IsNullOrWhiteSpace(account.AccessToken))
@@ -18815,6 +18799,7 @@ namespace LeafClient.Views
                     _session = newSession;
                     PopulateAccountsListPanel();
                     await LoadUserInfoAsync();
+                    SwitchToPage(_currentSelectedIndex);
                 }
             }
             catch (OperationCanceledException)
@@ -18845,39 +18830,160 @@ namespace LeafClient.Views
             if (statusPanel != null) statusPanel.IsVisible = false;
         }
 
+        // True = "Create account" tab is selected; False = "Sign in" tab is selected.
+        // Both tabs are always visible to the user — no auto-switching.
+        private bool _addOfflineCreateMode = false;
+
         private void AddLocalAccountClick(object? sender, RoutedEventArgs e)
         {
-            // Show the inline offline account form
             var panel = this.FindControl<Border>("AddOfflinePanel");
             var nameBox = this.FindControl<TextBox>("OfflineUsernameBox");
+            var pwBox = this.FindControl<TextBox>("OfflinePasswordBox");
+            var pwConfirmBox = this.FindControl<TextBox>("OfflineConfirmPasswordBox");
+            var errBox = this.FindControl<TextBlock>("OfflineAddError");
             if (panel != null) panel.IsVisible = true;
             if (nameBox != null) { nameBox.Text = ""; nameBox.Focus(); }
+            if (pwBox != null) pwBox.Text = "";
+            if (pwConfirmBox != null) pwConfirmBox.Text = "";
+            if (errBox != null) { errBox.IsVisible = false; errBox.Text = ""; }
+            _addOfflineCreateMode = false;
+            ApplyAddOfflineMode();
+        }
+
+        private void OnSelectAddOfflineSignInTab(object? sender, RoutedEventArgs e)
+        {
+            _addOfflineCreateMode = false;
+            ApplyAddOfflineMode();
+            var errBox = this.FindControl<TextBlock>("OfflineAddError");
+            if (errBox != null) { errBox.IsVisible = false; errBox.Text = ""; }
+        }
+
+        private void OnSelectAddOfflineCreateTab(object? sender, RoutedEventArgs e)
+        {
+            _addOfflineCreateMode = true;
+            ApplyAddOfflineMode();
+            var errBox = this.FindControl<TextBlock>("OfflineAddError");
+            if (errBox != null) { errBox.IsVisible = false; errBox.Text = ""; }
+        }
+
+        private void ApplyAddOfflineMode()
+        {
+            var subtext = this.FindControl<TextBlock>("AddOfflineSubtext");
+            var actionText = this.FindControl<TextBlock>("OfflineAddActionText");
+            var confirmBox = this.FindControl<TextBox>("OfflineConfirmPasswordBox");
+            var signInTab = this.FindControl<Button>("OfflineSignInTab");
+            var createTab = this.FindControl<Button>("OfflineCreateTab");
+            var signInTabText = this.FindControl<TextBlock>("OfflineSignInTabText");
+            var createTabText = this.FindControl<TextBlock>("OfflineCreateTabText");
+
+            // Highlight the active tab — purple background, white text. Inactive: transparent + muted.
+            var activeBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#7C3AED"));
+            var inactiveBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Colors.Transparent);
+            var activeFg = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Colors.White);
+            var inactiveFg = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#94A3B8"));
+
+            if (_addOfflineCreateMode)
+            {
+                if (signInTab != null) signInTab.Background = inactiveBrush;
+                if (createTab != null) createTab.Background = activeBrush;
+                if (signInTabText != null) signInTabText.Foreground = inactiveFg;
+                if (createTabText != null) createTabText.Foreground = activeFg;
+                if (subtext != null)    subtext.Text    = "Pick a password to create a new Leaf account for this cracked username.";
+                if (actionText != null) actionText.Text = "Create account";
+                if (confirmBox != null) confirmBox.IsVisible = true;
+            }
+            else
+            {
+                if (signInTab != null) signInTab.Background = activeBrush;
+                if (createTab != null) createTab.Background = inactiveBrush;
+                if (signInTabText != null) signInTabText.Foreground = activeFg;
+                if (createTabText != null) createTabText.Foreground = inactiveFg;
+                if (subtext != null)    subtext.Text    = "Sign in with your existing Leaf account credentials.";
+                if (actionText != null) actionText.Text = "Sign in";
+                if (confirmBox != null) confirmBox.IsVisible = false;
+            }
+        }
+
+        private void ShowAddOfflineError(string msg)
+        {
+            var errBox = this.FindControl<TextBlock>("OfflineAddError");
+            if (errBox != null) { errBox.Text = msg; errBox.IsVisible = true; }
         }
 
         private async void OnAddOfflineConfirm(object? sender, RoutedEventArgs e)
         {
             var nameBox = this.FindControl<TextBox>("OfflineUsernameBox");
+            var pwBox = this.FindControl<TextBox>("OfflinePasswordBox");
+            var pwConfirmBox = this.FindControl<TextBox>("OfflineConfirmPasswordBox");
             var panel = this.FindControl<Border>("AddOfflinePanel");
-            string name = nameBox?.Text?.Trim() ?? "";
 
-            if (string.IsNullOrWhiteSpace(name)) return;
-            if (name.Length < 3) return;
+            string name = nameBox?.Text?.Trim() ?? "";
+            string password = pwBox?.Text ?? "";
+
+            if (string.IsNullOrWhiteSpace(name)) { ShowAddOfflineError("Please enter a username."); return; }
+            if (name.Length < 3 || name.Length > 16 || !System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z0-9_]+$"))
+            {
+                ShowAddOfflineError("Username must be 3–16 characters (letters, numbers, underscores only).");
+                return;
+            }
+            if (string.IsNullOrEmpty(password)) { ShowAddOfflineError("Please enter a password."); return; }
+
+            LeafApiAuthResult? apiResult;
+            try
+            {
+                if (!_addOfflineCreateMode)
+                {
+                    // Sign-in tab: just attempt login, no auto-fallback to create.
+                    Console.WriteLine($"[Accounts] Attempting sign-in for username: {name}");
+                    var (loginResult, loginError) = await LeafApiService.LoginWithErrorAsync(name, password);
+                    if (loginResult == null)
+                    {
+                        Console.WriteLine($"[Accounts] Sign-in failed for '{name}': {loginError}");
+                        ShowAddOfflineError(loginError ?? "Sign-in failed. Check your username and password.");
+                        return;
+                    }
+                    apiResult = loginResult;
+                }
+                else
+                {
+                    // Create tab: validate confirm + strength, then register.
+                    string confirm = pwConfirmBox?.Text ?? "";
+                    if (password != confirm) { ShowAddOfflineError("Passwords do not match."); return; }
+                    var pwErr = LeafApiService.ValidatePasswordStrength(password);
+                    if (pwErr != null) { ShowAddOfflineError(pwErr); return; }
+
+                    Console.WriteLine($"[Accounts] Attempting registration for username: {name}");
+                    var (registerResult, registerError) = await LeafApiService.RegisterWithErrorAsync(name, password);
+                    if (registerResult == null)
+                    {
+                        Console.WriteLine($"[Accounts] Registration failed for '{name}': {registerError}");
+                        ShowAddOfflineError(registerError ?? "Registration failed. Try a different username.");
+                        return;
+                    }
+                    apiResult = registerResult;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AddOffline] Leaf API call failed: {ex.Message}");
+                ShowAddOfflineError("Couldn't reach the LeafClient API. Check your connection.");
+                return;
+            }
 
             var offlineSession = MSession.CreateOfflineSession(name);
             var entry = new AccountEntry
             {
                 AccountType = "offline",
                 Username = name,
-                Uuid = offlineSession.UUID
+                Uuid = offlineSession.UUID,
+                LeafApiJwt = apiResult.AccessToken,
+                LeafApiRefreshToken = apiResult.RefreshToken,
             };
 
-            // Remove duplicate offline account with same name
             _currentSettings?.SavedAccounts.RemoveAll(a =>
                 a.AccountType == "offline" && a.Username.Equals(name, StringComparison.OrdinalIgnoreCase));
-
             _currentSettings?.SavedAccounts.Add(entry);
 
-            // Set as active
             if (_currentSettings != null)
             {
                 _currentSettings.ActiveAccountId = entry.Id;
@@ -18888,14 +18994,21 @@ namespace LeafClient.Views
                 _currentSettings.SessionUuid = offlineSession.UUID;
                 _currentSettings.SessionAccessToken = null;
                 _currentSettings.SessionXuid = null;
+                _currentSettings.LeafApiJwt = apiResult.AccessToken;
+                _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
                 await _settingsService.SaveSettingsAsync(_currentSettings);
             }
 
             _session = offlineSession;
+            _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+            WriteSessionJson(apiResult.AccessToken);
 
+            Console.WriteLine($"[Accounts] Offline account '{name}' {(_addOfflineCreateMode ? "registered" : "signed in")} successfully");
             if (panel != null) panel.IsVisible = false;
             PopulateAccountsListPanel();
             await LoadUserInfoAsync();
+            _ = SyncOwnedCosmeticsFromApiAsync();
+            SwitchToPage(_currentSelectedIndex);
         }
 
         private void OnCancelAddOffline(object? sender, RoutedEventArgs e)

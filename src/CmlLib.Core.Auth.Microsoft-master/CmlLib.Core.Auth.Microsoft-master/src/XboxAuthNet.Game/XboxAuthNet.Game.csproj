@@ -5,7 +5,7 @@
 		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<TargetFramework>netstandard2.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<LangVersion>12</LangVersion>
 
@@ -32,7 +32,7 @@
 	<!-- package references (keep these as they are dependencies of this project itself) -->
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
-		<PackageReference Include="XboxAuthNet" Version="3.0.4" />
+		<ProjectReference Include="..\..\..\..\XboxAuthNet-main\XboxAuthNet-main\src\XboxAuthNet.csproj" />
 		<PackageReference Include="System.Text.Json" Version="9.0.1" />
 	</ItemGroup>
 

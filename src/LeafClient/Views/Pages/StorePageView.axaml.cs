@@ -137,6 +137,33 @@ namespace LeafClient.Views.Pages
             }
         }
 
+        public async void OnAccountChanged()
+        {
+            _storeSkinCache = null;
+            if (_storeRenderer != null && _host != null)
+            {
+                try
+                {
+                    var skin = await _host.FetchSkinBytesAsync();
+                    if (skin != null)
+                    {
+                        _storeSkinCache = skin;
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            _storeRenderer.UpdateSkinTexture(skin);
+                            if (_host.CurrentSettings?.Equipped != null)
+                                CosmeticHelpers.ApplyEquippedToRenderer(_storeRenderer, _host.CurrentSettings.Equipped);
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Store] OnAccountChanged skin refresh failed: {ex.Message}");
+                }
+            }
+            if (_storeInitialized) PopulateStoreGrid();
+        }
+
         // ── Store Catalog data ──────────────────────────────────────────────────
         // Only items that are actually published on LemonSqueezy are listed here.
         // BUY NOW is disabled for items whose CheckoutUrl is empty (URL not yet created).
@@ -229,6 +256,7 @@ namespace LeafClient.Views.Pages
 
         public async void LoadStorePage()
         {
+            Console.WriteLine("[Store] LoadStorePage called");
             if (!_storeInitialized)
             {
                 InitializeStoreControls();
@@ -905,6 +933,7 @@ namespace LeafClient.Views.Pages
             if (_host == null) return;
             if (!CheckoutUrls.TryGetValue(item.Id, out var checkoutUrl) || string.IsNullOrWhiteSpace(checkoutUrl)) return;
 
+            Console.WriteLine($"[Store] Opening purchase popup for '{item.Name}' (id: {item.Id}, price: {item.Price})");
             CoinPrices.TryGetValue(item.Id, out var coinPrice);
             var displayPrice = GetDisplayPrice(item.Id, item.Price);
 

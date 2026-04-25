@@ -78,6 +78,7 @@ namespace LeafClient.Views.Pages
 
         public async void LoadCosmeticsPage()
         {
+            Console.WriteLine("[Cosmetics] LoadCosmeticsPage called");
             if (!_cosmeticsInitialized)
             {
                 InitializeCosmeticsControls();
@@ -145,6 +146,31 @@ namespace LeafClient.Views.Pages
         {
             _ownedIds = ownedIds;
             PopulateCosmeticsGrid();
+        }
+
+        public async void OnAccountChanged()
+        {
+            try
+            {
+                var usernameText = this.FindControl<TextBlock>("CosmeticsUsername");
+                var accountTypeText = this.FindControl<TextBlock>("CosmeticsAccountType");
+                if (usernameText != null)
+                    usernameText.Text = (_host?.CurrentSession?.Username ?? _host?.CurrentSettings?.SessionUsername ?? "Player").ToUpperInvariant();
+                if (accountTypeText != null)
+                    accountTypeText.Text = _host?.CurrentSettings?.AccountType == "microsoft" ? "Microsoft" : "Offline";
+
+                await LoadSkinFor3DRendererAsync();
+                if (_skinRenderer != null)
+                {
+                    var eq = _host?.CurrentSettings?.Equipped;
+                    if (eq != null) CosmeticHelpers.ApplyEquippedToRenderer(_skinRenderer, eq);
+                }
+                PopulateCosmeticsGrid();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] OnAccountChanged failed: {ex.Message}");
+            }
         }
 
         private void PopulateCosmeticsGrid()
@@ -343,6 +369,7 @@ namespace LeafClient.Views.Pages
         private async void EquipCosmetic(string cosId, string category)
         {
             if (_host?.CurrentSettings == null) return;
+            Console.WriteLine($"[Cosmetics] Equipping '{cosId}' (category: {category})");
             var settings = _host.CurrentSettings;
             settings.Equipped ??= new EquippedCosmetics();
 
@@ -396,6 +423,7 @@ namespace LeafClient.Views.Pages
         private async void UnequipCosmetic(string cosId, string category)
         {
             if (_host?.CurrentSettings?.Equipped == null) return;
+            Console.WriteLine($"[Cosmetics] Unequipping '{cosId}' (category: {category})");
             var eq = _host.CurrentSettings.Equipped;
 
             switch (category)

@@ -399,6 +399,7 @@ namespace LeafClient.Views
                     apiResult = result;
                 }
 
+                Console.WriteLine($"[LoginWindow] Offline {(_offlineIsLoginMode ? "sign-in" : "registration")} succeeded for '{username}'");
                 UpdateLoginStatus("SUCCESS!", "Redirecting to launcher...");
 
                 var session = MSession.CreateOfflineSession(username);
