@@ -1,53 +1,128 @@
 # ==================================================================
+# LeafClient .gitignore — partial open-source policy
+# ------------------------------------------------------------------
+# The repo intentionally exposes ONLY the C#/Java source code
+# (Models, Services, ViewModels, Views/*.axaml.cs, Utils, Program.cs)
+# Every artifact, asset, build output, secret, IDE cache, internal
+# doc, infra script, and runnable binary is hidden so the repo
+# cannot be compiled/run locally and no infrastructure is leaked.
+# ==================================================================
+
+
+# ==================================================================
 # OS / System files
 # ==================================================================
 .DS_Store
 .AppleDouble
 .LSOverride
+Icon?
 Thumbs.db
 ehthumbs.db
+ehthumbs_vista.db
 Desktop.ini
+$RECYCLE.BIN/
 *~
+*.swp
+*.swo
+
 
 # ==================================================================
-# IDE / Editor files
+# IDE / Editor / Tooling caches  (anywhere in the tree)
 # ==================================================================
-.idea/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/.fleet/
+**/.cursor/
+**/.claude/
+**/.codeium/
+**/.continue/
+**/.aider*
+**/.github-copilot/
+**/CopilotIndices/
+**/SemanticSymbols.db
+**/CodeChunks.db
+**/FileContentIndex/
+**/ProjectEvaluation/
 *.iml
 *.ipr
 *.iws
-.vscode/
-.vscode/*.log
-.vscode/*.tmp
+*.suo
+*.user
+*.userosscache
+*.userprefs
+*.sln.docstates
+*.dtbcache.json
+*.dtbcache.v2
+*.futdcache.v2
+*.vsidx
+*.psess
+*.vsp
+*.vspx
+*.sap
+HierarchyCache.v1.txt
+fileList.bin
+DocumentLayout.json
+DocumentLayout.backup.json
+
 
 # ==================================================================
-# Java / JVM
+# Java / JVM / Gradle / Fabric / Loom / Minecraft
 # ==================================================================
 *.class
-*.log
 hs_err_pid*
 replay_pid*
-
-# ==================================================================
-# Gradle (keep wrapper!)
-# ==================================================================
 **/.gradle/
 !**/gradle/wrapper/gradle-wrapper.jar
 **/build/
-**/target/
-**/out/
-
-# ==================================================================
-# Fabric / Loom / Minecraft
-# ==================================================================
 **/run/
 **/.minecraft/
 **/loom-cache/
 **/fabric-loom-cache/
 **/remappedSrc/
 
+
 # ==================================================================
-# Native / Compiler artifacts
+# .NET / C# build outputs  (every project, vendored or not)
+# ==================================================================
+**/bin/
+**/obj/
+**/out/
+**/target/
+**/publish/
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+**/ARM/
+**/ARM64/
+**/AnyCPU/
+**/AppPackages/
+**/BundleArtifacts/
+**/Generated_Code/
+*.pidb
+*.svclog
+*.scc
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+
+# ==================================================================
+# WebView2 runtime cache / Edge profile data  (NEVER commit)
+# ==================================================================
+**/EBWebView/
+**/WebView2/
+**/CrashpadMetrics*
+**/*.WebView2/
+
+
+# ==================================================================
+# Native / Compiler / Debug artifacts
 # ==================================================================
 *.o
 *.obj
@@ -58,118 +133,118 @@ replay_pid*
 *.so
 *.dll
 *.dylib
+*.exe
+*.app
 *.pdb
 *.idb
 *.dbg
 *.dSYM/
+*.ilk
+*.exp
+*.map
+
 
 # ==================================================================
-# Temporary / backup files
+# Distributable / Release artifacts  (binary outputs, never commit)
 # ==================================================================
-*.tmp
-*.temp
-*.swp
-*.swo
-*.bak
-*.orig
-*.exe
 *.jar
 *.zip
-
-# ==================================================================
-# Logs
-# ==================================================================
-logs/
-*.log
-
-# ==================================================================
-# Private / Sensitive data
-# ==================================================================
-src/LeafClient/PrivateServices/
-*.ps1
-
-# ==================================================================
-# PARTIAL OPEN-SOURCE: hide design + runnables
-# Backend logic (Services/, ViewModels/, Models/, Controls/, Utils/,
-# Views/*.axaml.cs, App.axaml.cs, Program.cs) stays visible.
-# Everything below is hidden so the repo cannot be compiled/run locally.
-# ==================================================================
-
-# ── Design layer ──────────────────────────────────────────────────
-src/LeafClient/**/*.axaml
-src/LeafClient/Themes/
-src/LeafClient/DarkTheme.axaml
-src/LeafClient/LightTheme.axaml
-src/LeafClient/Fonts/
-src/LeafClient/Assets/
-launcherassets/
-
-# ── Build / project files (kill local compile) ────────────────────
-src/LeafClient/LeafClient.sln
-src/LeafClient/LeafClient.csproj.Backup*.tmp
-src/LeafClient/app.manifest
-src/LeafClient/rd.xml
-src/LeafClient/packages.config
-src/LeafClient/Properties/
-src/LeafClient/build.gradle
-src/LeafClient/settings.gradle
-src/LeafClient/gradle/
-src/LeafClient/gradle.properties
-src/LeafClient/gradlew
-src/LeafClient/gradlew.bat
-
-# ── Internal planning / preview assets ────────────────────────────
-src/LeafClient/LeafClient-Master-Plan.md
-src/LeafClient/LeafClient-Master-Plan.html
-src/LeafClient/cosmetic-uv-templates.html
-src/LeafClient/*preview*.png
-src/LeafClient/angel_texture_preview.png
-src/LeafClient/wing_*.png
-
-# ── Distribution artifacts ────────────────────────────────────────
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.msi
+*.nupkg
+*.snupkg
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
 latestexe/
 latestjars/
 latestversion.txt
-untrack-private.ps1
+release-builds/
+release-snapshots/
+release-staging/
+.release-snapshots/
+.release-staging/
+release-*.log
 
-# ── Top-level branding / icons ────────────────────────────────────
-/Leaf Client Process.ico
-/Leaf Client.png
 
-# ── Release checklist (private ops doc) ───────────────────────────
-RELEASE-CHECKLIST.md
+# ==================================================================
+# Logs / Crash dumps
+# ==================================================================
+logs/
+*.log
+*.tlog
+*.log.txt
+*.dmp
+crash-*.txt
+hs_err*.log
 
-# ==== Private: hide from public mirror ====
-# Internal ops + design docs
-UPTIMEROBOT-SETUP.md
-NOTES.md
-TODO-private.md
-CLAUDE.md
-SECRETS.md
-ROADMAP.md
-*.private.md
-.private/
-docs/internal/
-docs/launch/
-docs/design/
-docs/superpowers/
 
-# Deploy / provisioning scripts with embedded server info
-deploy-ssh-key.ps1
-deploy/secrets/
-deploy/*.env
+# ==================================================================
+# Temporary / backup / scratch files
+# ==================================================================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+*.cache
+*.Backup*.tmp
+*~
+\#*\#
+.#*
+*.lock
+*.pid
 
-# Production config
+
+# ==================================================================
+# Sensitive / Private — INFRA & SECRETS  (NEVER commit)
+# ==================================================================
+# PowerShell — every .ps1 anywhere is private (deploy/ops scripts)
+**/*.ps1
+**/*.psm1
+**/*.psd1
+**/*.ps1xml
+
+# Shell / batch deploy scripts at repo root
+/deploy*
+/provision*
+/release*.sh
+/release*.bat
+/release*.cmd
+
+# Env / secrets / credentials
+.env
+.env.*
+!.env.example
+**/secrets/
+**/secrets.*
+**/credentials*
+**/credentials/
+**/auth.json
+**/keys.json
+**/.envrc
+**/*.secrets.json
+**/secret.*.json
 appsettings.Production.json
 appsettings.*.Production.json
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.Development.json
 launcher-config.json
 launcher-config.production.json
 config.production.*
 
-# Secrets, signing, keys
-.env
-.env.*
-!.env.example
+# Signing / keys / certs
 signing/
 *.pfx
 *.p12
@@ -178,25 +253,216 @@ signing/
 *.pem
 *.key
 *.crt
+*.cer
+*.snk
+*.pri
 id_rsa*
+id_ed25519*
+*_rsa
+*_ed25519
+known_hosts
+authorized_keys
 service-account*.json
+gcp-*.json
+firebase-adminsdk*.json
+google-credentials*.json
+aws-credentials
+.aws/
 
-# Local data
+# Local data / databases
 *.sqlite
+*.sqlite3
+*.db
+*.db-journal
 pb_data/
 pb_migrations/
 
+
 # ==================================================================
-# Source JAR exceptions (explicitly tracked)
+# .NET project plumbing  (everything that lets it compile)
+# ------------------------------------------------------------------
+# Keep .csproj source visible so file lists are readable, but hide
+# every config / packaging / signing / project-system artifact.
+# ==================================================================
+*.sln
+*.suo
+**/Properties/
+**/.config/
+packages.config
+packages/
+NuGet.Config
+nuget.config
+NuGet.config
+*.nuspec
+*.nupkg.metadata
+project.assets.json
+project.nuget.cache
+*.csproj.user
+*.csproj.FileListAbsolute.txt
+*.csproj.AssemblyReference.cache
+*.csproj.CoreCompileInputs.cache
+*.csproj.CopyComplete
+*.csproj.GenerateResource.cache
+*.csproj.Backup*.tmp
+*.csproj.dtbcache.json
+*.dgspec.json
+*.sourcelink.json
+*.runtimeconfig.json
+*.deps.json
+GeneratedInternalTypeHelper.g.*
+*.metagen
+*.g.cs
+*.g.i.cs
+*.AssemblyInfo.cs
+StyleCop.Cache
+.NETStandard,Version=*.AssemblyAttributes.cs
+
+# .NET project plumbing files at our root LeafClient project
+src/LeafClient/app.manifest
+src/LeafClient/rd.xml
+src/LeafClient/build.gradle
+src/LeafClient/settings.gradle
+src/LeafClient/gradle/
+src/LeafClient/gradle.properties
+src/LeafClient/gradlew
+src/LeafClient/gradlew.bat
+
+
+# ==================================================================
+# DESIGN LAYER  (XAML / theming / fonts / icons / preview assets)
+# Hidden so UI cannot be reproduced from source
+# ==================================================================
+**/*.axaml
+**/Themes/
+**/DarkTheme.axaml
+**/LightTheme.axaml
+**/Fonts/
+**/Assets/
+**/Resources/
+**/launcherassets/
+launcherassets/
+
+# Cosmetic / preview / texture work-in-progress images
+**/*preview*.png
+**/*preview*.jpg
+**/cosmetic-uv-*.html
+**/wing_*.png
+**/angel_*.png
+**/skin_*.png
+
+# Branding assets at the repo root
+/Leaf Client Process.ico
+/Leaf Client.png
+/*.ico
+/*.icns
+
+
+# ==================================================================
+# Internal / Private documentation  (ops, planning, secrets, notes)
+# ==================================================================
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+NOTES.md
+SECRETS.md
+ROADMAP.md
+TODO.md
+TODO-*.md
+*-private.md
+*.private.md
+.private/
+docs/internal/
+docs/launch/
+docs/design/
+docs/superpowers/
+docs/ops/
+docs/private/
+**/LeafClient-Master-Plan.md
+**/LeafClient-Master-Plan.html
+RELEASE-CHECKLIST.md
+RELEASE-NOTES.md
+UPTIMEROBOT-SETUP.md
+DEPLOY*.md
+DEPLOYMENT*.md
+INFRA*.md
+SERVER*.md
+SETUP-*.md
+INTERNAL*.md
+
+
+# ==================================================================
+# Developer-only working directory  (never commit)
+# ==================================================================
+.dev-local/
+.local/
+.work/
+scratch/
+playground/
+sandbox/
+
+
+# ==================================================================
+# Vendored third-party library noise
+# (We re-vendor CmlLib / XboxAuthNet — keep their .cs but kill
+# their docs/CI/test/example noise that bloats the repo.)
+# ==================================================================
+src/CmlLib.Core-master/**/.gitpod.yml
+src/CmlLib.Core-master/**/.github/
+src/CmlLib.Core-master/**/docs/
+src/CmlLib.Core-master/**/docfx.json
+src/CmlLib.Core-master/**/release.ps1
+src/CmlLib.Core.Auth.Microsoft-master/**/.gitpod.yml
+src/CmlLib.Core.Auth.Microsoft-master/**/.github/
+src/CmlLib.Core.Auth.Microsoft-master/**/docs/
+src/CmlLib.Core.Auth.Microsoft-master/**/docfx.json
+src/CmlLib.Core.Commons-main/**/docs/
+src/CmlLib.Core.Commons-main/**/docfx.json
+src/XboxAuthNet-main/**/.gitpod.yml
+src/XboxAuthNet-main/**/.github/
+src/XboxAuthNet-main/**/docs/
+
+
+# ==================================================================
+# JetBrains / ReSharper junk
+# ==================================================================
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings
+*.DotSettings.user
+
+
+# ==================================================================
+# Source JAR exceptions (explicitly tracked — runtime/bootstrap)
 # ==================================================================
 !src/LeafClient/LeafRuntime/**/*.jar
 !src/LeafClient/LeafBootstrap/**/*.jar
 
+
 # ==================================================================
-# Developer-only local files (release scripts, internal instructions,
-# server IPs, credentials). NEVER commit.
+# Source folders that MUST stay tracked  (re-allow after broad rules)
 # ==================================================================
-.dev-local/
-.release-snapshots/
-.release-staging/
-release-*.log
+!src/LeafClient/Models/
+!src/LeafClient/Services/
+!src/LeafClient/ViewModels/
+!src/LeafClient/Controls/
+!src/LeafClient/Utils/
+!src/LeafClient/Views/
+!src/LeafClient/Views/Pages/
+!src/LeafClient/Views/Pages/*.cs
+!src/LeafClient/Views/*.cs
+!src/LeafClient/App.axaml.cs
+!src/LeafClient/Program.cs
+!src/LeafClient/Json.cs
+!src/LeafClient/JsonContext.cs
+!src/LeafClient/ViewLocator.cs
+!src/LeafClient/LeafClient.csproj
+!src/LeafClientInstaller/**/*.cs
+!src/LeafClientInstaller/*.csproj
+!src/LeafClientUpdater/**/*.cs
+!src/LeafClientUpdater/*.csproj
+
+# ==================================================================
+# Final safety net: never commit these top-level items
+# ==================================================================
+/untrack-private.ps1
+/deploy-ssh-key.ps1

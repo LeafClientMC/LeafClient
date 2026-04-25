@@ -1,2 +1,0 @@
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\.dev-local\mac-publish\osx-arm64-updater\LeafClientUpdater.pdb
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\.dev-local\mac-publish\osx-arm64-updater\LeafClientUpdater

@@ -1,2 +1,0 @@
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\LeafClientUpdater.pdb
-C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClient\src\LeafClientUpdater\bin\Release\net8.0\win-x64\publish\LeafClientUpdater.exe
