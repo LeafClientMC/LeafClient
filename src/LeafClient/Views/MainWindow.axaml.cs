@@ -17621,7 +17621,7 @@ namespace LeafClient.Views
             _allVersions.Add(new VersionInfo("1.12.2", "1.12", "Classic", "Vanilla", "September 18, 2017", "Most popular modded version with thousands of mods available."));
             _allVersions.Add(new VersionInfo("1.12.1", "1.12", "Legacy", "Vanilla", "June 2, 2017", "Bug fixes for the World of Color Update."));
             _allVersions.Add(new VersionInfo("1.12", "1.12", "Release", "Vanilla", "June 7, 2017", "World of Color Update: terracotta, glazed terracotta, concrete, and parrots."));
-            _allVersions.Add(new VersionInfo("1.8.9", "1.8", "Classic PvP", "Forge", "December 9, 2015", "Most popular PvP version, widely used for Hypixel and competitive play. Leaf Client for 1.8.9 runs on Forge."));
+            _allVersions.Add(new VersionInfo("1.8.9", "1.8", "Classic PvP", "Vanilla", "December 9, 2015", "Most popular PvP version, widely used for Hypixel and competitive play."));
             _allVersions.Add(new VersionInfo("1.8.8", "1.8", "Legacy", "Vanilla", "September 28, 2015", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8.7", "1.8", "Legacy", "Vanilla", "July 1, 2015", "Bug fixes for 1.8."));
             _allVersions.Add(new VersionInfo("1.8.6", "1.8", "Legacy", "Vanilla", "June 25, 2015", "Bug fixes for 1.8."));
