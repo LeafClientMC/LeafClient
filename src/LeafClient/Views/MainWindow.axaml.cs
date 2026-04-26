@@ -364,7 +364,7 @@ namespace LeafClient.Views
         private static readonly string[] _po_RecommendedVersions =
         {
             "1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4",
-            "1.21.3", "1.21.2", "1.21.1", "1.21", "1.20.2", "1.20.1", "1.8.9"
+            "1.21.3", "1.21.2", "1.21.1", "1.21", "1.20.2", "1.20.1"
         };
         // Side nav: 54px height + 8px spacing = 62px per nav item
 
@@ -2292,7 +2292,6 @@ namespace LeafClient.Views
             "1.21.9",
             "1.21.10",
             "1.21.11",
-            "1.8.9",
         };
 
         private static bool IsLeafRuntimeVersion(string? version)
@@ -8838,6 +8837,7 @@ namespace LeafClient.Views
             try
             {
                 _currentSettings = await _settingsService.LoadSettingsAsync();
+                WipeCosmeticFilesIfStale();
                 LoadOwnedJson();
                 MigrateActiveAccountEntry();
                 ValidateEquippedCosmetics();
@@ -11435,7 +11435,12 @@ namespace LeafClient.Views
             }
         }
 
-        private static void WriteEquippedJson(EquippedCosmetics? eq)
+        private string? CurrentAccountSub()
+        {
+            return DecodeJwtSub(_currentSettings?.LeafApiJwt);
+        }
+
+        private static void WriteEquippedJson(EquippedCosmetics? eq, string? sub)
         {
             try
             {
@@ -11444,7 +11449,15 @@ namespace LeafClient.Views
                     "LeafClient");
                 Directory.CreateDirectory(dir);
                 var path = System.IO.Path.Combine(dir, "equipped.json");
-                var snapshot = eq ?? new EquippedCosmetics();
+                var snapshot = new EquippedCosmetics
+                {
+                    Sub = sub,
+                    CapeId = eq?.CapeId,
+                    HatId = eq?.HatId,
+                    WingsId = eq?.WingsId,
+                    BackItemId = eq?.BackItemId,
+                    AuraId = eq?.AuraId
+                };
                 var json = System.Text.Json.JsonSerializer.Serialize(snapshot, JsonContext.Default.EquippedCosmetics);
                 File.WriteAllText(path, json);
             }
@@ -11452,6 +11465,11 @@ namespace LeafClient.Views
             {
                 Console.WriteLine($"[Equipped] Failed to write equipped.json: {ex.Message}");
             }
+        }
+
+        private static void WriteEquippedJson(EquippedCosmetics? eq)
+        {
+            WriteEquippedJson(eq, eq?.Sub);
         }
 
         private void StartRichPresenceIfEnabled()
@@ -11817,8 +11835,26 @@ namespace LeafClient.Views
             {
                 if (!System.IO.File.Exists(OwnedJsonPath)) return;
                 var json = System.IO.File.ReadAllText(OwnedJsonPath);
-                // Use source-generated context (AOT-safe — reflection serialization is disabled)
-                var ids = System.Text.Json.JsonSerializer.Deserialize(json, JsonContext.Default.ListString);
+                var currentSub = CurrentAccountSub();
+                List<string>? ids = null;
+                try
+                {
+                    var file = System.Text.Json.JsonSerializer.Deserialize(json, JsonContext.Default.OwnedCosmeticsFile);
+                    if (file != null)
+                    {
+                        if (!string.IsNullOrEmpty(currentSub) && string.Equals(file.Sub, currentSub, StringComparison.Ordinal))
+                            ids = file.Ids;
+                        else
+                            Console.WriteLine($"[Owned] sub mismatch (file='{file.Sub}', current='{currentSub}') — ignoring owned.json.");
+                    }
+                }
+                catch
+                {
+                    try { ids = System.Text.Json.JsonSerializer.Deserialize(json, JsonContext.Default.ListString); }
+                    catch { }
+                    if (ids != null)
+                        Console.WriteLine("[Owned] Migrated legacy List<string> owned.json — will re-stamp on next save.");
+                }
                 if (ids != null)
                     foreach (var id in ids)
                         _ownedCosmeticIds.Add(id);
@@ -11835,15 +11871,76 @@ namespace LeafClient.Views
             try
             {
                 System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(OwnedJsonPath)!);
-                var ids = new List<string>(_ownedCosmeticIds);
-                // Use source-generated context (AOT-safe — reflection serialization is disabled)
-                var json = System.Text.Json.JsonSerializer.Serialize(ids, JsonContext.Default.ListString);
+                var file = new OwnedCosmeticsFile
+                {
+                    Sub = CurrentAccountSub(),
+                    Ids = new List<string>(_ownedCosmeticIds)
+                };
+                var json = System.Text.Json.JsonSerializer.Serialize(file, JsonContext.Default.OwnedCosmeticsFile);
                 System.IO.File.WriteAllText(OwnedJsonPath, json);
                 Console.WriteLine("[Owned] owned.json saved.");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Owned] Failed to save owned.json: {ex.Message}");
+            }
+        }
+
+        private void WipeCosmeticFilesIfStale()
+        {
+            try
+            {
+                var currentSub = CurrentAccountSub();
+                var equippedPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "LeafClient", "equipped.json");
+                if (System.IO.File.Exists(equippedPath))
+                {
+                    try
+                    {
+                        var raw = System.IO.File.ReadAllText(equippedPath);
+                        var parsed = System.Text.Json.JsonSerializer.Deserialize(raw, JsonContext.Default.EquippedCosmetics);
+                        var fileSub = parsed?.Sub;
+                        if (string.IsNullOrEmpty(currentSub) || !string.Equals(fileSub, currentSub, StringComparison.Ordinal))
+                        {
+                            WriteEquippedJson(new EquippedCosmetics { Sub = currentSub });
+                            Console.WriteLine($"[Cosmetics] Wiped stale equipped.json (file sub='{fileSub}', current='{currentSub}').");
+                        }
+                    }
+                    catch
+                    {
+                        WriteEquippedJson(new EquippedCosmetics { Sub = currentSub });
+                    }
+                }
+                if (System.IO.File.Exists(OwnedJsonPath))
+                {
+                    try
+                    {
+                        var raw = System.IO.File.ReadAllText(OwnedJsonPath);
+                        string? fileSub = null;
+                        try
+                        {
+                            var parsed = System.Text.Json.JsonSerializer.Deserialize(raw, JsonContext.Default.OwnedCosmeticsFile);
+                            fileSub = parsed?.Sub;
+                        }
+                        catch { }
+                        if (string.IsNullOrEmpty(currentSub) || !string.Equals(fileSub, currentSub, StringComparison.Ordinal))
+                        {
+                            _ownedCosmeticIds.Clear();
+                            SaveOwnedJson();
+                            Console.WriteLine($"[Cosmetics] Wiped stale owned.json (file sub='{fileSub}', current='{currentSub}').");
+                        }
+                    }
+                    catch
+                    {
+                        _ownedCosmeticIds.Clear();
+                        SaveOwnedJson();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] WipeCosmeticFilesIfStale failed: {ex.Message}");
             }
         }
 
@@ -18577,18 +18674,21 @@ namespace LeafClient.Views
             _currentSettings.LeafApiRefreshToken = account.LeafApiRefreshToken;
             _onlineCountService?.UpdateAccessToken(account.LeafApiJwt);
             WriteSessionJson(account.LeafApiJwt);
+            var sub = DecodeJwtSub(account.LeafApiJwt);
             _currentSettings.Equipped = new EquippedCosmetics
             {
+                Sub = sub,
                 CapeId = account.Equipped.CapeId,
                 HatId = account.Equipped.HatId,
                 WingsId = account.Equipped.WingsId,
                 BackItemId = account.Equipped.BackItemId,
                 AuraId = account.Equipped.AuraId
             };
-            WriteEquippedJson(_currentSettings.Equipped);
+            WriteEquippedJson(_currentSettings.Equipped, sub);
             _ownedCosmeticIds.Clear();
             foreach (var id in account.OwnedCosmeticIds)
                 _ownedCosmeticIds.Add(id);
+            SaveOwnedJson();
             Dispatcher.UIThread.Post(() =>
             {
                 _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
@@ -18761,7 +18861,21 @@ namespace LeafClient.Views
                         _currentSettings.SessionXuid = newSession.Xuid;
                         if (!string.IsNullOrWhiteSpace(capturedRefreshToken))
                             _currentSettings.MicrosoftRefreshToken = capturedRefreshToken;
+                        _currentSettings.LeafApiJwt = null;
+                        _currentSettings.LeafApiRefreshToken = null;
+                        _currentSettings.Equipped = new EquippedCosmetics();
+                        _ownedCosmeticIds.Clear();
+                        WriteEquippedJson(new EquippedCosmetics(), null);
+                        SaveOwnedJson();
+                        WriteSessionJson(null);
                         await _settingsService.SaveSettingsAsync(_currentSettings);
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+                            _storePage?.RefreshOwnedList(_ownedCosmeticIds);
+                            _cosmeticsPage?.OnAccountChanged();
+                            _storePage?.OnAccountChanged();
+                        });
                     }
 
                     _ = System.Threading.Tasks.Task.Run(async () =>
@@ -18786,6 +18900,8 @@ namespace LeafClient.Views
                                     WriteSessionJson(apiResult.AccessToken);
                                     Console.WriteLine("[Accounts] LeafClient API linked for Microsoft account.");
                                     _ownedCosmeticIds.Clear();
+                                    WriteEquippedJson(_currentSettings?.Equipped ?? new EquippedCosmetics(), DecodeJwtSub(apiResult.AccessToken));
+                                    SaveOwnedJson();
                                     await SyncOwnedCosmeticsFromApiAsync();
                                 }
                             }
@@ -18996,12 +19112,23 @@ namespace LeafClient.Views
                 _currentSettings.SessionXuid = null;
                 _currentSettings.LeafApiJwt = apiResult.AccessToken;
                 _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
+                _currentSettings.Equipped = new EquippedCosmetics();
+                _ownedCosmeticIds.Clear();
                 await _settingsService.SaveSettingsAsync(_currentSettings);
             }
 
             _session = offlineSession;
             _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
             WriteSessionJson(apiResult.AccessToken);
+            WriteEquippedJson(new EquippedCosmetics(), DecodeJwtSub(apiResult.AccessToken));
+            SaveOwnedJson();
+            Dispatcher.UIThread.Post(() =>
+            {
+                _cosmeticsPage?.RefreshOwnedList(_ownedCosmeticIds);
+                _storePage?.RefreshOwnedList(_ownedCosmeticIds);
+                _cosmeticsPage?.OnAccountChanged();
+                _storePage?.OnAccountChanged();
+            });
 
             Console.WriteLine($"[Accounts] Offline account '{name}' {(_addOfflineCreateMode ? "registered" : "signed in")} successfully");
             if (panel != null) panel.IsVisible = false;

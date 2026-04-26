@@ -447,8 +447,18 @@ namespace LeafClient.Views.Pages
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient");
                 System.IO.Directory.CreateDirectory(dir);
                 var path = System.IO.Path.Combine(dir, "equipped.json");
-                var json = JsonSerializer.Serialize(
-                    _host?.CurrentSettings?.Equipped ?? new EquippedCosmetics(),
+                var src = _host?.CurrentSettings?.Equipped ?? new EquippedCosmetics();
+                var sub = DecodeJwtSubLocal(_host?.CurrentSettings?.LeafApiJwt) ?? src.Sub;
+                var snapshot = new EquippedCosmetics
+                {
+                    Sub = sub,
+                    CapeId = src.CapeId,
+                    HatId = src.HatId,
+                    WingsId = src.WingsId,
+                    BackItemId = src.BackItemId,
+                    AuraId = src.AuraId
+                };
+                var json = JsonSerializer.Serialize(snapshot,
                     LeafClient.JsonContext.Default.EquippedCosmetics);
                 File.WriteAllText(path, json);
                 Console.WriteLine("[Cosmetics] equipped.json saved.");
@@ -457,6 +467,26 @@ namespace LeafClient.Views.Pages
             {
                 Console.WriteLine($"[Cosmetics] Failed to save equipped.json: {ex.Message}");
             }
+        }
+
+        private static string? DecodeJwtSubLocal(string? jwt)
+        {
+            if (string.IsNullOrWhiteSpace(jwt)) return null;
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                int pad = 4 - (payload.Length % 4);
+                if (pad < 4) payload += new string('=', pad);
+                payload = payload.Replace('-', '+').Replace('_', '/');
+                var bytes = Convert.FromBase64String(payload);
+                using var doc = System.Text.Json.JsonDocument.Parse(bytes);
+                if (doc.RootElement.TryGetProperty("sub", out var subEl) && subEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                    return subEl.GetString();
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>

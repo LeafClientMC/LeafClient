@@ -73,11 +73,18 @@ namespace LeafClient.Models
     /// </summary>
     public class EquippedCosmetics
     {
+        public string? Sub { get; set; }
         public string? CapeId { get; set; }
         public string? HatId { get; set; }
         public string? WingsId { get; set; }
         public string? BackItemId { get; set; }
         public string? AuraId { get; set; }
+    }
+
+    public class OwnedCosmeticsFile
+    {
+        public string? Sub { get; set; }
+        public List<string> Ids { get; set; } = new List<string>();
     }
 
     /// <summary>

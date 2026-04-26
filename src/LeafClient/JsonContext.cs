@@ -38,6 +38,7 @@ namespace LeafClient
     [JsonSerializable(typeof(AccountEntry))]
     [JsonSerializable(typeof(List<AccountEntry>))]
     [JsonSerializable(typeof(EquippedCosmetics))]
+    [JsonSerializable(typeof(OwnedCosmeticsFile))]
     [JsonSerializable(typeof(CosmeticPreset))]
     [JsonSerializable(typeof(List<CosmeticPreset>))]
     [JsonSerializable(typeof(ServerInfo))]
