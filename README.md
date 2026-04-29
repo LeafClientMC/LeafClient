@@ -16,7 +16,7 @@ Unauthorized redistribution or reuse of this code will result in a DMCA takedown
 
 ## 🚀 Beta Status
 
-**The beta is live.** Expect rough edges — please report every bug you find through the in-launcher **Feedback** system.
+**The beta is going to be live soon!** Expect rough edges — please report every bug you find through the in-launcher **Feedback** system.
 
 ### What's in the client (20+ features)
 
@@ -108,9 +108,9 @@ Feedback shapes the roadmap. If you want something, suggest it.
 **Supported Minecraft versions (Fabric):** 1.21 → 1.21.11
 
 **Launcher builds:**
-- Windows — AOT, single-file native executable
-- macOS — standard .NET build
-- Linux — planned
+- Windows — Single file Executable (.EXE)
+- macOS — Single file Executable (.DMG/.APP)
+- Linux — Planned
 
 ---
 
