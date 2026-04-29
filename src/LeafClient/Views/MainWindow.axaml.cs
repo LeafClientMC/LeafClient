@@ -437,6 +437,7 @@ namespace LeafClient.Views
         private MojangApiService? _mojangApiService;
 
         private ToggleSwitch? _optiFineToggle;
+        private ToggleSwitch? _vulkanModToggle;
         private ToggleSwitch? _testModeToggle;
         private TextBox? _testModePathBox;
         private Border? _testModePathPanel;
@@ -2633,6 +2634,8 @@ namespace LeafClient.Views
                 "sodium", "lithium", "ferritecore", "immediatelyfast",
                 "entityculling", "modernfix", "fabric-api", "phosphor",
                 "iris", "dynamiclights", "betterfps",
+                "ebe", "dynamicfps", "c2me", "moreculling", "krypton", "sodiumextra", "cloth-config",
+                "cullleaves", "debugify", "nofade", "betterbeds", "reeses-sodium-options",
             };
 
         private void LoadUserMods()
@@ -3128,6 +3131,7 @@ namespace LeafClient.Views
             _onlineStatusDot = this.FindControl<Ellipse>("OnlineStatusDot");
 
             _optiFineToggle  = this.FindControl<ToggleSwitch>("OptiFineToggle");
+            _vulkanModToggle = this.FindControl<ToggleSwitch>("VulkanModToggle");
             _testModeToggle  = this.FindControl<ToggleSwitch>("TestModeToggle");
             _testModePathBox = this.FindControl<TextBox>("TestModePathBox");
             _testModePathPanel = this.FindControl<Border>("TestModePathPanel");
@@ -5684,6 +5688,17 @@ namespace LeafClient.Views
                     _gameOutputWindow?.AppendLog(
                         $"[LaunchDiag] Skipping install of '{mod.Name}' (ModId=leafclient) — core mod is injected via -Dfabric.addMods, not the mods folder.",
                         "WARN");
+                    continue;
+                }
+
+                bool vulkanActive = _vulkanModToggle?.IsChecked == true || _currentSettings.IsVulkanModEnabled;
+                if (vulkanActive && mod.ModId != null &&
+                    (mod.ModId.Equals("sodium", StringComparison.OrdinalIgnoreCase) ||
+                     mod.ModId.Equals("sodiumextra", StringComparison.OrdinalIgnoreCase) ||
+                     mod.ModId.Equals("sodium-extra", StringComparison.OrdinalIgnoreCase) ||
+                     mod.ModId.Equals("reeses-sodium-options", StringComparison.OrdinalIgnoreCase)))
+                {
+                    Console.WriteLine($"[User Mods] Skipping '{mod.Name}' — VulkanMod is enabled, Sodium conflicts.");
                     continue;
                 }
 
@@ -9397,7 +9412,7 @@ namespace LeafClient.Views
                 ShowProgress(true, $"Fetching ImmediatelyFast for {mcVersion}...");
 
                 using var client = new HttpClient();
-                var apiUrl = $"https://api.modrinth.com/v2/project/5ZwThgaL/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var apiUrl = $"https://api.modrinth.com/v2/project/5ZwdcRci/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
                 var response = await client.GetStringAsync(apiUrl);
 
                 var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
@@ -9885,6 +9900,697 @@ namespace LeafClient.Views
             finally { ShowProgress(false); }
         }
 
+        private async Task<bool> InstallEnhancedBlockEntitiesIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Enhanced Block Entities for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/OVuFYfre/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Enhanced Block Entities] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Enhanced Block Entities] No download URL found, skipping."); return true; }
+
+                string fileName = $"ebe-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Enhanced Block Entities");
+                Console.WriteLine($"[Enhanced Block Entities] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Enhanced Block Entities] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallDynamicFpsIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Dynamic FPS for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/LQ3K71Q1/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Dynamic FPS] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Dynamic FPS] No download URL found, skipping."); return true; }
+
+                string fileName = $"dynamicfps-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Dynamic FPS");
+                Console.WriteLine($"[Dynamic FPS] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Dynamic FPS] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallC2MEIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching C2ME for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/VSNURh3q/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[C2ME] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[C2ME] No download URL found, skipping."); return true; }
+
+                string fileName = $"c2me-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "C2ME");
+                Console.WriteLine($"[C2ME] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[C2ME] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallMoreCullingIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching More Culling for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/51shyZVL/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[More Culling] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[More Culling] No download URL found, skipping."); return true; }
+
+                string fileName = $"moreculling-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "More Culling");
+                Console.WriteLine($"[More Culling] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[More Culling] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallKryptonIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Krypton for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/fQEb0iXm/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Krypton] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Krypton] No download URL found, skipping."); return true; }
+
+                string fileName = $"krypton-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Krypton");
+                Console.WriteLine($"[Krypton] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Krypton] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallSodiumExtraIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Sodium Extra for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/PtjYWJkn/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Sodium Extra] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Sodium Extra] No download URL found, skipping."); return true; }
+
+                string fileName = $"sodiumextra-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Sodium Extra");
+                Console.WriteLine($"[Sodium Extra] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Sodium Extra] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallCullLeavesIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("GNxdLCoP", "Cull Leaves", "cullleaves", mcVersion);
+        }
+
+        private async Task<bool> InstallDebugifyIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("QwxR6Gcd", "Debugify", "debugify", mcVersion);
+        }
+
+        private async Task<bool> InstallNoFadeIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("WwT5TcIT", "No Fade", "nofade", mcVersion);
+        }
+
+        private async Task<bool> InstallBetterBedsIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("kKwy3HU9", "Better Beds", "betterbeds", mcVersion);
+        }
+
+        private async Task<bool> InstallReesesSodiumOptionsIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("Bh37bMuy", "Reese's Sodium Options", "reeses-sodium-options", mcVersion);
+        }
+
+        private static readonly Dictionary<string, HashSet<string>> _modIncompatibleVersions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["GNxdLCoP"] = new(StringComparer.OrdinalIgnoreCase) { "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11" },
+        };
+
+        private async Task<bool> InstallModrinthModGenericAsync(string projectId, string displayName, string filePrefix, string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            if (_modIncompatibleVersions.TryGetValue(projectId, out var incompatible) && incompatible.Contains(mcVersion))
+            {
+                Console.WriteLine($"[{displayName}] Known incompatibility with MC {mcVersion}, skipping.");
+                try
+                {
+                    foreach (var stale in System.IO.Directory.EnumerateFiles(modsFolder, $"{filePrefix}*.jar"))
+                    {
+                        try { System.IO.File.Delete(stale); Console.WriteLine($"[{displayName}] Removed stale: {stale}"); } catch { }
+                    }
+                }
+                catch { }
+                return true;
+            }
+            try
+            {
+                ShowProgress(true, $"Fetching {displayName} for {mcVersion}...");
+                using var client = new HttpClient();
+
+                var versionsToTry = new List<string> { mcVersion };
+                var fallback = Services.ModrinthVersionFallback.GetFallbackVersion(mcVersion);
+                if (fallback != null && fallback != mcVersion) versionsToTry.Add(fallback);
+
+                Models.ModrinthVersion? matched = null;
+                foreach (var tryVersion in versionsToTry)
+                {
+                    var apiUrl = $"https://api.modrinth.com/v2/project/{projectId}/version?game_versions=[\"{tryVersion}\"]&loaders=[\"fabric\"]";
+                    var response = await client.GetStringAsync(apiUrl);
+                    var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                    if (versions == null || versions.Count == 0) continue;
+
+                    matched = versions.FirstOrDefault(v =>
+                        v.GameVersions != null && v.GameVersions.Contains(tryVersion, StringComparer.OrdinalIgnoreCase));
+                    if (matched != null)
+                    {
+                        if (tryVersion != mcVersion)
+                            Console.WriteLine($"[{displayName}] No compatible version for {mcVersion}, using {tryVersion} fallback.");
+                        break;
+                    }
+                }
+
+                if (matched == null)
+                {
+                    Console.WriteLine($"[{displayName}] No compatible version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var file = matched.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? matched.files?.FirstOrDefault();
+                if (file?.url == null) { Console.WriteLine($"[{displayName}] No download URL found, skipping."); return true; }
+                string destPath = System.IO.Path.Combine(modsFolder, $"{filePrefix}-{mcVersion}.jar");
+                await DownloadFileWithProgressAsync(file.url, destPath, displayName);
+                Console.WriteLine($"[{displayName}] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{displayName}] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallNvidiumIfNeededAsync(string mcVersion)
+        {
+            if (!IsNvidiaGpu())
+            {
+                Console.WriteLine("[Nvidium] No NVIDIA GPU detected, skipping.");
+                return true;
+            }
+
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Nvidium for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/SfMw2IZN/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Nvidium] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Nvidium] No download URL found, skipping."); return true; }
+
+                string fileName = $"nvidium-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Nvidium");
+                Console.WriteLine($"[Nvidium] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Nvidium] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallAlphadiumIfNeededAsync(string mcVersion)
+        {
+            if (!IsNvidiaGpu())
+            {
+                Console.WriteLine("[Alphadium] No NVIDIA GPU detected, skipping.");
+                return true;
+            }
+
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Alphadium for {mcVersion}...");
+
+                using var client = new HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", "LeafClient");
+                var apiUrl = "https://api.github.com/repos/R7CE4/alphadium/releases";
+                var response = await client.GetStringAsync(apiUrl);
+
+                using var doc = JsonDocument.Parse(response);
+                var releases = doc.RootElement;
+                if (releases.ValueKind != JsonValueKind.Array || releases.GetArrayLength() == 0)
+                {
+                    Console.WriteLine("[Alphadium] No releases found, skipping.");
+                    return true;
+                }
+
+                string downloadUrl = null;
+                foreach (var release in releases.EnumerateArray())
+                {
+                    if (!release.TryGetProperty("assets", out var assets)) continue;
+                    foreach (var asset in assets.EnumerateArray())
+                    {
+                        var name = asset.GetProperty("name").GetString() ?? "";
+                        if (name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) && name.Contains(mcVersion, StringComparison.OrdinalIgnoreCase))
+                        {
+                            downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                            break;
+                        }
+                    }
+                    if (downloadUrl != null) break;
+                }
+
+                if (downloadUrl == null)
+                {
+                    foreach (var release in releases.EnumerateArray())
+                    {
+                        if (!release.TryGetProperty("assets", out var assets)) continue;
+                        foreach (var asset in assets.EnumerateArray())
+                        {
+                            var name = asset.GetProperty("name").GetString() ?? "";
+                            if (name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                                break;
+                            }
+                        }
+                        if (downloadUrl != null) break;
+                    }
+                }
+
+                if (downloadUrl == null)
+                {
+                    Console.WriteLine($"[Alphadium] No JAR found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                string destPath = System.IO.Path.Combine(modsFolder, $"alphadium-{mcVersion}.jar");
+                await DownloadFileWithProgressAsync(downloadUrl, destPath, "Alphadium");
+                Console.WriteLine($"[Alphadium] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Alphadium] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private async Task<bool> InstallVulkanModIfNeededAsync(string mcVersion)
+        {
+            return await InstallModrinthModGenericAsync("JYQhtZtO", "VulkanMod", "vulkanmod", mcVersion);
+        }
+
+        private async Task<bool> InstallClothConfigIfNeededAsync(string mcVersion)
+        {
+            string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+            System.IO.Directory.CreateDirectory(modsFolder);
+
+            try
+            {
+                ShowProgress(true, $"Fetching Cloth Config for {mcVersion}...");
+
+                using var client = new HttpClient();
+                var apiUrl = $"https://api.modrinth.com/v2/project/9s6osm5g/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+                var response = await client.GetStringAsync(apiUrl);
+
+                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
+                if (versions == null || versions.Count == 0)
+                {
+                    Console.WriteLine($"[Cloth Config] No version found for {mcVersion}, skipping.");
+                    return true;
+                }
+
+                var latest = versions.FirstOrDefault();
+                var file = latest?.files?.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true)
+                           ?? latest?.files?.FirstOrDefault();
+
+                if (file?.url == null) { Console.WriteLine("[Cloth Config] No download URL found, skipping."); return true; }
+
+                string fileName = $"cloth-config-{mcVersion}.jar";
+                string destPath = System.IO.Path.Combine(modsFolder, fileName);
+
+                await DownloadFileWithProgressAsync(file.url, destPath, "Cloth Config");
+                Console.WriteLine($"[Cloth Config] Installed: {destPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cloth Config] Install failed: {ex.Message}");
+                return false;
+            }
+            finally { ShowProgress(false); }
+        }
+
+        private bool IsNvidiaGpu()
+        {
+            try
+            {
+                if (System.OperatingSystem.IsWindows())
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "powershell",
+                        Arguments = "-NoProfile -Command \"Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name\"",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var process = System.Diagnostics.Process.Start(psi);
+                    if (process != null)
+                    {
+                        var output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        if (output.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                }
+                else if (System.OperatingSystem.IsMacOS())
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "/usr/sbin/system_profiler",
+                        Arguments = "SPDisplaysDataType",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var process = System.Diagnostics.Process.Start(psi);
+                    if (process != null)
+                    {
+                        var output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        return output.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+                else if (System.OperatingSystem.IsLinux())
+                {
+                    if (System.IO.File.Exists("/proc/driver/nvidia/version"))
+                        return true;
+
+                    if (System.IO.Directory.Exists("/proc/driver/nvidia"))
+                        return true;
+
+                    try
+                    {
+                        var glxOutput = "";
+                        var glxPsi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "bash",
+                            Arguments = "-c \"glxinfo 2>/dev/null | grep -i nvidia || lspci 2>/dev/null | grep -i nvidia\"",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        using var glxProc = System.Diagnostics.Process.Start(glxPsi);
+                        if (glxProc != null)
+                        {
+                            glxOutput = glxProc.StandardOutput.ReadToEnd();
+                            glxProc.WaitForExit();
+                            if (glxOutput.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+                                return true;
+                        }
+                    }
+                    catch { }
+
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "lspci",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var process = System.Diagnostics.Process.Start(psi);
+                    if (process != null)
+                    {
+                        var output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        return output.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[IsNvidiaGpu] Error detecting GPU: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private void ForceHighPerformanceGpu(System.Diagnostics.Process process)
+        {
+            try
+            {
+                if (System.OperatingSystem.IsWindows())
+                {
+                    string javaExePath = process.StartInfo.FileName;
+                    if (string.IsNullOrEmpty(javaExePath)) return;
+
+                    if (!System.IO.Path.IsPathRooted(javaExePath))
+                    {
+                        try { javaExePath = System.IO.Path.GetFullPath(javaExePath); }
+                        catch { return; }
+                    }
+
+                    var escaped = javaExePath.Replace("\"", "\\\"");
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "reg",
+                        Arguments = $"add \"HKCU\\Software\\Microsoft\\DirectX\\UserGpuPreferences\" /v \"{escaped}\" /t REG_SZ /d \"GpuPreference=2\" /f",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var regProc = System.Diagnostics.Process.Start(psi);
+                    regProc?.WaitForExit(5000);
+
+                    Console.WriteLine($"[GPU] Set Windows GPU preference to High Performance for: {javaExePath}");
+                    _gameOutputWindow?.AppendLog("[GPU] Forced High Performance GPU for Java process", "INFO");
+
+                    process.StartInfo.Environment["__GL_THREADED_OPTIMIZATIONS"] = "0";
+                    Console.WriteLine("[GPU] Disabled NVIDIA threaded optimizations to prevent Sodium performance workaround");
+                    _gameOutputWindow?.AppendLog("[GPU] Disabled NVIDIA threaded optimizations (prevents Sodium GL_DEBUG_OUTPUT_SYNCHRONOUS)", "INFO");
+                }
+                else if (System.OperatingSystem.IsLinux())
+                {
+                    process.StartInfo.Environment["__NV_PRIME_RENDER_OFFLOAD"] = "1";
+                    process.StartInfo.Environment["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia";
+                    process.StartInfo.Environment["__VK_LAYER_NV_optimus"] = "NVIDIA_only";
+                    process.StartInfo.Environment["DRI_PRIME"] = "1";
+
+                    Console.WriteLine("[GPU] Set PRIME environment variables for dedicated GPU");
+                    _gameOutputWindow?.AppendLog("[GPU] Forced dedicated GPU via PRIME render offload", "INFO");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GPU] Failed to force GPU preference: {ex.Message}");
+            }
+        }
+
+        private void ForceVulkanModNvidiaDevice()
+        {
+            if (!(_vulkanModToggle?.IsChecked == true || _currentSettings.IsVulkanModEnabled)) return;
+
+            try
+            {
+                string configPath = System.IO.Path.Combine(_minecraftFolder, "config", "vulkanmod_settings.json");
+                if (!File.Exists(configPath)) return;
+
+                string json = File.ReadAllText(configPath);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("device", out var deviceProp) && deviceProp.GetInt32() != 0)
+                {
+                    json = System.Text.RegularExpressions.Regex.Replace(json, @"""device""\s*:\s*-?\d+", "\"device\": 0");
+                    File.WriteAllText(configPath, json);
+                    Console.WriteLine("[VulkanMod] Forced device to 0 (NVIDIA discrete GPU)");
+                    _gameOutputWindow?.AppendLog("[VulkanMod] Forced GPU device to NVIDIA (device 0)", "INFO");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[VulkanMod] Failed to set device: {ex.Message}");
+            }
+        }
+
         // 5. REPLACES InstallOptiFineForFabricIfNeededAsync
         private async Task<bool> InstallOptiFineForFabricIfNeededAsync(string mcVersion, string profileName, bool isFabric)
         {
@@ -10028,24 +10734,64 @@ namespace LeafClient.Views
             Console.WriteLine($"[Mod Preset] Applying preset '{preset}' for MC {mcVersion}");
 
             // Always-required performance mods — install regardless of preset
-            var alwaysRequired = new[] { "sodium", "lithium", "ferritecore", "immediatelyfast", "entityculling", "modernfix" };
+            var alwaysRequired = new[] { "sodium", "lithium", "ferritecore", "immediatelyfast", "entityculling", "modernfix", "ebe", "dynamicfps", "c2me", "cloth-config", "moreculling", "krypton", "sodiumextra", "cullleaves", "debugify", "nofade", "betterbeds", "reeses-sodium-options" };
             foreach (var modKey in alwaysRequired)
             {
                 try
                 {
                     switch (modKey)
                     {
-                        case "sodium":        await InstallSodiumIfNeededAsync(mcVersion); break;
+                        case "sodium":
+                            bool useVulkan = _vulkanModToggle?.IsChecked == true || _currentSettings.IsVulkanModEnabled;
+                            if (useVulkan)
+                            {
+                                Console.WriteLine("[VulkanMod] VulkanMod enabled — installing VulkanMod instead of Sodium.");
+                                await InstallVulkanModIfNeededAsync(mcVersion);
+                            }
+                            else
+                                await InstallSodiumIfNeededAsync(mcVersion);
+                            break;
                         case "lithium":       await InstallLithiumIfNeededAsync(mcVersion); break;
                         case "ferritecore":   await InstallFerriteCorIfNeededAsync(mcVersion); break;
                         case "immediatelyfast": await InstallImmediatelyFastIfNeededAsync(mcVersion); break;
                         case "entityculling": await InstallEntityCullingIfNeededAsync(mcVersion); break;
                         case "modernfix":     await InstallModernFixIfNeededAsync(mcVersion); break;
+                        case "ebe":           await InstallEnhancedBlockEntitiesIfNeededAsync(mcVersion); break;
+                        case "dynamicfps":    await InstallDynamicFpsIfNeededAsync(mcVersion); break;
+                        case "c2me":          await InstallC2MEIfNeededAsync(mcVersion); break;
+                        case "cloth-config":  await InstallClothConfigIfNeededAsync(mcVersion); break;
+                        case "moreculling":   await InstallMoreCullingIfNeededAsync(mcVersion); break;
+                        case "krypton":       await InstallKryptonIfNeededAsync(mcVersion); break;
+                        case "sodiumextra":   if (!_currentSettings.IsVulkanModEnabled) await InstallSodiumExtraIfNeededAsync(mcVersion); break;
+                        case "cullleaves":    await InstallCullLeavesIfNeededAsync(mcVersion); break;
+                        case "debugify":      await InstallDebugifyIfNeededAsync(mcVersion); break;
+                        case "nofade":        await InstallNoFadeIfNeededAsync(mcVersion); break;
+                        case "betterbeds":    await InstallBetterBedsIfNeededAsync(mcVersion); break;
+                        case "reeses-sodium-options": if (!_currentSettings.IsVulkanModEnabled) await InstallReesesSodiumOptionsIfNeededAsync(mcVersion); break;
+                        // Alphadium disabled — requires exact Sodium version, breaks on updates
+                        // Nvidium disabled — incompatible with Sodium 0.6.x (no updated version exists)
                     }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[Required Mod] Failed to install {modKey}: {ex.Message}");
+                }
+            }
+
+            if (_currentSettings.IsVulkanModEnabled)
+            {
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                foreach (var f in System.IO.Directory.GetFiles(modsFolder, "sodium-*.jar"))
+                {
+                    try { System.IO.File.Delete(f); Console.WriteLine($"[VulkanMod] Removed conflicting: {f}"); } catch { }
+                }
+                foreach (var f in System.IO.Directory.GetFiles(modsFolder, "sodiumextra-*.jar"))
+                {
+                    try { System.IO.File.Delete(f); Console.WriteLine($"[VulkanMod] Removed conflicting: {f}"); } catch { }
+                }
+                foreach (var f in System.IO.Directory.GetFiles(modsFolder, "reeses-sodium-options-*.jar"))
+                {
+                    try { System.IO.File.Delete(f); Console.WriteLine($"[VulkanMod] Removed conflicting: {f}"); } catch { }
                 }
             }
 
@@ -10106,6 +10852,24 @@ namespace LeafClient.Views
             }
 
             Console.WriteLine($"[Mod Preset] Finished applying preset '{preset}'");
+
+            bool finalVulkanCheck = _vulkanModToggle?.IsChecked == true || _currentSettings.IsVulkanModEnabled;
+            if (finalVulkanCheck)
+            {
+                string mFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                foreach (var f in System.IO.Directory.GetFiles(mFolder, "*.jar"))
+                {
+                    string fn = System.IO.Path.GetFileName(f).ToLowerInvariant();
+                    if (fn.StartsWith("sodium") && !fn.Contains("extra"))
+                    {
+                        try { System.IO.File.Delete(f); Console.WriteLine($"[VulkanMod] Final cleanup — removed: {f}"); } catch { }
+                    }
+                    if (fn.StartsWith("reeses-sodium"))
+                    {
+                        try { System.IO.File.Delete(f); Console.WriteLine($"[VulkanMod] Final cleanup — removed: {f}"); } catch { }
+                    }
+                }
+            }
         }
 
         private async Task<bool> ProcessModrinthPackInstallation(string mrpackPath, string modsFolder, string mcVersion)
@@ -10690,21 +11454,46 @@ namespace LeafClient.Views
                     _gameOutputWindow?.AppendLog($"[LaunchDiag] Rogue leaf jar sweep failed: {ex.Message}", "ERROR");
                 }
 
+                if (_vulkanModToggle?.IsChecked == true || _currentSettings.IsVulkanModEnabled)
+                {
+                    try
+                    {
+                        string vkModsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                        if (Directory.Exists(vkModsFolder))
+                        {
+                            foreach (var f in Directory.GetFiles(vkModsFolder, "*.jar"))
+                            {
+                                string fn = System.IO.Path.GetFileName(f).ToLowerInvariant();
+                                if ((fn.StartsWith("sodium") && !fn.Contains("extra")) || fn.StartsWith("reeses-sodium"))
+                                {
+                                    File.Delete(f);
+                                    _gameOutputWindow?.AppendLog($"[VulkanMod] Pre-launch cleanup — deleted: {System.IO.Path.GetFileName(f)}", "WARN");
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _gameOutputWindow?.AppendLog($"[VulkanMod] Pre-launch cleanup failed: {ex.Message}", "ERROR");
+                    }
+                }
+
                 if (leafSupported)
                     LogLaunchPreLaunchDiagnostics(leafModPath);
 
                 var jvmArguments = new List<MArgument>
         {
             new($"-Dleaf.testmode={(_currentSettings.IsTestMode ? "true" : "false")}"),
-            new("-XX:+UseG1GC"),
             new("-XX:+UnlockExperimentalVMOptions"),
-            new("-XX:G1NewSizePercent=20"),
+            new("-XX:+UseG1GC"),
+            new("-XX:MaxGCPauseMillis=130"),
+            new("-XX:G1NewSizePercent=30"),
+            new("-XX:G1MaxNewSizePercent=40"),
+            new("-XX:G1HeapRegionSize=8M"),
             new("-XX:G1ReservePercent=20"),
-            new("-XX:MaxGCPauseMillis=50"),
-            new("-XX:G1HeapRegionSize=32M"),
-            new("-XX:+DisableExplicitGC"),
             new("-XX:+AlwaysPreTouch"),
-            new("-XX:+ParallelRefProcEnabled"),
+            new("-XX:AllocatePrefetchStyle=1"),
+            new("-XX:+DisableExplicitGC"),
         };
 
                 if (leafSupported)
@@ -10761,7 +11550,11 @@ namespace LeafClient.Views
                 UpdateLaunchButton("LAUNCHING...", "Purple");
                 ShowProgress(false);
 
+                ForceVulkanModNvidiaDevice();
+
                 var process = await _launcher.CreateProcessAsync(versionToLaunch, launchOption);
+
+                ForceHighPerformanceGpu(process);
 
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -10807,6 +11600,7 @@ namespace LeafClient.Views
                 };
 
                 process.Start();
+                try { process.PriorityClass = System.Diagnostics.ProcessPriorityClass.High; } catch { }
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
                 _gameProcess = process;
@@ -16026,6 +16820,21 @@ namespace LeafClient.Views
                     await _settingsService.SaveSettingsAsync(_currentSettings);
                 };
             }
+            if (_vulkanModToggle != null)
+            {
+                _vulkanModToggle.Checked += async (_, __) =>
+                {
+                    if (_isApplyingSettings) return;
+                    _currentSettings.IsVulkanModEnabled = true;
+                    await _settingsService.SaveSettingsAsync(_currentSettings);
+                };
+                _vulkanModToggle.Unchecked += async (_, __) =>
+                {
+                    if (_isApplyingSettings) return;
+                    _currentSettings.IsVulkanModEnabled = false;
+                    await _settingsService.SaveSettingsAsync(_currentSettings);
+                };
+            }
             if (_testModeToggle != null)
             {
                 _testModeToggle.Checked += async (_, __) =>
@@ -19284,6 +20093,7 @@ namespace LeafClient.Views
             _ = CalculateDiskUsageAsync();
 
             if (_optiFineToggle != null) _optiFineToggle.IsChecked = settings.IsOptiFineEnabled;
+            if (_vulkanModToggle != null) _vulkanModToggle.IsChecked = settings.IsVulkanModEnabled;
             if (_testModeToggle != null) _testModeToggle.IsChecked = settings.IsTestMode;
             if (_testModePathBox != null) _testModePathBox.Text = settings.TestModeModProjectPath;
             if (_testModePathPanel != null) _testModePathPanel.IsVisible = settings.IsTestMode;
@@ -19543,6 +20353,7 @@ namespace LeafClient.Views
             _currentSettings.EnableNewContentIndicators = _enableNewContentIndicatorsToggle?.IsChecked ?? true;
 
             _currentSettings.IsOptiFineEnabled = _optiFineToggle?.IsChecked ?? false;
+            _currentSettings.IsVulkanModEnabled = _vulkanModToggle?.IsChecked ?? false;
             _currentSettings.IsTestMode = _testModeToggle?.IsChecked ?? false;
             if (_testModePathBox?.Text is string p && !string.IsNullOrWhiteSpace(p))
                 _currentSettings.TestModeModProjectPath = p;

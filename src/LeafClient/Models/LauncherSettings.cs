@@ -282,6 +282,7 @@ namespace LeafClient.Models
         public Dictionary<string, bool> OptiFineEnabledByVersion { get; set; } =
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public bool IsOptiFineEnabled { get; set; } = false;
+        public bool IsVulkanModEnabled { get; set; } = false;
         public bool IsTestMode { get; set; } = false;
         public string TestModeModProjectPath { get; set; } = @"C:\Users\ziadf\OneDrive\Documents\GitHub\LeafClientMod\LeafClientMod";
 
