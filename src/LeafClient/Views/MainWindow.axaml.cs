@@ -11505,7 +11505,7 @@ namespace LeafClient.Views
                 if (leafSupported)
                 {
                     jvmArguments.Insert(0, new MArgument($"-Dfabric.addMods={leafModPath}"));
-                    jvmArguments.Insert(0, new MArgument("-Dleaf.version=1.5.0"));
+                    jvmArguments.Insert(0, new MArgument("-Dleaf.version=1.6.0"));
                     jvmArguments.Insert(0, new MArgument("-Dleaf.client=true"));
                 }
 
