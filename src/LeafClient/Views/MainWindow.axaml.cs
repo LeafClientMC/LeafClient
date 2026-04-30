@@ -11611,6 +11611,8 @@ namespace LeafClient.Views
                 process.BeginErrorReadLine();
                 _gameProcess = process;
 
+                try { if (_drp.IsInitialized) _drp.ClearPresence(); } catch { }
+
                 // Playtime tracking: record launch time, increment counter, persist.
                 // Also increment the active profile's own LaunchCount / LastUsed so the
                 // profile card can show "last used 3 days ago" / total launches.
