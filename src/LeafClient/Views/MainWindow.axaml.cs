@@ -1527,6 +1527,12 @@ namespace LeafClient.Views
 
             try
             {
+                _ = Task.Run(async () =>
+                {
+                    try { await Task.Delay(TimeSpan.FromSeconds(30)); Services.UpdateService.MarkBootSuccessful(); }
+                    catch { }
+                });
+
                 var delayTask = Task.Delay(1500);
                 var checkTask = Services.UpdateService.CheckForUpdateAsync();
                 await Task.WhenAll(delayTask, checkTask);
@@ -12004,13 +12010,62 @@ namespace LeafClient.Views
         /// <summary>
         /// Returns the effective max-RAM in MB for launch. Prefers the active profile's
         /// <see cref="Models.LauncherProfile.AllocatedMemoryGb"/>, falling back to the slider/global setting.
+        /// Caps the value to leave at least 2.5 GB free for native memory (LWJGL, GPU drivers, etc.)
+        /// to prevent the JVM from starving the rest of the process and crashing Sodium chunk meshing.
         /// </summary>
         private int GetEffectiveMaxRamMb()
         {
             var profile = GetActiveProfile();
+            int requested;
             if (profile != null && profile.AllocatedMemoryGb > 0)
-                return (int)Math.Round(profile.AllocatedMemoryGb * 1024.0);
-            return GetMaxRam();
+                requested = (int)Math.Round(profile.AllocatedMemoryGb * 1024.0);
+            else
+                requested = GetMaxRam();
+
+            try
+            {
+                long totalMb = GetTotalPhysicalMemoryMb();
+                if (totalMb > 0)
+                {
+                    int safeCap = (int)Math.Max(2048, totalMb - 2560);
+                    if (requested > safeCap)
+                    {
+                        Console.WriteLine($"[Launcher] Capping requested heap {requested}MB to {safeCap}MB (system has {totalMb}MB; reserving 2.5GB for native).");
+                        return safeCap;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Launcher] Could not query system RAM: {ex.Message}");
+            }
+
+            return requested;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        private static long GetTotalPhysicalMemoryMb()
+        {
+            var mem = new MEMORYSTATUSEX { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>() };
+            if (!GlobalMemoryStatusEx(ref mem)) return 0;
+            return (long)(mem.ullTotalPhys / (1024UL * 1024UL));
         }
 
         private int GetEffectiveMinRamMb()

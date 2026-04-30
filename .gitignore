@@ -164,9 +164,7 @@ replay_pid*
 *.appxbundle
 *.msix
 *.msixbundle
-latestexe/
 latestjars/
-latestversion.txt
 release-builds/
 release-snapshots/
 release-staging/

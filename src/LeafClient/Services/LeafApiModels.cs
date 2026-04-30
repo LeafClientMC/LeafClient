@@ -88,7 +88,10 @@ namespace LeafClient.Services
     public sealed record LeafApiManifest(
         [property: JsonPropertyName("version")] string Version,
         [property: JsonPropertyName("jarUrl")] string JarUrl,
-        [property: JsonPropertyName("sha256")] string Sha256);
+        [property: JsonPropertyName("sha256")] string Sha256,
+        [property: JsonPropertyName("clientVersion")] string? ClientVersion = null,
+        [property: JsonPropertyName("mcVersion")] string? McVersion = null,
+        [property: JsonPropertyName("signature")] string? Signature = null);
 
     public sealed record LeafApiWebLinkCompleteRequest(
         [property: JsonPropertyName("linkCode")] string LinkCode,

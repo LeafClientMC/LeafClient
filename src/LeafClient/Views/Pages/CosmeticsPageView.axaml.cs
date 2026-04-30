@@ -523,6 +523,15 @@ namespace LeafClient.Views.Pages
                 }
                 if (fromDisk == null) return;
 
+                var currentSub = DecodeJwtSubLocal(_host.CurrentSettings.LeafApiJwt);
+                if (!string.IsNullOrEmpty(currentSub)
+                    && !string.IsNullOrEmpty(fromDisk.Sub)
+                    && !string.Equals(currentSub, fromDisk.Sub, StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"[Cosmetics] equipped.json sub mismatch (file='{fromDisk.Sub}', current='{currentSub}') — ignoring.");
+                    return;
+                }
+
                 var current = _host.CurrentSettings.Equipped ?? new EquippedCosmetics();
                 if (EquippedEquals(current, fromDisk)) return;
 

@@ -472,6 +472,9 @@ namespace LeafClient.Services
             catch { }
         }
 
+        private const string ModJarSigningPublicKeyB64 =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==";
+
         public static async Task<LeafApiManifest?> GetModManifestAsync(string mcVersion, CancellationToken ct = default)
         {
             var v = SanitizeString(mcVersion, 32);
@@ -485,12 +488,69 @@ namespace LeafClient.Services
 
                 using var response = await Http.GetAsync(manifestUri, ct);
                 if (!response.IsSuccessStatusCode) return null;
-                return await response.Content.ReadFromJsonAsync(
+                var manifest = await response.Content.ReadFromJsonAsync(
                     LeafClient.JsonContext.Default.LeafApiManifest, ct);
+                if (manifest is null) return null;
+
+                if (!VerifyManifestSignature(manifest, v))
+                {
+                    Console.WriteLine($"[ManifestVerify] Signature verification FAILED for mc={v}. Refusing manifest.");
+                    return null;
+                }
+
+                if (manifest.McVersion != null
+                    && !string.Equals(manifest.McVersion, v, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[ManifestVerify] mcVersion mismatch (manifest='{manifest.McVersion}', requested='{v}'). Refusing.");
+                    return null;
+                }
+
+                return manifest;
             }
             catch
             {
                 return null;
+            }
+        }
+
+        private static bool VerifyManifestSignature(LeafApiManifest manifest, string requestedMcVersion)
+        {
+            if (string.IsNullOrWhiteSpace(manifest.Signature))
+            {
+                Console.WriteLine("[ManifestVerify] Missing 'signature' field on manifest.");
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(manifest.Sha256))
+            {
+                Console.WriteLine("[ManifestVerify] Missing 'sha256' field on manifest.");
+                return false;
+            }
+            string clientVersion = manifest.ClientVersion ?? manifest.Version ?? "";
+            if (string.IsNullOrWhiteSpace(clientVersion))
+            {
+                Console.WriteLine("[ManifestVerify] Missing client version on manifest.");
+                return false;
+            }
+            string canonical = $"leaf-jar/v1/{requestedMcVersion}/{clientVersion}/{manifest.Sha256.ToLowerInvariant()}";
+            byte[] msgBytes = System.Text.Encoding.UTF8.GetBytes(canonical);
+            byte[] sigBytes;
+            try { sigBytes = Convert.FromBase64String(manifest.Signature); }
+            catch
+            {
+                Console.WriteLine("[ManifestVerify] Signature is not valid base64.");
+                return false;
+            }
+            try
+            {
+                using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+                if (ecdsa is null) return false;
+                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ModJarSigningPublicKeyB64), out _);
+                return ecdsa.VerifyData(msgBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ManifestVerify] Verify error: {ex.Message}");
+                return false;
             }
         }
 

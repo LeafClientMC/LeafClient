@@ -497,7 +497,7 @@ namespace LeafClient.Models
             // MaxFps can be 0 for unlimited, so check for valid range when not 0
             if (MaxFps != 0 && (MaxFps < 30 || MaxFps > 300))
                 return false;
-            if (Theme != "Dark" && Theme != "Light" && Theme != "Auto")
+            if (Theme != "Dark" && Theme != "Auto")
                 return false;
             if (!string.IsNullOrEmpty(AccountType) &&
                 AccountType != "microsoft" &&

@@ -5,6 +5,8 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,12 +22,22 @@ namespace LeafClient.Services
 
         private const string VersionUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestversion.txt";
         private const string ZipUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClient.zip";
+        private const string ZipSha256Url = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sha256";
+        private const string ZipSignatureUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sig";
+
+        private const string LauncherUpdatePublicKeyB64 =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==";
 
         private static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient");
         private static readonly string StagingDir = Path.Combine(AppDataDir, "updates", "pending");
         private static readonly string StagingZip = Path.Combine(AppDataDir, "updates", "update.zip");
         private static readonly string StagingMarker = Path.Combine(StagingDir, ".update-ready");
+        private static readonly string BackupRoot = Path.Combine(AppDataDir, "updates", "backup");
+        private static readonly string StateFile = Path.Combine(AppDataDir, "updates", "state.json");
+
+        private const int MaxBootAttemptsBeforeRollback = 3;
+        private static readonly TimeSpan StableBootThreshold = TimeSpan.FromSeconds(30);
 
         /// <summary>Latest version string found online (e.g. "1.5").</summary>
         public static string? LatestVersionString { get; private set; }
@@ -46,17 +58,28 @@ namespace LeafClient.Services
         {
             try
             {
+                CheckForCrashRecovery();
+
                 if (!File.Exists(StagingMarker))
                     return false;
 
                 Console.WriteLine("[Updater] Found staged update, applying...");
 
                 string appDir = AppContext.BaseDirectory;
+                string previousVersion = GetCurrentAssemblyVersion();
+                string newVersion = TryReadStagingMarkerVersion() ?? "unknown";
+
+                if (!TryBackupCurrentInstall(appDir, previousVersion, out string backupPath))
+                {
+                    Console.WriteLine("[Updater] Backup failed — refusing to apply update.");
+                    try { Directory.Delete(StagingDir, recursive: true); } catch { }
+                    return false;
+                }
+
                 int copied = 0, skipped = 0;
 
                 foreach (var file in Directory.GetFiles(StagingDir, "*", SearchOption.AllDirectories))
                 {
-                    // Skip the marker file
                     if (file.EndsWith(".update-ready")) continue;
 
                     string relative = Path.GetRelativePath(StagingDir, file);
@@ -71,18 +94,24 @@ namespace LeafClient.Services
                     }
                     catch (IOException)
                     {
-                        // File is locked (e.g. the running exe itself) — skip, will be caught next restart
                         skipped++;
                     }
                 }
 
                 Console.WriteLine($"[Updater] Applied update: {copied} files copied, {skipped} skipped");
 
-                // Clean up staging
                 try { Directory.Delete(StagingDir, recursive: true); } catch { }
                 try { File.Delete(StagingZip); } catch { }
 
-                // If too many files were skipped, generate a fallback batch script
+                WriteState(new UpdateState
+                {
+                    CurrentVersion = newVersion,
+                    PreviousVersion = previousVersion,
+                    BackupPath = backupPath,
+                    BootAttempts = 0,
+                    LastStableMarkUtc = null,
+                });
+
                 if (skipped > 5)
                 {
                     GenerateFallbackScript(appDir);
@@ -93,10 +122,200 @@ namespace LeafClient.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[Updater] Failed to apply update: {ex.Message}");
-                // Clean up broken staging to prevent boot loops
                 try { Directory.Delete(StagingDir, recursive: true); } catch { }
                 return false;
             }
+        }
+
+        public static void MarkBootSuccessful()
+        {
+            try
+            {
+                var state = ReadState();
+                if (state == null) return;
+                state.BootAttempts = 0;
+                state.LastStableMarkUtc = DateTime.UtcNow;
+                WriteState(state);
+
+                if (!string.IsNullOrEmpty(state.BackupPath) && Directory.Exists(state.BackupPath))
+                {
+                    try
+                    {
+                        Directory.Delete(state.BackupPath, recursive: true);
+                        Console.WriteLine($"[Updater] Marked boot stable, deleted backup at {state.BackupPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Updater] Could not delete old backup: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] MarkBootSuccessful error: {ex.Message}");
+            }
+        }
+
+        private static void CheckForCrashRecovery()
+        {
+            try
+            {
+                var state = ReadState();
+                if (state == null) return;
+
+                string runningVersion = GetCurrentAssemblyVersion();
+                if (!string.Equals(state.CurrentVersion, runningVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                state.BootAttempts++;
+                WriteState(state);
+
+                if (state.BootAttempts >= MaxBootAttemptsBeforeRollback
+                    && !string.IsNullOrEmpty(state.BackupPath)
+                    && Directory.Exists(state.BackupPath))
+                {
+                    Console.WriteLine($"[Updater] {state.BootAttempts} consecutive boot attempts of {state.CurrentVersion} without stable mark — rolling back to {state.PreviousVersion} from {state.BackupPath}");
+                    if (RestoreBackup(state.BackupPath))
+                    {
+                        try { Directory.Delete(state.BackupPath, recursive: true); } catch { }
+                        WriteState(new UpdateState
+                        {
+                            CurrentVersion = state.PreviousVersion ?? "rolled-back",
+                            PreviousVersion = null,
+                            BackupPath = null,
+                            BootAttempts = 0,
+                            LastStableMarkUtc = DateTime.UtcNow,
+                        });
+                        Console.WriteLine("[Updater] Rollback complete. Restart to run rolled-back version.");
+                        try
+                        {
+                            string? exePath = Environment.ProcessPath;
+                            if (exePath != null)
+                            {
+                                Process.Start(new ProcessStartInfo { FileName = exePath, UseShellExecute = true });
+                            }
+                        }
+                        catch { }
+                        Environment.Exit(0);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] CheckForCrashRecovery error: {ex.Message}");
+            }
+        }
+
+        private static string GetCurrentAssemblyVersion()
+        {
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+        }
+
+        private static string? TryReadStagingMarkerVersion()
+        {
+            try
+            {
+                if (File.Exists(StagingMarker))
+                    return File.ReadAllText(StagingMarker).Trim();
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool TryBackupCurrentInstall(string appDir, string previousVersion, out string backupPath)
+        {
+            backupPath = "";
+            try
+            {
+                Directory.CreateDirectory(BackupRoot);
+                string folderName = $"{previousVersion}-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                backupPath = Path.Combine(BackupRoot, folderName);
+                Directory.CreateDirectory(backupPath);
+
+                foreach (var file in Directory.GetFiles(appDir, "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(appDir, file);
+                    if (relative.StartsWith("updates" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    string target = Path.Combine(backupPath, relative);
+                    string? dir = Path.GetDirectoryName(target);
+                    if (dir != null) Directory.CreateDirectory(dir);
+                    try { File.Copy(file, target, overwrite: true); }
+                    catch (IOException) { }
+                }
+                Console.WriteLine($"[Updater] Backed up current install ({previousVersion}) to {backupPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] Backup error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool RestoreBackup(string backupPath)
+        {
+            try
+            {
+                string appDir = AppContext.BaseDirectory;
+                int restored = 0;
+                foreach (var file in Directory.GetFiles(backupPath, "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(backupPath, file);
+                    string target = Path.Combine(appDir, relative);
+                    string? dir = Path.GetDirectoryName(target);
+                    if (dir != null) Directory.CreateDirectory(dir);
+                    try { File.Copy(file, target, overwrite: true); restored++; }
+                    catch (IOException) { }
+                }
+                Console.WriteLine($"[Updater] Restored {restored} files from backup.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] Restore error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static UpdateState? ReadState()
+        {
+            try
+            {
+                if (!File.Exists(StateFile)) return null;
+                var json = File.ReadAllText(StateFile);
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize(json, LeafClient.JsonContext.Default.UpdateState);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void WriteState(UpdateState state)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(StateFile)!);
+                var json = JsonSerializer.Serialize(state, LeafClient.JsonContext.Default.UpdateState);
+                File.WriteAllText(StateFile, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] WriteState error: {ex.Message}");
+            }
+        }
+
+        public class UpdateState
+        {
+            public string? CurrentVersion { get; set; }
+            public string? PreviousVersion { get; set; }
+            public string? BackupPath { get; set; }
+            public int BootAttempts { get; set; }
+            public DateTime? LastStableMarkUtc { get; set; }
         }
 
         // ================================================================
@@ -181,9 +400,42 @@ namespace LeafClient.Services
 
                 file.Close();
 
-                Console.WriteLine($"[Updater] Downloaded {downloaded / 1024}KB, extracting...");
+                Console.WriteLine($"[Updater] Downloaded {downloaded / 1024}KB, verifying...");
 
-                // Extract to staging directory
+                string? expectedHash = await TryFetchExpectedHashAsync(ct);
+                if (string.IsNullOrWhiteSpace(expectedHash))
+                {
+                    Console.WriteLine("[Updater] Hash manifest missing or unreadable — refusing to install unsigned update.");
+                    try { File.Delete(StagingZip); } catch { }
+                    return false;
+                }
+
+                byte[] hashBytes = await ComputeFileSha256BytesAsync(StagingZip, ct);
+                string actualHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[Updater] Hash mismatch (expected {expectedHash}, got {actualHash}). Discarding update.");
+                    try { File.Delete(StagingZip); } catch { }
+                    return false;
+                }
+
+                byte[]? signature = await TryFetchSignatureAsync(ct);
+                if (signature is null)
+                {
+                    Console.WriteLine("[Updater] Signature missing or unreadable — refusing to install unsigned update.");
+                    try { File.Delete(StagingZip); } catch { }
+                    return false;
+                }
+
+                if (!VerifySignature(hashBytes, signature))
+                {
+                    Console.WriteLine("[Updater] Signature verification FAILED. Discarding update.");
+                    try { File.Delete(StagingZip); } catch { }
+                    return false;
+                }
+
+                Console.WriteLine($"[Updater] Hash + ECDSA signature verified ({actualHash[..16]}…), extracting...");
+
                 Directory.CreateDirectory(StagingDir);
                 ZipFile.ExtractToDirectory(StagingZip, StagingDir, overwriteFiles: true);
 
@@ -203,6 +455,71 @@ namespace LeafClient.Services
                 // Clean up partial staging
                 try { Directory.Delete(StagingDir, recursive: true); } catch { }
                 try { File.Delete(StagingZip); } catch { }
+                return false;
+            }
+        }
+
+        private static async Task<string?> TryFetchExpectedHashAsync(CancellationToken ct)
+        {
+            try
+            {
+                using var resp = await Http.GetAsync(ZipSha256Url, ct);
+                if (!resp.IsSuccessStatusCode) return null;
+                var raw = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                var firstToken = raw.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                if (firstToken.Length == 0) return null;
+                var hex = firstToken[0];
+                if (hex.Length != 64) return null;
+                foreach (var c in hex)
+                {
+                    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                        return null;
+                }
+                return hex.ToLowerInvariant();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static async Task<byte[]> ComputeFileSha256BytesAsync(string path, CancellationToken ct)
+        {
+            await using var fs = File.OpenRead(path);
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            return await sha.ComputeHashAsync(fs, ct);
+        }
+
+        private static async Task<byte[]?> TryFetchSignatureAsync(CancellationToken ct)
+        {
+            try
+            {
+                using var resp = await Http.GetAsync(ZipSignatureUrl, ct);
+                if (!resp.IsSuccessStatusCode) return null;
+                var raw = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                try { return Convert.FromBase64String(raw); }
+                catch { return null; }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool VerifySignature(byte[] sha256Hash, byte[] signature)
+        {
+            try
+            {
+                using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+                if (ecdsa is null) return false;
+                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(LauncherUpdatePublicKeyB64), out _);
+                return ecdsa.VerifyHash(sha256Hash, signature);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Updater] Signature verify error: {ex.Message}");
                 return false;
             }
         }
