@@ -1,6 +1,6 @@
 Leaf Client – Custom Non-Commercial License
 
-Copyright (c) 2025 ZiAD
+Copyright (c) 2026 ZiAD
 
 All rights reserved.
 
