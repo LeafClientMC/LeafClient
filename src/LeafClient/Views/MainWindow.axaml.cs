@@ -11915,6 +11915,8 @@ namespace LeafClient.Views
                 _isInstalling = false;
                 _gameStartingBannerShownForCurrentLaunch = false;
 
+                try { StartRichPresenceIfEnabled(); } catch (Exception drpEx) { Console.WriteLine($"[DRP] Failed to restore launcher presence after game exit: {drpEx.Message}"); }
+
                 await UpdateServerButtonStates();
                 HideGameStartingBanner();
                 HideLaunchAnimation();
