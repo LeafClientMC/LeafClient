@@ -2987,7 +2987,7 @@ namespace LeafClient.Views
             else
             {
                 modIcon.Source = new Avalonia.Media.Imaging.Bitmap(
-                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
+                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/mc-default-icon.png")));
             }
 
             iconBorder.Child = modIcon;
@@ -5773,7 +5773,7 @@ namespace LeafClient.Views
             if (!string.IsNullOrEmpty(mod.icon_url)) _ = LoadModIcon(modIcon, mod.icon_url);
             else
                 modIcon.Source = new Avalonia.Media.Imaging.Bitmap(
-                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
+                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/mc-default-icon.png")));
             iconHolder.Child = modIcon;
             Grid.SetRow(iconHolder, 0);
             rootGrid.Children.Add(iconHolder);
@@ -5952,7 +5952,7 @@ namespace LeafClient.Views
             catch
             {
                 image.Source = new Avalonia.Media.Imaging.Bitmap(
-                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
+                    AssetLoader.Open(new Uri("avares://LeafClient/Assets/mc-default-icon.png")));
             }
         }
 
@@ -13708,7 +13708,7 @@ namespace LeafClient.Views
             new ExplosionConfig
             {
                 BlockBitmapUri    = "avares://LeafClient/Assets/TNT.png",
-                WavUri            = "avares://LeafClient/Assets/MinecraftTNT.wav",
+                WavUri            = "avares://LeafClient/Assets/ExplosionTNT.wav",
                 WavTempFilename   = "leafclient_sfx_tnt.wav",
                 Style             = ExplosionStyle.LongFuse,
                 ExplosionTargetMs = 4300,
@@ -13730,7 +13730,7 @@ namespace LeafClient.Views
             new ExplosionConfig
             {
                 BlockBitmapUri    = "avares://LeafClient/Assets/Creeper.png",
-                WavUri            = "avares://LeafClient/Assets/MinecraftTNT.wav",
+                WavUri            = "avares://LeafClient/Assets/ExplosionTNT.wav",
                 WavTempFilename   = "leafclient_sfx_tnt.wav",
                 Style             = ExplosionStyle.LongFuse,
                 ExplosionTargetMs = 4300,

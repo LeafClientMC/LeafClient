@@ -57,7 +57,7 @@
 	  <AvaloniaResource Include="Assets\logo_icon.png" />
 	  <AvaloniaResource Include="Assets\logo_text.png" />
 	  <AvaloniaResource Include="Assets\mcversionsbanner.jpg" />
-	  <AvaloniaResource Include="Assets\minecraft.png" />
+	  <AvaloniaResource Include="Assets\mc-default-icon.png" />
 	  <AvaloniaResource Include="Assets\pvplegacy.png" />
 	</ItemGroup>
 	<ItemGroup>
