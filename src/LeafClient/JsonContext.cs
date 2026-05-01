@@ -176,6 +176,9 @@ namespace LeafClient
     [JsonSerializable(typeof(LeafClient.Services.LeafApiDeleteHeartbeatRequest))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiManifest))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiWebLinkCompleteRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiNewsItem))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiNewsItem>))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiNewsResponse))]
 
     internal partial class JsonContext : JsonSerializerContext
     {

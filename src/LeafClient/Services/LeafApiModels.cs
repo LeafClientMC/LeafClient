@@ -29,7 +29,22 @@ namespace LeafClient.Services
         [property: JsonPropertyName("onlineCount")] int OnlineCount,
         [property: JsonPropertyName("authRequired")] bool AuthRequired,
         [property: JsonPropertyName("motd")] string? Motd,
-        [property: JsonPropertyName("motdColor")] string? MotdColor = null);
+        [property: JsonPropertyName("motdColor")] string? MotdColor = null,
+        [property: JsonPropertyName("minLauncherVersion")] string? MinLauncherVersion = null,
+        [property: JsonPropertyName("killMessage")] string? KillMessage = null);
+
+    public sealed record LeafApiNewsItem(
+        [property: JsonPropertyName("slot")] int Slot,
+        [property: JsonPropertyName("imageUrl")] string? ImageUrl,
+        [property: JsonPropertyName("tagText")] string TagText,
+        [property: JsonPropertyName("tagColorStart")] string TagColorStart,
+        [property: JsonPropertyName("tagColorEnd")] string TagColorEnd,
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("subtitle")] string Subtitle,
+        [property: JsonPropertyName("linkUrl")] string LinkUrl);
+
+    public sealed record LeafApiNewsResponse(
+        [property: JsonPropertyName("items")] List<LeafApiNewsItem> Items);
 
     public sealed record LeafApiRegisterRequest(
         [property: JsonPropertyName("username")] string Username,

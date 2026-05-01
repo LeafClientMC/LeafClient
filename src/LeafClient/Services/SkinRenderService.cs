@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text.Json; // Keep this if you use JsonSerializer elsewhere in this file
+using System.Text.Json;
 using System.Threading.Tasks;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -17,18 +17,16 @@ namespace LeafClient.Services
     {
         private static readonly HttpClient _httpClient;
         private readonly Random _rand = new Random();
-        // Removed MojangApiService field as requested
+        private readonly Dictionary<string, Bitmap?> _skinCache = new();
 
         static SkinRenderService()
         {
             _httpClient = new HttpClient();
-            _httpClient.Timeout = TimeSpan.FromSeconds(30);
+            _httpClient.Timeout = TimeSpan.FromSeconds(6);
         }
 
-        // MODIFIED: Reverted constructor to original form (no MojangApiService or logger Action)
         public SkinRenderService()
         {
-            // No initialization needed here if _httpClient is static and _rand is readonly
         }
 
         private readonly List<string> _smallPreviewPoseNames = new List<string>
@@ -188,51 +186,192 @@ namespace LeafClient.Services
 
         public async Task<Bitmap?> LoadSkinImageAsync(string username, string poseName, string viewType, string? uuid = null)
         {
-            Bitmap? loadedBitmap = null;
+            if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(uuid))
+                return null;
 
-            // Attempt 1: Starlight Skins
-            // The API expects render/{pose}/{username or uuid}/{type}
-            string starlightUrl = $"https://starlightskins.lunareclipse.studio/render/{poseName}/{username}/{viewType}";
-            Console.WriteLine($"[SkinRenderService] Starlight Request: {starlightUrl}");
+            string cacheKey = $"{username}_{poseName}_{viewType}";
+            if (_skinCache.TryGetValue(cacheKey, out var cachedBitmap))
+            {
+                Console.WriteLine($"[SkinRenderService] Cache hit for {cacheKey}");
+                return cachedBitmap;
+            }
+
+            Bitmap? loadedBitmap = null;
+            string displayName = username ?? uuid ?? "Player";
+
+            loadedBitmap = await TryStarlightskins(username, poseName, viewType);
+            if (loadedBitmap != null)
+            {
+                _skinCache[cacheKey] = loadedBitmap;
+                return loadedBitmap;
+            }
+
+            loadedBitmap = await TryVisage(username, viewType);
+            if (loadedBitmap != null)
+            {
+                _skinCache[cacheKey] = loadedBitmap;
+                return loadedBitmap;
+            }
+
+            loadedBitmap = await TryMinotar(username, viewType);
+            if (loadedBitmap != null)
+            {
+                _skinCache[cacheKey] = loadedBitmap;
+                return loadedBitmap;
+            }
+
+            loadedBitmap = await TryCrafatar(username, viewType);
+            if (loadedBitmap != null)
+            {
+                _skinCache[cacheKey] = loadedBitmap;
+                return loadedBitmap;
+            }
+
+            Console.WriteLine($"[SkinRenderService] All fallbacks exhausted for {displayName}, returning null");
+            _skinCache[cacheKey] = null;
+            return null;
+        }
+
+        private async Task<Bitmap?> TryStarlightskins(string? username, string poseName, string viewType)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return null;
+
+            string url = $"https://starlightskins.lunareclipse.studio/render/{poseName}/{username}/{viewType}";
+            Console.WriteLine($"[SkinRenderService] Trying Starlightskins: {url}");
 
             try
             {
-                var response = await _httpClient.GetAsync(starlightUrl);
-                if (response.IsSuccessStatusCode)
+                var response = await _httpClient.GetAsync(url);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength > 0)
                 {
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     {
-                        loadedBitmap = new Bitmap(stream);
+                        if (stream.Length > 0)
+                        {
+                            var bitmap = new Bitmap(stream);
+                            Console.WriteLine("[SkinRenderService] Starlightskins succeeded");
+                            return bitmap;
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SkinRenderService] Starlight error: {ex.Message}");
+                Console.WriteLine($"[SkinRenderService] Starlightskins failed: {ex.Message}");
             }
 
-            // Fallback logic remains unchanged...
-            if (loadedBitmap == null && (!string.IsNullOrWhiteSpace(username) || !string.IsNullOrWhiteSpace(uuid)))
+            return null;
+        }
+
+        private async Task<Bitmap?> TryVisage(string? username, string viewType)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return null;
+
+            string url = $"https://visage.surgeplay.com/{viewType}/{username}";
+            Console.WriteLine($"[SkinRenderService] Trying Visage: {url}");
+
+            try
             {
-                string visageUrl = $"https://visage.surgeplay.com/{viewType}/{username}";
-                try
+                var response = await _httpClient.GetAsync(url);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength > 0)
                 {
-                    var response = await _httpClient.GetAsync(visageUrl);
-                    if (response.IsSuccessStatusCode)
+                    using (var stream = await response.Content.ReadAsStreamAsync())
                     {
-                        using (var stream = await response.Content.ReadAsStreamAsync())
+                        if (stream.Length > 0)
                         {
-                            loadedBitmap = new Bitmap(stream);
+                            var bitmap = new Bitmap(stream);
+                            Console.WriteLine("[SkinRenderService] Visage succeeded");
+                            return bitmap;
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[SkinRenderService] Visage error: {ex.Message}");
-                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SkinRenderService] Visage failed: {ex.Message}");
             }
 
-            return loadedBitmap;
+            return null;
+        }
+
+        private async Task<Bitmap?> TryMinotar(string? username, string viewType)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return null;
+
+            string endpoint = viewType switch
+            {
+                "bust" => "avatar",
+                "full" => "body",
+                _ => "avatar"
+            };
+
+            string url = $"https://minotar.net/{endpoint}/{username}/256.png";
+            Console.WriteLine($"[SkinRenderService] Trying Minotar: {url}");
+
+            try
+            {
+                var response = await _httpClient.GetAsync(url);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength > 0)
+                {
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        if (stream.Length > 0)
+                        {
+                            var bitmap = new Bitmap(stream);
+                            Console.WriteLine("[SkinRenderService] Minotar succeeded");
+                            return bitmap;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SkinRenderService] Minotar failed: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private async Task<Bitmap?> TryCrafatar(string? username, string viewType)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return null;
+
+            string endpoint = viewType switch
+            {
+                "bust" => "avatars",
+                "full" => "renders/body",
+                _ => "avatars"
+            };
+
+            string url = $"https://crafatar.com/{endpoint}/{username}?size=256&overlay";
+            Console.WriteLine($"[SkinRenderService] Trying Crafatar: {url}");
+
+            try
+            {
+                var response = await _httpClient.GetAsync(url);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength > 0)
+                {
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        if (stream.Length > 0)
+                        {
+                            var bitmap = new Bitmap(stream);
+                            Console.WriteLine("[SkinRenderService] Crafatar succeeded");
+                            return bitmap;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SkinRenderService] Crafatar failed: {ex.Message}");
+            }
+
+            return null;
         }
     }
 }

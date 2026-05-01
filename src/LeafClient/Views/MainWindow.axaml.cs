@@ -96,6 +96,18 @@ namespace LeafClient.Views
         private ScaleTransform? _newsItem1Scale;
         private Image? _newsItem2Image;
         private ScaleTransform? _newsItem2Scale;
+        private Border? _newsItem1Border;
+        private Border? _newsItem2Border;
+        private Grid? _newsItem1Content;
+        private Grid? _newsItem2Content;
+        private TextBlock? _newsItem1Title;
+        private TextBlock? _newsItem1Subtitle;
+        private TextBlock? _newsItem1TagText;
+        private TextBlock? _newsItem2Title;
+        private TextBlock? _newsItem2Subtitle;
+        private TextBlock? _newsItem2TagText;
+        private Border? _newsItem2Badge;
+        private bool _newsLoadStarted;
 
         // MAJOR UPDATE badge on NewsItem1 — holds an animated purple gradient
         // whose stop colors are rewritten each frame by StartMajorUpdateBadgeAnimation.
@@ -170,6 +182,13 @@ namespace LeafClient.Views
         private readonly DiscordRichPresenceService _drp = new DiscordRichPresenceService();
         private const string DiscordClientId = "1440389324528156908";
         private DateTime _drpSessionStart = DateTime.UtcNow;
+        private System.Timers.Timer? _heartbeatTimer;
+        private System.Timers.Timer? _gameplayPlaytimeTimer;
+        private int _heartbeatInFlight;
+        private int _midGameClaimInFlight;
+        private bool _launcherKilled;
+        private string? _killReason;
+        private const string LauncherDownloadUrl = "https://leafclient.com/";
         private string? _currentUsername;
         private bool _loggedIn;
         private string? _lastSmallPose;
@@ -1139,6 +1158,8 @@ namespace LeafClient.Views
                 {
                     await PlayCinematicStartupAsync();
                     StartRichPresenceIfEnabled();
+                    StartHeartbeatLoop();
+                    _ = CheckKillSwitchAsync();
                     InitializeNatureTheme();
 
                     await InitializeDefaultServersAsync();
@@ -2023,7 +2044,7 @@ namespace LeafClient.Views
             _sessionStartUtc = null;
 
             int minutes = (int)elapsed.TotalMinutes;
-            if (minutes < 5) return;
+            if (minutes < 1) return;
 
             var result = await LeafClient.Services.LeafApiService.ReportPlaytimeAsync(jwt, minutes);
             if (result == null || result.Awarded == 0) return;
@@ -2037,6 +2058,234 @@ namespace LeafClient.Views
             });
 
             ToastService.Show($"+{result.Awarded} \U0001F343 Leaf Points earned!", ToastType.Success);
+        }
+
+        private async Task ClaimMidGamePlaytimeAsync()
+        {
+            if (System.Threading.Interlocked.Exchange(ref _midGameClaimInFlight, 1) == 1) return;
+            try
+            {
+                var jwt = _currentSettings?.LeafApiJwt;
+                if (string.IsNullOrEmpty(jwt)) return;
+                if (_sessionStartUtc == null) return;
+                if (_gameProcess == null || _gameProcess.HasExited) return;
+
+                var nowUtc = DateTime.UtcNow;
+                var elapsed = nowUtc - _sessionStartUtc.Value;
+                int minutes = (int)elapsed.TotalMinutes;
+                if (minutes < 1) return;
+
+                var result = await LeafClient.Services.LeafApiService.ReportPlaytimeAsync(jwt, minutes);
+                if (result == null) return;
+
+                _sessionStartUtc = nowUtc;
+
+                if (result.Awarded > 0)
+                {
+                    _currentCoinBalance = result.Coins;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                        if (_leafsBalanceText != null)
+                            _leafsBalanceText.Text = result.Coins.ToString("N0");
+                    });
+                    ToastService.Show($"+{result.Awarded} \U0001F343 Leaf Points earned!", ToastType.Success);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Playtime] Mid-game claim failed: {ex.Message}");
+            }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _midGameClaimInFlight, 0);
+            }
+        }
+
+        private void StartHeartbeatLoop()
+        {
+            if (_heartbeatTimer != null) return;
+            _heartbeatTimer = new System.Timers.Timer(60_000) { AutoReset = true };
+            _heartbeatTimer.Elapsed += async (_, __) =>
+            {
+                if (System.Threading.Interlocked.Exchange(ref _heartbeatInFlight, 1) == 1) return;
+                try
+                {
+                    var jwt = _currentSettings?.LeafApiJwt;
+                    if (string.IsNullOrEmpty(jwt)) return;
+                    if (!_loggedIn) return;
+                    await LeafClient.Services.LeafApiService.SendHeartbeatAsync(jwt);
+                }
+                catch { }
+                finally
+                {
+                    System.Threading.Interlocked.Exchange(ref _heartbeatInFlight, 0);
+                }
+            };
+            _heartbeatTimer.Start();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var jwt = _currentSettings?.LeafApiJwt;
+                    if (!string.IsNullOrEmpty(jwt) && _loggedIn)
+                        await LeafClient.Services.LeafApiService.SendHeartbeatAsync(jwt);
+                }
+                catch { }
+            });
+        }
+
+        private void StopHeartbeatLoop()
+        {
+            try { _heartbeatTimer?.Stop(); _heartbeatTimer?.Dispose(); } catch { }
+            _heartbeatTimer = null;
+        }
+
+        private void StartGameplayPlaytimePolling()
+        {
+            if (_gameplayPlaytimeTimer != null) return;
+            _gameplayPlaytimeTimer = new System.Timers.Timer(5 * 60_000) { AutoReset = true };
+            _gameplayPlaytimeTimer.Elapsed += async (_, __) =>
+            {
+                try { await ClaimMidGamePlaytimeAsync(); } catch { }
+            };
+            _gameplayPlaytimeTimer.Start();
+        }
+
+        private void StopGameplayPlaytimePolling()
+        {
+            try { _gameplayPlaytimeTimer?.Stop(); _gameplayPlaytimeTimer?.Dispose(); } catch { }
+            _gameplayPlaytimeTimer = null;
+        }
+
+        private async Task CheckKillSwitchAsync()
+        {
+            try
+            {
+                var config = await LeafClient.Services.LeafApiService.GetConfigAsync();
+                if (config == null) return;
+
+                if (string.IsNullOrWhiteSpace(config.MinLauncherVersion)) return;
+
+                var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                if (current == null) return;
+
+                if (!System.Version.TryParse(config.MinLauncherVersion.Trim(), out var minVersion)) return;
+
+                if (current >= minVersion) return;
+
+                _launcherKilled = true;
+                _killReason = string.IsNullOrWhiteSpace(config.KillMessage)
+                    ? $"This version of LeafClient ({current}) is no longer supported. Please reinstall the latest launcher (>= {minVersion})."
+                    : config.KillMessage;
+
+                Console.WriteLine($"[KillSwitch] Launcher version {current} < required {minVersion}. Disabling launch.");
+
+                Dispatcher.UIThread.Post(() => ShowKillSwitchOverlay());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[KillSwitch] Check failed (allowing launch): {ex.Message}");
+            }
+        }
+
+        private void ShowKillSwitchOverlay()
+        {
+            try
+            {
+                if (this.FindControl<Button>("LaunchGameButton") is { } btn)
+                {
+                    btn.IsEnabled = false;
+                    btn.Content = "REINSTALL REQUIRED";
+                }
+
+                var msg = _killReason ?? "This launcher version is no longer supported.";
+                ShowLaunchErrorBanner(msg);
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try
+                        {
+                            var box = new Window
+                            {
+                                Title = "Launcher Update Required",
+                                Width = 520,
+                                Height = 280,
+                                CanResize = false,
+                                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                                SystemDecorations = SystemDecorations.Full,
+                            };
+
+                            var stack = new StackPanel
+                            {
+                                Margin = new Avalonia.Thickness(24),
+                                Spacing = 14,
+                            };
+
+                            stack.Children.Add(new TextBlock
+                            {
+                                Text = "This LeafClient launcher is no longer supported.",
+                                FontWeight = Avalonia.Media.FontWeight.Bold,
+                                FontSize = 17,
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            });
+                            stack.Children.Add(new TextBlock
+                            {
+                                Text = msg,
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                                Opacity = 0.9,
+                            });
+                            stack.Children.Add(new TextBlock
+                            {
+                                Text = "Please download the new launcher and run a clean install. Auto-update can no longer reach this version.",
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                                Opacity = 0.75,
+                                FontSize = 12,
+                            });
+
+                            var btnRow = new StackPanel
+                            {
+                                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                                Spacing = 12,
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                            };
+                            var dl = new Button { Content = "Download Latest", Padding = new Avalonia.Thickness(16, 8) };
+                            dl.Click += (_, __) =>
+                            {
+                                try
+                                {
+                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                    {
+                                        FileName = LauncherDownloadUrl,
+                                        UseShellExecute = true,
+                                    });
+                                }
+                                catch (Exception ex) { Console.WriteLine($"[KillSwitch] Open URL failed: {ex.Message}"); }
+                            };
+                            var close = new Button { Content = "Close Launcher", Padding = new Avalonia.Thickness(16, 8) };
+                            close.Click += (_, __) =>
+                            {
+                                if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                                    desktop.Shutdown();
+                            };
+                            btnRow.Children.Add(dl);
+                            btnRow.Children.Add(close);
+                            stack.Children.Add(btnRow);
+
+                            box.Content = stack;
+                            box.ShowDialog(this);
+                        }
+                        catch (Exception ex) { Console.WriteLine($"[KillSwitch] Dialog failed: {ex.Message}"); }
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[KillSwitch] Overlay failed: {ex.Message}");
+            }
         }
 
         private async Task UpdateLeafsBalanceAsync()
@@ -3323,8 +3572,20 @@ namespace LeafClient.Views
                 _newsItem2Image.RenderTransform = _newsItem2Scale;
                 _newsItem2Image.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             }
+            _newsItem1Border = this.FindControl<Border>("NewsItem1Border");
+            _newsItem2Border = this.FindControl<Border>("NewsItem2Border");
+            _newsItem1Content = this.FindControl<Grid>("NewsItem1Content");
+            _newsItem2Content = this.FindControl<Grid>("NewsItem2Content");
+            _newsItem1Title = this.FindControl<TextBlock>("NewsItem1Title");
+            _newsItem1Subtitle = this.FindControl<TextBlock>("NewsItem1Subtitle");
+            _newsItem1TagText = this.FindControl<TextBlock>("NewsItem1TagText");
+            _newsItem2Title = this.FindControl<TextBlock>("NewsItem2Title");
+            _newsItem2Subtitle = this.FindControl<TextBlock>("NewsItem2Subtitle");
+            _newsItem2TagText = this.FindControl<TextBlock>("NewsItem2TagText");
+            _newsItem2Badge = this.FindControl<Border>("NewsItem2Badge");
             _majorUpdateBadge = this.FindControl<Border>("MajorUpdateBadge");
             StartMajorUpdateBadgeAnimation();
+            _ = LoadNewsAsync();
             _gamePage = this.FindControl<Grid>("GamePage");
             _versionsPage = this.FindControl<Grid>("VersionsPage");
             _serversPage = this.FindControl<Grid>("ServersPage");
@@ -3397,8 +3658,12 @@ namespace LeafClient.Views
                         return;
                     }
 
-                    // REMOVED: Old cancellation logic for launching/installing.
-                    // If launching, clicking the main button now does nothing.
+                    if (_launcherKilled)
+                    {
+                        ShowKillSwitchOverlay();
+                        return;
+                    }
+
                     if (_isLaunching || _isInstalling)
                     {
                         return;
@@ -3796,87 +4061,236 @@ namespace LeafClient.Views
             }
         }
 
+        private (DateTime At, double Logs, double Profiles, double Assets, double Cache, double Other)? _diskUsageCache;
+        private static readonly TimeSpan DiskUsageCacheTtl = TimeSpan.FromSeconds(30);
+        private int _diskUsageScanInFlight;
+
         private async Task CalculateDiskUsageAsync()
         {
             if (_logsUsageBar == null || _profilesUsageBar == null || _assetsUsageBar == null || _cacheUsageBar == null ||
                 _otherUsageBar == null || _logsUsageText == null || _profilesUsageText == null || _assetsUsageText == null ||
                 _cacheUsageText == null || _otherUsageText == null || _totalUsageText == null) return;
 
-            await Task.Run(async () =>
+            if (_diskUsageCache.HasValue && DateTime.UtcNow - _diskUsageCache.Value.At < DiskUsageCacheTtl)
             {
-                double logsSize = await GetDirectorySizeAsync(_logFolderPath);
-                double profilesSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "versions"));
-                double assetsSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "assets"));
-                double librariesSize = await GetDirectorySizeAsync(System.IO.Path.Combine(_minecraftFolder, "libraries")); 
+                ApplyDiskUsage(_diskUsageCache.Value.Logs, _diskUsageCache.Value.Profiles,
+                    _diskUsageCache.Value.Assets, _diskUsageCache.Value.Cache, _diskUsageCache.Value.Other);
+                return;
+            }
 
-                double totalKnownSize = logsSize + profilesSize + assetsSize + librariesSize;
+            if (System.Threading.Interlocked.Exchange(ref _diskUsageScanInFlight, 1) == 1) return;
 
-                double minecraftRootSize = await GetDirectorySizeAsync(_minecraftFolder);
-                double otherSize = minecraftRootSize - totalKnownSize;
-                if (otherSize < 0) otherSize = 0; 
+            ShowDiskUsageShimmer(true);
 
-                double totalActualDisplayedSize = totalKnownSize + otherSize; 
+            try
+            {
+                var logsTask     = Task.Run(() => GetDirectorySizeFast(_logFolderPath));
+                var profilesTask = Task.Run(() => GetDirectorySizeFast(System.IO.Path.Combine(_minecraftFolder, "versions")));
+                var assetsTask   = Task.Run(() => GetDirectorySizeFast(System.IO.Path.Combine(_minecraftFolder, "assets")));
+                var librariesTask = Task.Run(() => GetDirectorySizeFast(System.IO.Path.Combine(_minecraftFolder, "libraries")));
+                var otherTask    = Task.Run(() => GetMinecraftOtherSizeFast());
+
+                await Task.WhenAll(logsTask, profilesTask, assetsTask, librariesTask, otherTask);
+
+                _diskUsageCache = (DateTime.UtcNow, logsTask.Result, profilesTask.Result, assetsTask.Result,
+                                   librariesTask.Result, otherTask.Result);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _logsUsageText.Text = $"Logs - {FormatBytes(logsSize)}";
-                    _profilesUsageText.Text = $"Profiles - {FormatBytes(profilesSize)}";
-                    _assetsUsageText.Text = $"Assets - {FormatBytes(assetsSize)}";
-                    _cacheUsageText.Text = $"Cache - {FormatBytes(librariesSize)}"; 
-                    _otherUsageText.Text = $"Other - {FormatBytes(otherSize)}";
-                    _totalUsageText.Text = FormatBytes(totalActualDisplayedSize);
-
-
-                    double parentWidth = 0;
-                    if (_logsUsageBar.Parent is Grid parentGrid)
-                    {
-                        parentWidth = parentGrid.Bounds.Width;
-                    }
-
-                    if (parentWidth > 0 && totalActualDisplayedSize > 0)
-                    {
-                        _logsUsageBar.Width = (logsSize / totalActualDisplayedSize) * parentWidth;
-                        _profilesUsageBar.Width = (profilesSize / totalActualDisplayedSize) * parentWidth;
-                        _assetsUsageBar.Width = (assetsSize / totalActualDisplayedSize) * parentWidth;
-                        _cacheUsageBar.Width = (librariesSize / totalActualDisplayedSize) * parentWidth;
-                        _otherUsageBar.Width = (otherSize / totalActualDisplayedSize) * parentWidth;
-                    }
-                    else
-                    {
-                        _logsUsageBar.Width = 0;
-                        _profilesUsageBar.Width = 0;
-                        _assetsUsageBar.Width = 0;
-                        _cacheUsageBar.Width = 0;
-                        _otherUsageBar.Width = 0;
-                    }
-                });
-            });
-        }
-        private async Task<double> GetDirectorySizeAsync(string path)
-        {
-            if (!System.IO.Directory.Exists(path)) return 0;
-
-            double size = 0;
-            try
-            {
-                await Task.Run(() =>
-                {
-                    foreach (string file in System.IO.Directory.GetFiles(path, "*", SearchOption.AllDirectories))
-                    {
-                        try
-                        {
-                            size += new System.IO.FileInfo(file).Length;
-                        }
-                        catch (UnauthorizedAccessException) {  }
-                        catch (System.IO.IOException) {  }
-                    }
+                    ShowDiskUsageShimmer(false);
+                    ApplyDiskUsage(logsTask.Result, profilesTask.Result, assetsTask.Result,
+                                   librariesTask.Result, otherTask.Result);
                 });
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Disk Usage] Error calculating size for {path}: {ex.Message}");
+                Console.Error.WriteLine($"[Disk Usage] Scan failed: {ex.Message}");
+                await Dispatcher.UIThread.InvokeAsync(() => ShowDiskUsageShimmer(false));
             }
-            return size;
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _diskUsageScanInFlight, 0);
+            }
+        }
+
+        private (double Logs, double Profiles, double Assets, double Cache, double Other)? _lastDiskUsageValues;
+        private EventHandler? _diskUsageLayoutHandler;
+
+        private void ApplyDiskUsage(double logs, double profiles, double assets, double cache, double other)
+        {
+            if (_logsUsageText == null) return;
+            double total = logs + profiles + assets + cache + other;
+            _logsUsageText!.Text     = $"Logs - {FormatBytes(logs)}";
+            _profilesUsageText!.Text = $"Profiles - {FormatBytes(profiles)}";
+            _assetsUsageText!.Text   = $"Assets - {FormatBytes(assets)}";
+            _cacheUsageText!.Text    = $"Cache - {FormatBytes(cache)}";
+            _otherUsageText!.Text    = $"Other - {FormatBytes(other)}";
+            _totalUsageText!.Text    = FormatBytes(total);
+
+            _lastDiskUsageValues = (logs, profiles, assets, cache, other);
+
+            if (!ApplyDiskUsageBars(logs, profiles, assets, cache, other, total))
+            {
+                var host = this.FindControl<Grid>("DiskUsageBarHost");
+                if (host != null)
+                {
+                    if (_diskUsageLayoutHandler != null)
+                        host.LayoutUpdated -= _diskUsageLayoutHandler;
+
+                    _diskUsageLayoutHandler = (_, __) =>
+                    {
+                        if (_lastDiskUsageValues == null) return;
+                        var v = _lastDiskUsageValues.Value;
+                        double t = v.Logs + v.Profiles + v.Assets + v.Cache + v.Other;
+                        if (ApplyDiskUsageBars(v.Logs, v.Profiles, v.Assets, v.Cache, v.Other, t))
+                        {
+                            host.LayoutUpdated -= _diskUsageLayoutHandler!;
+                            _diskUsageLayoutHandler = null;
+                        }
+                    };
+                    host.LayoutUpdated += _diskUsageLayoutHandler;
+                }
+            }
+        }
+
+        private bool ApplyDiskUsageBars(double logs, double profiles, double assets, double cache, double other, double total)
+        {
+            if (_logsUsageBar == null) return false;
+            var host = this.FindControl<Grid>("DiskUsageBarHost");
+            double parentWidth = host?.Bounds.Width ?? 0;
+            if (parentWidth <= 0 || total <= 0)
+            {
+                _logsUsageBar.Width     = 0;
+                _profilesUsageBar!.Width = 0;
+                _assetsUsageBar!.Width   = 0;
+                _cacheUsageBar!.Width    = 0;
+                _otherUsageBar!.Width    = 0;
+                return parentWidth > 0;
+            }
+            _logsUsageBar.Width      = (logs / total) * parentWidth;
+            _profilesUsageBar!.Width = (profiles / total) * parentWidth;
+            _assetsUsageBar!.Width   = (assets / total) * parentWidth;
+            _cacheUsageBar!.Width    = (cache / total) * parentWidth;
+            _otherUsageBar!.Width    = (other / total) * parentWidth;
+            return true;
+        }
+
+        private System.Timers.Timer? _diskShimmerTimer;
+        private void ShowDiskUsageShimmer(bool show)
+        {
+            if (_logsUsageText == null) return;
+            if (show)
+            {
+                _logsUsageText!.Text     = "Logs - …";
+                _profilesUsageText!.Text = "Profiles - …";
+                _assetsUsageText!.Text   = "Assets - …";
+                _cacheUsageText!.Text    = "Cache - …";
+                _otherUsageText!.Text    = "Other - …";
+                _totalUsageText!.Text    = "…";
+
+                double parentWidth = this.FindControl<Grid>("DiskUsageBarHost")?.Bounds.Width ?? 0;
+                if (parentWidth > 0)
+                {
+                    double seg = parentWidth / 5.0;
+                    _logsUsageBar!.Width     = seg;
+                    _profilesUsageBar!.Width = seg;
+                    _assetsUsageBar!.Width   = seg;
+                    _cacheUsageBar!.Width    = seg;
+                    _otherUsageBar!.Width    = parentWidth - seg * 4;
+                }
+
+                _diskShimmerTimer?.Stop();
+                _diskShimmerTimer = new System.Timers.Timer(60) { AutoReset = true };
+                double phase = 0;
+                _diskShimmerTimer.Elapsed += (_, __) =>
+                {
+                    phase += 0.18;
+                    double op = 0.35 + 0.35 * (Math.Sin(phase) * 0.5 + 0.5);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_logsUsageBar     != null) _logsUsageBar.Opacity     = op;
+                        if (_profilesUsageBar != null) _profilesUsageBar.Opacity = op;
+                        if (_assetsUsageBar   != null) _assetsUsageBar.Opacity   = op;
+                        if (_cacheUsageBar    != null) _cacheUsageBar.Opacity    = op;
+                        if (_otherUsageBar    != null) _otherUsageBar.Opacity    = op;
+                    });
+                };
+                _diskShimmerTimer.Start();
+            }
+            else
+            {
+                _diskShimmerTimer?.Stop();
+                _diskShimmerTimer = null;
+                if (_logsUsageBar     != null) _logsUsageBar.Opacity     = 1;
+                if (_profilesUsageBar != null) _profilesUsageBar.Opacity = 1;
+                if (_assetsUsageBar   != null) _assetsUsageBar.Opacity   = 1;
+                if (_cacheUsageBar    != null) _cacheUsageBar.Opacity    = 1;
+                if (_otherUsageBar    != null) _otherUsageBar.Opacity    = 1;
+            }
+        }
+
+        private static double GetDirectorySizeFast(string path)
+        {
+            if (!System.IO.Directory.Exists(path)) return 0;
+            try
+            {
+                var di = new System.IO.DirectoryInfo(path);
+                return SumFiles(di);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Disk Usage] Error calculating size for {path}: {ex.Message}");
+                return 0;
+            }
+        }
+
+        private static double SumFiles(System.IO.DirectoryInfo dir)
+        {
+            double total = 0;
+            try
+            {
+                foreach (var fi in dir.EnumerateFiles("*", new System.IO.EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = System.IO.FileAttributes.ReparsePoint,
+                }))
+                {
+                    try { total += fi.Length; }
+                    catch { }
+                }
+            }
+            catch { }
+            return total;
+        }
+
+        private double GetMinecraftOtherSizeFast()
+        {
+            try
+            {
+                if (!System.IO.Directory.Exists(_minecraftFolder)) return 0;
+                var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "logs", "versions", "assets", "libraries" };
+                if (System.IO.Path.GetFileName(_logFolderPath) is { Length: > 0 } logsFolderName)
+                    skip.Add(logsFolderName);
+
+                double total = 0;
+                var root = new System.IO.DirectoryInfo(_minecraftFolder);
+                foreach (var fi in root.EnumerateFiles())
+                {
+                    try { total += fi.Length; } catch { }
+                }
+                foreach (var sub in root.EnumerateDirectories())
+                {
+                    if (skip.Contains(sub.Name)) continue;
+                    total += SumFiles(sub);
+                }
+                return total;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Disk Usage] Other-size scan failed: {ex.Message}");
+                return 0;
+            }
         }
 
         private string FormatBytes(double bytes)
@@ -5551,8 +5965,60 @@ namespace LeafClient.Views
             return count.ToString();
         }
 
+        private bool IsModAlreadyInstalled(ModrinthProject mod, string mcVersion)
+        {
+            try
+            {
+                if (_currentSettings.InstalledMods.Any(m =>
+                        m.ModId == mod.project_id &&
+                        m.MinecraftVersion == mcVersion))
+                    return true;
+
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                if (!System.IO.Directory.Exists(modsFolder)) return false;
+
+                string slug = (mod.slug ?? mod.title ?? "").ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(slug)) return false;
+                string slugStem = new string(slug.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray());
+                if (string.IsNullOrWhiteSpace(slugStem)) return false;
+
+                foreach (var f in System.IO.Directory.EnumerateFiles(modsFolder, "*.jar"))
+                {
+                    var name = System.IO.Path.GetFileName(f).ToLowerInvariant();
+                    if (name.Contains(slugStem)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private async Task InstallMod(ModrinthProject mod)
         {
+            var mcVersion = _currentSettings.SelectedSubVersion;
+            if (IsModAlreadyInstalled(mod, mcVersion))
+            {
+                ToastService.Show($"'{mod.title}' is already installed\nFind it in Installed Mods.", ToastType.Info);
+                if (!_currentSettings.InstalledMods.Any(m => m.ModId == mod.project_id && m.MinecraftVersion == mcVersion))
+                {
+                    _currentSettings.InstalledMods.Add(new InstalledMod
+                    {
+                        ModId = mod.project_id,
+                        Name = mod.title,
+                        Description = mod.description ?? "",
+                        Version = "existing",
+                        MinecraftVersion = mcVersion,
+                        FileName = "",
+                        DownloadUrl = "",
+                        Enabled = true,
+                        InstallDate = DateTime.Now,
+                        IconUrl = mod.icon_url ?? ""
+                    });
+                    try { await _settingsService.SaveSettingsAsync(_currentSettings); } catch { }
+                    await Dispatcher.UIThread.InvokeAsync(() => { LoadUserMods(); });
+                }
+                return;
+            }
+
             try
             {
                 var versionsUrl = $"https://api.modrinth.com/v2/project/{mod.project_id}/version";
@@ -8378,8 +8844,10 @@ namespace LeafClient.Views
                 }
             }
 
+            StopHeartbeatLoop();
+            StopGameplayPlaytimePolling();
             StopRichPresence();
-            KillMinecraftProcess(); 
+            KillMinecraftProcess();
 
             if (_trayIcon != null)
             {
@@ -9241,7 +9709,29 @@ namespace LeafClient.Views
             var canReportProgress = totalBytes != -1;
 
             using var contentStream = await response.Content.ReadAsStreamAsync();
-            using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+            FileStream? fileStream = null;
+            int[] backoffMs = { 250, 500, 1000, 2000, 3000 };
+            for (int attempt = 0; attempt <= backoffMs.Length; attempt++)
+            {
+                try
+                {
+                    fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+                    break;
+                }
+                catch (IOException) when (attempt < backoffMs.Length)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_launchProgressText != null)
+                            _launchProgressText.Text = $"{fileName}: file in use, retrying...";
+                    });
+                    await Task.Delay(backoffMs[attempt]);
+                }
+            }
+            if (fileStream == null)
+                throw new IOException($"Could not write {fileName} to disk — close any running Minecraft instance and try again.");
+            using var _fsHolder = fileStream;
 
             var totalRead = 0L;
             var buffer = new byte[8192];
@@ -9875,8 +10365,12 @@ namespace LeafClient.Views
 
             try
             {
-                if (System.IO.File.Exists(fabricApiPath) && _currentSettings.InstalledMods.Any(m => m.ModId == "fabric-api" && m.MinecraftVersion == mcVersion))
+                if (System.IO.File.Exists(fabricApiPath))
                 {
+                    if (!_currentSettings.InstalledMods.Any(m => m.ModId == "fabric-api" && m.MinecraftVersion == mcVersion))
+                    {
+                        await RegisterAutoInstalledMod("fabric-api", "Fabric API", "existing", mcVersion, $"fabric-api-{mcVersion}.jar", "");
+                    }
                     return true;
                 }
 
@@ -9888,11 +10382,10 @@ namespace LeafClient.Views
                 var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
                 var latest = versions?.FirstOrDefault();
 
-                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found");
+                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found on Modrinth");
 
                 var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
 
-                // USE TRACKED DOWNLOAD
                 await DownloadFileWithProgressAsync(file.url, fabricApiPath, "Fabric API");
 
                 await RegisterAutoInstalledMod("fabric-api", "Fabric API", latest.versionNumber, mcVersion, $"fabric-api-{mcVersion}.jar", file.url);
@@ -9900,10 +10393,27 @@ namespace LeafClient.Views
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Fabric API] Install failed: {ex.Message}");
-                return false;
+                Console.Error.WriteLine($"[Fabric API] Install failed: {ex.Message}");
+                throw new InvalidOperationException(
+                    $"Fabric API for {mcVersion} could not be installed: {ex.Message}", ex);
             }
             finally { ShowProgress(false); }
+        }
+
+        private bool VerifyFabricApiPresent(string mcVersion)
+        {
+            try
+            {
+                string modsFolder = System.IO.Path.Combine(_minecraftFolder, "mods");
+                if (!System.IO.Directory.Exists(modsFolder)) return false;
+                foreach (var f in System.IO.Directory.EnumerateFiles(modsFolder, "fabric-api*.jar"))
+                {
+                    var name = System.IO.Path.GetFileName(f);
+                    if (name.Contains(mcVersion, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                return System.IO.Directory.GetFiles(modsFolder, "fabric-api-*.jar").Length > 0;
+            }
+            catch { return false; }
         }
 
         private async Task<bool> InstallEnhancedBlockEntitiesIfNeededAsync(string mcVersion)
@@ -11413,6 +11923,16 @@ namespace LeafClient.Views
                     // Install user-managed mods from settings
                     await InstallUserModsAsync(version);
 
+                    if (!VerifyFabricApiPresent(version))
+                    {
+                        ShowProgress(false);
+                        UpdateLaunchButton("LAUNCH GAME", "SeaGreen");
+                        ShowLaunchErrorBanner(
+                            $"Fabric API for Minecraft {version} is not installed. Close any running Minecraft instance and click Launch again.");
+                        _isLaunching = false;
+                        return;
+                    }
+
                     ShowProgress(false);
                 }
 
@@ -11617,6 +12137,7 @@ namespace LeafClient.Views
                 // Also increment the active profile's own LaunchCount / LastUsed so the
                 // profile card can show "last used 3 days ago" / total launches.
                 _sessionStartUtc = DateTime.UtcNow;
+                StartGameplayPlaytimePolling();
                 if (_currentSettings != null)
                 {
                     _currentSettings.LastLaunchTime  = DateTime.Now;
@@ -11750,15 +12271,17 @@ namespace LeafClient.Views
         {
             if (_isShuttingDown) return;
 
-            // Playtime tracking: compute session length & persist
-            // (done first so it works even if the rest of the handler bails)
+            StopGameplayPlaytimePolling();
+
+            DateTime? sessionStartCopy = _sessionStartUtc;
+
             try
             {
-                if (_sessionStartUtc.HasValue && _currentSettings != null)
+                if (sessionStartCopy.HasValue && _currentSettings != null)
                 {
-                    long sessionSeconds = (long)(DateTime.UtcNow - _sessionStartUtc.Value).TotalSeconds;
+                    long sessionSeconds = (long)(DateTime.UtcNow - sessionStartCopy.Value).TotalSeconds;
                     if (sessionSeconds < 0) sessionSeconds = 0;
-                    if (sessionSeconds > 86400) sessionSeconds = 86400; // clamp at 24h
+                    if (sessionSeconds > 86400) sessionSeconds = 86400;
 
                     _currentSettings.CurrentSessionSeconds = sessionSeconds;
                     _currentSettings.TotalPlaytimeSeconds += sessionSeconds;
@@ -11792,8 +12315,38 @@ namespace LeafClient.Views
                     _ = _settingsService.SaveSettingsAsync(_currentSettings);
                     Console.WriteLine($"[Playtime] Session: {sessionSeconds}s, total: {_currentSettings.TotalPlaytimeSeconds}s");
 
-                    // Refresh the footer stats strip now — it's visible on every page
-                    // so we want it updated immediately after the game exits.
+                    int finalMinutes = (int)(sessionSeconds / 60);
+                    if (finalMinutes >= 1)
+                    {
+                        var jwt = _currentSettings.LeafApiJwt;
+                        if (!string.IsNullOrEmpty(jwt))
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await LeafClient.Services.LeafApiService.SendHeartbeatAsync(jwt);
+                                    var result = await LeafClient.Services.LeafApiService.ReportPlaytimeAsync(jwt, finalMinutes);
+                                    if (result != null && result.Awarded > 0)
+                                    {
+                                        _currentCoinBalance = result.Coins;
+                                        Dispatcher.UIThread.Post(() =>
+                                        {
+                                            _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                                            if (_leafsBalanceText != null)
+                                                _leafsBalanceText.Text = result.Coins.ToString("N0");
+                                        });
+                                        ToastService.Show($"+{result.Awarded} \U0001F343 Leaf Points earned!", ToastType.Success);
+                                    }
+                                }
+                                catch (Exception apiEx)
+                                {
+                                    Console.WriteLine($"[Playtime] Final API claim failed: {apiEx.Message}");
+                                }
+                            });
+                        }
+                    }
+
                     Dispatcher.UIThread.Post(RefreshPlaytimeStatsCard);
                 }
             }
@@ -16390,6 +16943,7 @@ namespace LeafClient.Views
 
                     var icon = new Image { Width = 29, Height = 29 };
 
+                    bool iconLoaded = false;
                     if (!string.IsNullOrEmpty(server.IconBase64))
                     {
                         try
@@ -16407,29 +16961,31 @@ namespace LeafClient.Views
                             var iconBytes = Convert.FromBase64String(base64Data);
                             using var ms = new MemoryStream(iconBytes);
                             icon.Source = new Avalonia.Media.Imaging.Bitmap(ms);
+                            iconLoaded = true;
                         }
                         catch (Exception ex)
                         {
                             Console.WriteLine($"[QuickPlay] Error loading icon for {server.Name}: {ex.Message}");
-                            icon.Source = new Avalonia.Media.Imaging.Bitmap(
-                                AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
                         }
-                    }
-                    else
-                    {
-                        icon.Source = new Avalonia.Media.Imaging.Bitmap(
-                            AssetLoader.Open(new Uri("avares://LeafClient/Assets/minecraft.png")));
                     }
 
                     var roundedIconBorder = new Border
                     {
-                        CornerRadius = new CornerRadius(8), 
-                        ClipToBounds = true, 
-                        Background = Brushes.Transparent, 
+                        CornerRadius = new CornerRadius(8),
+                        ClipToBounds = true,
+                        Background = Brushes.Transparent,
+                        Width = 29,
+                        Height = 29,
                         Child = icon
                     };
 
-                    serverButton.Content = roundedIconBorder; 
+                    if (!iconLoaded)
+                    {
+                        icon.IsVisible = false;
+                        LeafClient.Services.ShimmerService.Start(roundedIconBorder);
+                    }
+
+                    serverButton.Content = roundedIconBorder;
                     quickPlayContainer.Children.Add(serverButton);
                 }
 
@@ -17602,6 +18158,20 @@ namespace LeafClient.Views
             if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(uuid))
                 return;
 
+            var smallShimmer = this.FindControl<Border>("PlayingAsImageBorder");
+            var largeShimmer = this.FindControl<Border>("AccountCharacterImageShimmer");
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_playingAsImage?.Source == null && smallShimmer != null)
+                    LeafClient.Services.ShimmerService.Start(smallShimmer);
+                if (_accountCharacterImage?.Source == null && largeShimmer != null)
+                {
+                    largeShimmer.IsVisible = true;
+                    LeafClient.Services.ShimmerService.Start(largeShimmer);
+                }
+            });
+
             try
             {
                 var smallPose = _skinRenderService.GetRandomSmallPoseName();
@@ -17610,20 +18180,41 @@ namespace LeafClient.Views
 
                 var id = username ?? uuid ?? "Player";
 
-                var smallBitmap = await _skinRenderService.LoadSkinImageAsync(id, smallPose, "bust", uuid);
-                var largeBitmap = await _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid); 
+                var smallTask = _skinRenderService.LoadSkinImageAsync(id, smallPose, "bust", uuid);
+                var largeTask = _skinRenderService.LoadSkinImageAsync(id, largePose, "full", uuid);
+                await Task.WhenAll(smallTask, largeTask);
 
-                if (_playingAsImage != null && smallBitmap != null)
-                    _playingAsImage.Source = smallBitmap;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_playingAsImage != null && smallTask.Result != null)
+                        _playingAsImage.Source = smallTask.Result;
 
-                if (_accountCharacterImage != null && largeBitmap != null)
-                    _accountCharacterImage.Source = largeBitmap;
+                    if (_accountCharacterImage != null && largeTask.Result != null)
+                        _accountCharacterImage.Source = largeTask.Result;
+
+                    if (smallShimmer != null)
+                        LeafClient.Services.ShimmerService.Stop(smallShimmer);
+                    if (largeShimmer != null)
+                    {
+                        LeafClient.Services.ShimmerService.Stop(largeShimmer);
+                        largeShimmer.IsVisible = false;
+                    }
+                });
 
                 UpdateRichPresenceFromState();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error updating skin previews: {ex.Message}");
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (smallShimmer != null) LeafClient.Services.ShimmerService.Stop(smallShimmer);
+                    if (largeShimmer != null)
+                    {
+                        LeafClient.Services.ShimmerService.Stop(largeShimmer);
+                        largeShimmer.IsVisible = false;
+                    }
+                });
             }
         }
 
@@ -17847,6 +18438,7 @@ namespace LeafClient.Views
                     _lastSmallPose = null;
                     _session = null;
 
+                    StopHeartbeatLoop();
                     StopRichPresence();
 
                     if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -18064,39 +18656,32 @@ namespace LeafClient.Views
         }
 
 
-        // Fade + subtle upward slide for every page transition.
-        // Call this right after setting a page's IsVisible = true.
         private void AnimatePageIn(Avalonia.Controls.Control? page)
         {
             if (page == null) return;
 
-            // Wire up transitions once per page (idempotent).
-            if (page.Transitions == null || page.Transitions.Count == 0)
+            page.Transitions = null;
+            page.Opacity = 0;
+            page.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("translate(0px, 10px)");
+            page.IsVisible = true;
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 page.Transitions = new Avalonia.Animation.Transitions
                 {
                     new Avalonia.Animation.DoubleTransition
                     {
                         Property = Avalonia.Visual.OpacityProperty,
-                        Duration = TimeSpan.FromMilliseconds(240),
+                        Duration = TimeSpan.FromMilliseconds(180),
                         Easing = new Avalonia.Animation.Easings.CubicEaseOut()
                     },
                     new Avalonia.Animation.TransformOperationsTransition
                     {
                         Property = Avalonia.Visual.RenderTransformProperty,
-                        Duration = TimeSpan.FromMilliseconds(280),
+                        Duration = TimeSpan.FromMilliseconds(220),
                         Easing = new Avalonia.Animation.Easings.CubicEaseOut()
                     }
                 };
-            }
-
-            // Start state: invisible + 14px below target.
-            page.Opacity = 0;
-            page.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("translate(0px, 14px)");
-
-            // Next UI tick: animate to final state (transitions play over the interpolation).
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
                 page.Opacity = 1;
                 page.RenderTransform = Avalonia.Media.Transformation.TransformOperations.Parse("translate(0px, 0px)");
             }, Avalonia.Threading.DispatcherPriority.Render);
@@ -18127,18 +18712,18 @@ namespace LeafClient.Views
             switch (index)
             {
                 case 0:
-                    if (_gamePage != null) { _gamePage.IsVisible = true; AnimatePageIn(_gamePage); }
+                    AnimatePageIn(_gamePage);
                     UpdateLaunchVersionText();
                     RefreshPlaytimeStatsCard();
                     break;
 
                 case 1:
-                    if (_versionsPage != null) { _versionsPage.IsVisible = true; AnimatePageIn(_versionsPage); }
+                    AnimatePageIn(_versionsPage);
                     RefreshProfilesPage();
                     break;
 
                 case 2:
-                    if (_serversPage != null) { _serversPage.IsVisible = true; AnimatePageIn(_serversPage); }
+                    AnimatePageIn(_serversPage);
 
                     if (!_serversLoaded)
                     {
@@ -18164,9 +18749,8 @@ namespace LeafClient.Views
                     break;
 
                 case 3:
-                    if (_modsPage != null) { _modsPage.IsVisible = true; AnimatePageIn(_modsPage); }
+                    AnimatePageIn(_modsPage);
                     LoadUserMods();
-                    // Reset the Mods/Resource Packs sub-tab to "Mods" on entry
                     if (this.FindControl<Border>("ModsTab_Mods") is { } modsPill)
                     {
                         OnModsTabTapped(modsPill, null!);
@@ -18174,28 +18758,28 @@ namespace LeafClient.Views
                     break;
 
                 case 4:
-                    if (_settingsPage != null) { _settingsPage.IsVisible = true; AnimatePageIn(_settingsPage); }
+                    AnimatePageIn(_settingsPage);
                     if (!_settingsDirty) HideSettingsSaveBanner();
-                    await CalculateDiskUsageAsync();
+                    _ = CalculateDiskUsageAsync();
                     break;
 
                 case 5:
-                    if (_skinsPage != null) { _skinsPage.IsVisible = true; AnimatePageIn(_skinsPage); }
+                    AnimatePageIn(_skinsPage);
                     break;
 
                 case 6:
-                    if (_cosmeticsPage != null) { _cosmeticsPage.IsVisible = true; AnimatePageIn(_cosmeticsPage); }
+                    AnimatePageIn(_cosmeticsPage);
                     _cosmeticsPage?.LoadCosmeticsPage();
                     _ = SyncOwnedCosmeticsFromApiAsync();
                     break;
 
                 case 7:
-                    if (_storePage != null) { _storePage.IsVisible = true; AnimatePageIn(_storePage); }
+                    AnimatePageIn(_storePage);
                     _storePage?.LoadStorePage();
                     break;
 
                 case 8:
-                    if (_screenshotsPage != null) { _screenshotsPage.IsVisible = true; AnimatePageIn(_screenshotsPage); }
+                    AnimatePageIn(_screenshotsPage);
                     _screenshotsPage?.LoadScreenshotsPage();
                     break;
             }
@@ -18704,7 +19288,7 @@ namespace LeafClient.Views
 
             const int sweepMs     = 550;
             const int pauseMs     = 100;
-            const int totalSweeps = 2;
+            const int totalSweeps = 1;
 
             int  sweepCount = 0;
             bool inPause    = false;
@@ -18892,13 +19476,11 @@ namespace LeafClient.Views
             SetToFinalState(_launchSection, finalY: 0, finalOpacity: 1.0);
 
             SetTransitions(_newsSectionGrid, _savedNewsSectionGridTransitions);
-            if (animationsEnabled && _currentSettings.EnableNewContentIndicators)
+            if (_newsSectionGrid != null)
             {
-                SetToFinalState(_newsSectionGrid, finalY: 0, finalOpacity: 1.0);
-            }
-            else
-            {
-                SetToFinalState(_newsSectionGrid, finalY: 80, finalOpacity: 0);
+                if (_newsSectionGrid.RenderTransform is TranslateTransform nsTt) nsTt.Y = 0;
+                _newsSectionGrid.Opacity = 1;
+                _newsSectionGrid.IsVisible = true;
             }
 
             SetTransitions(_launchErrorBanner, _savedLaunchErrorBannerTransitions);
@@ -18987,6 +19569,138 @@ namespace LeafClient.Views
         private async void OnNewsItem1PointerExited(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem1Scale, 1.00, 200, (cts) => _newsItem1Cts = cts, () => _newsItem1Cts);
         private async void OnNewsItem2PointerEntered(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem2Scale, 1.05, 200, (cts) => _newsItem2Cts = cts, () => _newsItem2Cts);
         private async void OnNewsItem2PointerExited(object? s, PointerEventArgs e) => await AnimateScaleTransform(_newsItem2Scale, 1.00, 200, (cts) => _newsItem2Cts = cts, () => _newsItem2Cts);
+
+        private static Color ParseColorOrDefault(string? hex, Color fallback)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return fallback;
+            try { return Color.Parse(hex.Trim()); }
+            catch { return fallback; }
+        }
+
+        private async Task<Bitmap?> DownloadBitmapAsync(string url)
+        {
+            try
+            {
+                var bytes = await _httpClient.GetByteArrayAsync(url);
+                using var ms = new MemoryStream(bytes);
+                return new Bitmap(ms);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Bitmap? LoadBundledBitmap(string avaresUri)
+        {
+            try
+            {
+                using var s = Avalonia.Platform.AssetLoader.Open(new Uri(avaresUri));
+                return new Bitmap(s);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void ApplyNewsItem(int slot, LeafClient.Services.LeafApiNewsItem? item, Bitmap? bitmap)
+        {
+            var image       = slot == 1 ? _newsItem1Image     : _newsItem2Image;
+            var content     = slot == 1 ? _newsItem1Content   : _newsItem2Content;
+            var titleTb     = slot == 1 ? _newsItem1Title     : _newsItem2Title;
+            var subtitleTb  = slot == 1 ? _newsItem1Subtitle  : _newsItem2Subtitle;
+            var tagTextTb   = slot == 1 ? _newsItem1TagText   : _newsItem2TagText;
+            var badgeBorder = slot == 1 ? _majorUpdateBadge   : _newsItem2Badge;
+
+            if (image != null && bitmap != null) image.Source = bitmap;
+
+            if (item != null)
+            {
+                if (titleTb    != null) titleTb.Text    = item.Title    ?? string.Empty;
+                if (subtitleTb != null) subtitleTb.Text = item.Subtitle ?? string.Empty;
+                if (tagTextTb  != null) tagTextTb.Text  = (item.TagText ?? string.Empty).ToUpperInvariant();
+
+                if (slot == 1)
+                {
+                    _majorUpdateBadgeCts?.Cancel();
+                    _majorUpdateBadgeCts = null;
+                }
+
+                if (badgeBorder?.Background is LinearGradientBrush lgb && lgb.GradientStops.Count >= 2)
+                {
+                    lgb.GradientStops[0].Color = ParseColorOrDefault(item.TagColorStart, Color.FromRgb(0x7B, 0x1F, 0xA2));
+                    lgb.GradientStops[lgb.GradientStops.Count - 1].Color = ParseColorOrDefault(item.TagColorEnd, Color.FromRgb(0xCE, 0x93, 0xD8));
+                }
+            }
+
+            if (content != null) content.Opacity = 1;
+        }
+
+        private async Task LoadNewsAsync()
+        {
+            if (_newsLoadStarted) return;
+            _newsLoadStarted = true;
+
+            try
+            {
+                if (_newsItem1Border != null) LeafClient.Services.ShimmerService.Start(_newsItem1Border);
+                if (_newsItem2Border != null) LeafClient.Services.ShimmerService.Start(_newsItem2Border);
+
+                var fetchTask = LeafClient.Services.LeafApiService.GetNewsAsync();
+                var delayTask = Task.Delay(1200);
+                await Task.WhenAll(fetchTask, delayTask);
+
+                var items = await fetchTask;
+                LeafClient.Services.LeafApiNewsItem? item1 = null;
+                LeafClient.Services.LeafApiNewsItem? item2 = null;
+                if (items != null)
+                {
+                    foreach (var i in items)
+                    {
+                        if (i.Slot == 1) item1 = i;
+                        else if (i.Slot == 2) item2 = i;
+                    }
+                }
+
+                Bitmap? bmp1 = null;
+                Bitmap? bmp2 = null;
+                var dl1 = item1 != null && !string.IsNullOrWhiteSpace(item1.ImageUrl)
+                    ? DownloadBitmapAsync(item1.ImageUrl!)
+                    : Task.FromResult<Bitmap?>(null);
+                var dl2 = item2 != null && !string.IsNullOrWhiteSpace(item2.ImageUrl)
+                    ? DownloadBitmapAsync(item2.ImageUrl!)
+                    : Task.FromResult<Bitmap?>(null);
+                await Task.WhenAll(dl1, dl2);
+                bmp1 = await dl1;
+                bmp2 = await dl2;
+
+                if (bmp1 == null) bmp1 = LoadBundledBitmap("avares://LeafClient/Assets/NewLookNewFeelBanner.jpg");
+                if (bmp2 == null) bmp2 = LoadBundledBitmap("avares://LeafClient/Assets/LeafPlusLauncherBanner.jpg");
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (_newsItem1Border != null) LeafClient.Services.ShimmerService.Stop(_newsItem1Border);
+                    if (_newsItem2Border != null) LeafClient.Services.ShimmerService.Stop(_newsItem2Border);
+                    ApplyNewsItem(1, item1, bmp1);
+                    ApplyNewsItem(2, item2, bmp2);
+                });
+            }
+            catch
+            {
+                try
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_newsItem1Border != null) LeafClient.Services.ShimmerService.Stop(_newsItem1Border);
+                        if (_newsItem2Border != null) LeafClient.Services.ShimmerService.Stop(_newsItem2Border);
+                        ApplyNewsItem(1, null, LoadBundledBitmap("avares://LeafClient/Assets/NewLookNewFeelBanner.jpg"));
+                        ApplyNewsItem(2, null, LoadBundledBitmap("avares://LeafClient/Assets/LeafPlusLauncherBanner.jpg"));
+                    });
+                }
+                catch { }
+            }
+        }
 
         // ══════════════════════════════════════════════════════
         //  MAJOR UPDATE badge — animated purple gradient

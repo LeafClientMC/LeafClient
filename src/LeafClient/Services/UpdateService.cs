@@ -25,8 +25,11 @@ namespace LeafClient.Services
         private const string ZipSha256Url = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sha256";
         private const string ZipSignatureUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sig";
 
-        private const string LauncherUpdatePublicKeyB64 =
-            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==";
+        private static readonly string[] TrustedUpdateKeysB64 = new[]
+        {
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==",
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2NExkPJczcXU4ZfXywlYd9j47GBFqkAUIK+3zXOwxyQT/MXP7bYJernUIC8erLXKHIS3YM24rDv66zLzibDRTA==",
+        };
 
         private static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient");
@@ -510,18 +513,21 @@ namespace LeafClient.Services
 
         private static bool VerifySignature(byte[] sha256Hash, byte[] signature)
         {
-            try
+            foreach (var keyB64 in TrustedUpdateKeysB64)
             {
-                using var ecdsa = System.Security.Cryptography.ECDsa.Create();
-                if (ecdsa is null) return false;
-                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(LauncherUpdatePublicKeyB64), out _);
-                return ecdsa.VerifyHash(sha256Hash, signature);
+                try
+                {
+                    using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+                    if (ecdsa is null) continue;
+                    ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(keyB64), out _);
+                    if (ecdsa.VerifyHash(sha256Hash, signature)) return true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Updater] Signature verify error against one trusted key: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Updater] Signature verify error: {ex.Message}");
-                return false;
-            }
+            return false;
         }
 
         // ================================================================

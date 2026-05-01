@@ -301,6 +301,21 @@ namespace LeafClient.Services
             }
         }
 
+        public static async Task<List<LeafApiNewsItem>?> GetNewsAsync()
+        {
+            try
+            {
+                var response = await Http.GetAsync($"{BaseUrl}/news");
+                if (!response.IsSuccessStatusCode) return null;
+                var parsed = await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.LeafApiNewsResponse);
+                return parsed?.Items;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public static async Task<List<LeafApiOwnedCosmetic>?> GetOwnedCosmeticsAsync(string accessToken)
         {
             var t = SanitizeString(accessToken, 2048);
@@ -350,6 +365,23 @@ namespace LeafClient.Services
             catch
             {
                 return null;
+            }
+        }
+
+        public static async Task<bool> SendHeartbeatAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/user/heartbeat");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var response = await Http.SendAsync(request, cts.Token);
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -472,8 +504,11 @@ namespace LeafClient.Services
             catch { }
         }
 
-        private const string ModJarSigningPublicKeyB64 =
-            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==";
+        private static readonly string[] TrustedManifestKeysB64 = new[]
+        {
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh2mUsltx9o2LZzuW6XW8uZslSUTJ+OqfAC52P4nSlcTfdetFUMcY1I2bt178Ay99r9PBGsZfZN1wDBsrwJuDmg==",
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2NExkPJczcXU4ZfXywlYd9j47GBFqkAUIK+3zXOwxyQT/MXP7bYJernUIC8erLXKHIS3YM24rDv66zLzibDRTA==",
+        };
 
         public static async Task<LeafApiManifest?> GetModManifestAsync(string mcVersion, CancellationToken ct = default)
         {
@@ -540,18 +575,22 @@ namespace LeafClient.Services
                 Console.WriteLine("[ManifestVerify] Signature is not valid base64.");
                 return false;
             }
-            try
+            foreach (var keyB64 in TrustedManifestKeysB64)
             {
-                using var ecdsa = System.Security.Cryptography.ECDsa.Create();
-                if (ecdsa is null) return false;
-                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ModJarSigningPublicKeyB64), out _);
-                return ecdsa.VerifyData(msgBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256);
+                try
+                {
+                    using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+                    if (ecdsa is null) continue;
+                    ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(keyB64), out _);
+                    if (ecdsa.VerifyData(msgBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256))
+                        return true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ManifestVerify] Verify error against one trusted key: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ManifestVerify] Verify error: {ex.Message}");
-                return false;
-            }
+            return false;
         }
 
         public static async Task DownloadVerifiedModJarAsync(

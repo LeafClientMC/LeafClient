@@ -75,6 +75,10 @@ namespace LeafClient.Services
             if (_client != null)
             {
                 try { _client.ClearPresence(); } catch { }
+                try { _client.Invoke(); } catch { }
+                try { System.Threading.Thread.Sleep(200); } catch { }
+                try { _client.Invoke(); } catch { }
+                try { _client.Deinitialize(); } catch { }
                 _client.Dispose();
                 _client = null;
             }
