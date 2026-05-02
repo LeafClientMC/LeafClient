@@ -1154,7 +1154,6 @@ namespace LeafClient.Views
             {
                 try
                 {
-                    await PlayCinematicStartupAsync();
                     StartRichPresenceIfEnabled();
                     StartHeartbeatLoop();
                     _ = CheckKillSwitchAsync();
