@@ -36,17 +36,20 @@ Unauthorized redistribution or reuse of this code will result in a DMCA takedown
 ## 📸 Preview
 
 ### In-game client
-<img width="1919" alt="client-preview" src="https://github.com/user-attachments/assets/7a6ccc5d-05c6-408b-bcf2-db9fa77fdcd6" />
-<img width="1413" alt="freelook-preview" src="https://github.com/user-attachments/assets/489cc80b-14d0-4ba8-9fb8-cef5fd595028" />
-<img width="1919" alt="client-ui" src="https://github.com/user-attachments/assets/e516ed98-1240-4913-af70-4e620673a911" />
+<img width="1919" height="1079" alt="titlescreen" src="https://github.com/user-attachments/assets/eadebe97-b988-4e0e-84c3-27651fa7e2d6" />
+<img width="1919" height="1079" alt="cosmetics" src="https://github.com/user-attachments/assets/c6f96d90-2284-447a-b969-182d86fd98c3" />
+<img width="1920" height="1080" alt="client" src="https://github.com/user-attachments/assets/d6ecb64c-b04d-49c6-9c58-7ea08eecb5a4" />
+<img width="546" height="216" alt="discordrpc" src="https://github.com/user-attachments/assets/38d3719e-df11-42fc-85f5-90d280e3b623" />
+
 
 ### Launcher
-<img width="1745" alt="launcher-preview" src="https://github.com/user-attachments/assets/a237ceb4-748c-4353-866b-fab75d65bed6" />
-<img width="1741" alt="cosmetics-editor" src="https://github.com/user-attachments/assets/daf91e64-1cfa-4687-833a-f28c057b9a5a" />
-<img width="1747" alt="server-list" src="https://github.com/user-attachments/assets/45a4f7cd-3f7a-4e3e-9338-1caf5209187f" />
-<img width="1744" alt="mods-list" src="https://github.com/user-attachments/assets/11778dba-3c7a-4750-abee-8bbc6fd7cc62" />
-<img width="1746" alt="launcher-versions" src="https://github.com/user-attachments/assets/b2a91ec4-ac3f-4091-9b32-a5ce41fe256f" />
-<img width="616" alt="accounts-preview" src="https://github.com/user-attachments/assets/21b3feaa-5bc7-42e5-a5e8-57ef44150615" />
+<img width="1742" height="926" alt="Screenshot 2026-05-02 030151" src="https://github.com/user-attachments/assets/78167a02-88cc-46b0-9663-a9c12283ffb8" />
+<img width="1752" height="940" alt="Screenshot 2026-05-02 030037" src="https://github.com/user-attachments/assets/bb02b5e9-bcb1-4e5d-9089-3563abe34119" />
+<img width="1743" height="931" alt="Screenshot 2026-05-02 030103" src="https://github.com/user-attachments/assets/34d8d58f-87dd-47f0-9e1e-755dcaf8122c" />
+<img width="1746" height="927" alt="Screenshot 2026-05-02 030118" src="https://github.com/user-attachments/assets/d60e488f-a11e-4acb-8000-dc2879c5f1ad" />
+<img width="1753" height="923" alt="Screenshot 2026-05-02 030130" src="https://github.com/user-attachments/assets/b135de6c-f26f-4b8e-9762-89265c1be0ce" />
+
+
 
 ---
 
