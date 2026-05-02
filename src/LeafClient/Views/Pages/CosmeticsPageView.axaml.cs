@@ -8,6 +8,7 @@ using Avalonia.VisualTree;
 using LeafClient.Models;
 using LeafClient.Services;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -418,6 +419,13 @@ namespace LeafClient.Views.Pages
             await _host.SettingsService.SaveSettingsAsync(settings);
             SaveEquippedJson();
             PopulateCosmeticsGrid();
+
+            var jwt = _host?.CurrentSettings?.LeafApiJwt;
+            if (!string.IsNullOrEmpty(jwt))
+            {
+                try { await LeafClient.Services.LeafApiService.EquipCosmeticAsync(jwt!, cosId); }
+                catch (Exception ex) { Console.WriteLine($"[Cosmetics] Server-side equip error: {ex.Message}"); }
+            }
         }
 
         private async void UnequipCosmetic(string cosId, string category)
@@ -586,22 +594,23 @@ namespace LeafClient.Views.Pages
 
             _cosmeticsActiveTab = tab;
 
-            var tabNames = new[] { "CosTab_All", "CosTab_Capes", "CosTab_Hats", "CosTab_Wings", "CosTab_Auras", "CosTab_Emotes" };
+            var tabNames = new[] { "CosTab_All", "CosTab_Capes", "CosTab_Hats", "CosTab_Wings", "CosTab_Auras", "CosTab_Emotes", "CosTab_Drops" };
             foreach (var tabName in tabNames)
             {
                 var tabBorder = this.FindControl<Border>(tabName);
                 if (tabBorder == null) continue;
                 bool isActive = tabBorder.Tag?.ToString() == tab;
-                tabBorder.Background = isActive ? SolidColorBrush.Parse("#9333EA") : SolidColorBrush.Parse("#0F1A24");
+                bool isDrops = tabBorder.Tag?.ToString() == "drops";
+                tabBorder.Background = isActive ? (isDrops ? SolidColorBrush.Parse("#6D28D9") : SolidColorBrush.Parse("#9333EA")) : SolidColorBrush.Parse("#0F1A24");
                 tabBorder.BorderThickness = isActive ? new Thickness(0) : new Thickness(1.5);
-                tabBorder.BorderBrush = SolidColorBrush.Parse("#1C2A38");
+                tabBorder.BorderBrush = isDrops ? SolidColorBrush.Parse("#3D2080") : SolidColorBrush.Parse("#1C2A38");
 
                 void UpdateTextColors(Avalonia.Visual parent)
                 {
                     foreach (var child in parent.GetVisualChildren())
                     {
                         if (child is TextBlock tb)
-                            tb.Foreground = isActive ? Brushes.White : SolidColorBrush.Parse("#9CA3AF");
+                            tb.Foreground = isActive ? Brushes.White : (isDrops ? SolidColorBrush.Parse("#A78BFA") : SolidColorBrush.Parse("#9CA3AF"));
                         if (child is Avalonia.Visual v)
                             UpdateTextColors(v);
                     }
@@ -609,7 +618,10 @@ namespace LeafClient.Views.Pages
                 UpdateTextColors(tabBorder);
             }
 
-            PopulateCosmeticsGrid();
+            if (tab == "drops")
+                _ = PopulateDropsHistoryAsync();
+            else
+                PopulateCosmeticsGrid();
         }
 
         private void OnPreviewLightToggle(object? sender, TappedEventArgs e)
@@ -645,86 +657,85 @@ namespace LeafClient.Views.Pages
         //  Cosmetic Loadout Presets
         // ═══════════════════════════════════════════════════════════
 
+        private const int MaxLoadouts = 3;
+
         private void RefreshLoadoutPresetBar()
         {
-            var bar = this.FindControl<StackPanel>("LoadoutPresetsBar");
+            var bar = this.FindControl<Grid>("LoadoutPresetsBar");
             if (bar == null) return;
             bar.Children.Clear();
 
-            var presets = _host?.CurrentSettings?.CosmeticPresets;
-            if (presets == null || presets.Count == 0)
-            {
-                var empty = new TextBlock
-                {
-                    Text                = "No presets yet \u2014 save your current loadout to get started.",
-                    Foreground          = SolidColorBrush.Parse("#4B5563"),
-                    FontSize            = 11,
-                    FontStyle           = FontStyle.Italic,
-                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
-                };
-                bar.Children.Add(empty);
-                return;
-            }
+            var presets = _host?.CurrentSettings?.CosmeticPresets ?? new System.Collections.Generic.List<CosmeticPreset>();
+            int count = Math.Min(presets.Count, MaxLoadouts);
 
-            foreach (var preset in presets)
-                bar.Children.Add(BuildPresetChip(preset));
+            var countLabel = this.FindControl<TextBlock>("LoadoutCountLabel");
+            if (countLabel != null) countLabel.Text = $"{count} / {MaxLoadouts}";
+
+            for (int slot = 0; slot < MaxLoadouts; slot++)
+            {
+                Control card = slot < count
+                    ? BuildPresetCard(presets[slot])
+                    : BuildAddLoadoutCard();
+                Grid.SetColumn(card, slot);
+                bar.Children.Add(card);
+            }
         }
 
-        private Border BuildPresetChip(CosmeticPreset preset)
+        private Control BuildPresetCard(CosmeticPreset preset)
         {
-            var outer = new Border
+            var card = new Border
             {
-                CornerRadius    = new CornerRadius(14),
-                Background      = SolidColorBrush.Parse("#1A2638"),
+                CornerRadius    = new CornerRadius(12),
+                Background      = SolidColorBrush.Parse("#161E2D"),
                 BorderBrush     = SolidColorBrush.Parse("#2A3F52"),
                 BorderThickness = new Thickness(1),
-                Padding         = new Thickness(4),
+                Padding         = new Thickness(0),
+                Height          = 150,
                 Cursor          = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             };
 
-            var grid = new Grid
+            var rootGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                RowDefinitions = new RowDefinitions("*,Auto"),
             };
 
-            // Preset name — tap to load
+            var preview = BuildPresetPreview(preset);
+            Grid.SetRow(preview, 0);
+            rootGrid.Children.Add(preview);
+
+            var footer = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                Background = SolidColorBrush.Parse("#0D1422"),
+            };
             var nameLabel = new TextBlock
             {
                 Text              = preset.Name,
                 Foreground        = SolidColorBrush.Parse("#E5E7EB"),
-                FontSize          = 11,
+                FontSize          = 12,
                 FontWeight        = FontWeight.SemiBold,
-                Padding           = new Thickness(10, 6, 8, 6),
+                Padding           = new Thickness(10, 8, 6, 8),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                TextTrimming      = Avalonia.Media.TextTrimming.CharacterEllipsis,
             };
             Grid.SetColumn(nameLabel, 0);
+            footer.Children.Add(nameLabel);
 
-            // Tap the label → load
-            var loadZone = new Border
-            {
-                Background = Brushes.Transparent,
-                Child      = nameLabel,
-                Cursor     = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
-            };
-            loadZone.Tapped += (_, _) => LoadPreset(preset);
-            Grid.SetColumn(loadZone, 0);
-
-            // Delete (×) button
             var deleteBtn = new Border
             {
                 Width           = 22,
                 Height          = 22,
                 CornerRadius    = new CornerRadius(11),
                 Background      = SolidColorBrush.Parse("#33EF4444"),
-                Margin          = new Thickness(0, 0, 4, 0),
+                Margin          = new Thickness(0, 0, 6, 0),
                 Cursor          = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 Child = new TextBlock
                 {
-                    Text              = "\u00D7",
-                    Foreground        = SolidColorBrush.Parse("#FCA5A5"),
-                    FontSize          = 12,
-                    FontWeight        = FontWeight.Bold,
+                    Text                = "\u00D7",
+                    Foreground          = SolidColorBrush.Parse("#FCA5A5"),
+                    FontSize            = 12,
+                    FontWeight          = FontWeight.Bold,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
                 },
@@ -735,18 +746,245 @@ namespace LeafClient.Views.Pages
                 DeletePreset(preset);
             };
             Grid.SetColumn(deleteBtn, 1);
+            footer.Children.Add(deleteBtn);
 
-            grid.Children.Add(loadZone);
-            grid.Children.Add(deleteBtn);
-            outer.Child = grid;
-            return outer;
+            Grid.SetRow(footer, 1);
+            rootGrid.Children.Add(footer);
+
+            card.Child = rootGrid;
+            card.Tapped += (_, _) => LoadPreset(preset);
+            return card;
+        }
+
+        private byte[]? _cachedSkinBytesForPresets;
+
+        private bool _loadoutVisible = true;
+        private double _loadoutFullHeight = double.NaN;
+        private System.Threading.CancellationTokenSource? _loadoutAnimCts;
+        private static readonly TimeSpan LoadoutAnimDuration = TimeSpan.FromMilliseconds(250);
+        private static readonly TimeSpan LoadoutFrameTime    = TimeSpan.FromMilliseconds(16);
+
+        private void OnCosmeticsScrollChanged(object? sender, Avalonia.Controls.ScrollChangedEventArgs e)
+        {
+            var clip = this.FindControl<Border>("LoadoutSectionClip");
+            var section = this.FindControl<Border>("LoadoutSection");
+            if (clip == null || section == null) return;
+
+            double current = e.OffsetDelta.Y;
+            if (current == 0) return;
+
+            bool shouldShow = current < 0;
+            if (shouldShow == _loadoutVisible) return;
+
+            _loadoutVisible = shouldShow;
+            _ = AnimateLoadoutAsync(shouldShow, clip, section);
+        }
+
+        private async Task AnimateLoadoutAsync(bool show, Border clip, Border section)
+        {
+            if (double.IsNaN(_loadoutFullHeight) || _loadoutFullHeight <= 0)
+            {
+                _loadoutFullHeight = clip.Bounds.Height;
+                if (_loadoutFullHeight <= 0) _loadoutFullHeight = section.Bounds.Height;
+                if (_loadoutFullHeight <= 0) _loadoutFullHeight = 174;
+            }
+
+            _loadoutAnimCts?.Cancel();
+            _loadoutAnimCts = new System.Threading.CancellationTokenSource();
+            var token = _loadoutAnimCts.Token;
+
+            double startHeight  = !double.IsNaN(clip.Height) ? clip.Height : (show ? 0 : _loadoutFullHeight);
+            double targetHeight = show ? _loadoutFullHeight : 0;
+            double startOpacity = section.Opacity;
+            double targetOpacity = show ? 1.0 : 0.0;
+
+            var start = DateTime.UtcNow;
+            try
+            {
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    var elapsed = DateTime.UtcNow - start;
+                    double t = Math.Clamp(elapsed.TotalMilliseconds / LoadoutAnimDuration.TotalMilliseconds, 0, 1);
+                    double eased = show ? 1 - Math.Pow(1 - t, 3) : Math.Pow(t, 2);
+
+                    double h2 = startHeight + (targetHeight - startHeight) * eased;
+                    double op = startOpacity + (targetOpacity - startOpacity) * eased;
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        clip.Height = h2;
+                        section.Opacity = op;
+                    });
+
+                    if (t >= 1) break;
+                    await Task.Delay(LoadoutFrameTime, token);
+                }
+
+                if (!token.IsCancellationRequested)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        clip.Height = targetHeight;
+                        section.Opacity = targetOpacity;
+                    });
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        private Control BuildPresetPreview(CosmeticPreset preset)
+        {
+            var host = new Border
+            {
+                Background = SolidColorBrush.Parse("#0A0F18"),
+                ClipToBounds = true,
+            };
+
+            try
+            {
+                var renderer = new LeafClient.Controls.SkinRendererControl
+                {
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Stretch,
+                    IsHitTestVisible    = false,
+                };
+                host.Child = renderer;
+
+                _ = LoadPresetRendererAsync(renderer, preset);
+                return host;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] BuildPresetPreview renderer init failed: {ex.Message}");
+                host.Child = BuildPresetPreviewFallback(preset);
+                return host;
+            }
+        }
+
+        private async Task LoadPresetRendererAsync(LeafClient.Controls.SkinRendererControl renderer, CosmeticPreset preset)
+        {
+            try
+            {
+                if (_cachedSkinBytesForPresets == null && _host != null)
+                    _cachedSkinBytesForPresets = await _host.FetchSkinBytesAsync();
+
+                if (_cachedSkinBytesForPresets != null)
+                    renderer.UpdateSkinTexture(_cachedSkinBytesForPresets);
+
+                if (preset.Equipped != null)
+                    CosmeticHelpers.ApplyEquippedToRenderer(renderer, preset.Equipped);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cosmetics] LoadPresetRendererAsync failed: {ex.Message}");
+            }
+        }
+
+        private static Control BuildPresetPreviewFallback(CosmeticPreset preset)
+        {
+            var grid = new Grid
+            {
+                Background = SolidColorBrush.Parse("#0A0F18"),
+                RowDefinitions    = new RowDefinitions("*,*"),
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+            };
+            var eq = preset.Equipped;
+            string?[] slotIds =
+            {
+                eq?.HatId,
+                eq?.WingsId,
+                eq?.CapeId,
+                eq?.AuraId,
+            };
+            string[] slotLabels = { "HAT", "WINGS", "CAPE", "AURA" };
+            string[] slotIcons  = { "\u26D1", "\uD83E\uDEC2", "\uD83E\uDDA9", "\u2728" };
+
+            for (int i = 0; i < 4; i++)
+            {
+                var cell = new Border
+                {
+                    Margin          = new Thickness(2),
+                    CornerRadius    = new CornerRadius(6),
+                    Background      = SolidColorBrush.Parse(slotIds[i] != null ? "#1F2A3A" : "#0F1722"),
+                    BorderBrush     = SolidColorBrush.Parse(slotIds[i] != null ? "#3B5070" : "#1C2A38"),
+                    BorderThickness = new Thickness(1),
+                };
+                var stack = new StackPanel
+                {
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                    Spacing = 1,
+                };
+                stack.Children.Add(new TextBlock
+                {
+                    Text                = slotIcons[i],
+                    FontSize            = 16,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    Foreground          = SolidColorBrush.Parse(slotIds[i] != null ? "#9CA3AF" : "#374151"),
+                });
+                stack.Children.Add(new TextBlock
+                {
+                    Text                = slotLabels[i],
+                    FontSize            = 8,
+                    LetterSpacing       = 0.5,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    Foreground          = SolidColorBrush.Parse(slotIds[i] != null ? "#6B7280" : "#1F2937"),
+                });
+                cell.Child = stack;
+                Grid.SetRow(cell, i / 2);
+                Grid.SetColumn(cell, i % 2);
+                grid.Children.Add(cell);
+            }
+            return grid;
+        }
+
+        private Control BuildAddLoadoutCard()
+        {
+            var card = new Border
+            {
+                CornerRadius    = new CornerRadius(12),
+                Background      = SolidColorBrush.Parse("#0F1722"),
+                BorderBrush     = SolidColorBrush.Parse("#1F2937"),
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(0),
+                Height          = 150,
+                Cursor          = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+            var stack = new StackPanel
+            {
+                Spacing             = 6,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            };
+            stack.Children.Add(new TextBlock
+            {
+                Text                = "\uFF0B",
+                FontSize            = 22,
+                FontWeight          = FontWeight.Bold,
+                Foreground          = SolidColorBrush.Parse("#9333EA"),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text                = "NEW LOADOUT",
+                FontSize            = 10,
+                FontWeight          = FontWeight.ExtraBold,
+                LetterSpacing       = 1.0,
+                Foreground          = SolidColorBrush.Parse("#9333EA"),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            card.Child = stack;
+            card.Tapped += (s, e) => OnSaveLoadoutTapped(s, e);
+            return card;
         }
 
         private async void LoadPreset(CosmeticPreset preset)
         {
             if (_host?.CurrentSettings == null || preset?.Equipped == null) return;
 
-            // Copy preset values into the current equipped state
             var settings = _host.CurrentSettings;
             settings.Equipped ??= new EquippedCosmetics();
             settings.Equipped.CapeId     = preset.Equipped.CapeId;
@@ -755,14 +993,35 @@ namespace LeafClient.Views.Pages
             settings.Equipped.BackItemId = preset.Equipped.BackItemId;
             settings.Equipped.AuraId     = preset.Equipped.AuraId;
 
-            // Apply to the 3D renderer
             if (_skinRenderer != null)
                 CosmeticHelpers.ApplyEquippedToRenderer(_skinRenderer, settings.Equipped);
 
             await _host.SettingsService.SaveSettingsAsync(settings);
             SaveEquippedJson();
             PopulateCosmeticsGrid();
+            _ = SyncEquippedToServerAsync(settings.Equipped);
             Console.WriteLine($"[Cosmetics] Loaded preset: {preset.Name}");
+        }
+
+        private async Task SyncEquippedToServerAsync(EquippedCosmetics? eq)
+        {
+            if (eq == null) return;
+            var jwt = _host?.CurrentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt)) return;
+            string?[] ids = { eq.CapeId, eq.HatId, eq.WingsId, eq.AuraId };
+            foreach (var id in ids)
+            {
+                if (string.IsNullOrEmpty(id)) continue;
+                try
+                {
+                    var ok = await LeafClient.Services.LeafApiService.EquipCosmeticAsync(jwt!, id!);
+                    if (!ok) Console.WriteLine($"[Cosmetics] Server-side equip failed for {id}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Cosmetics] Server-side equip error for {id}: {ex.Message}");
+                }
+            }
         }
 
         private async void DeletePreset(CosmeticPreset preset)
@@ -781,7 +1040,13 @@ namespace LeafClient.Views.Pages
         {
             if (_host?.CurrentSettings == null) return;
 
-            // Prompt for a preset name via a simple inline dialog
+            var existing = _host.CurrentSettings.CosmeticPresets;
+            if (existing != null && existing.Count >= MaxLoadouts)
+            {
+                Console.WriteLine($"[Cosmetics] Loadout cap reached ({MaxLoadouts}); delete one first.");
+                return;
+            }
+
             var name = await ShowPresetNameDialogAsync();
             if (string.IsNullOrWhiteSpace(name)) return;
 
@@ -944,6 +1209,257 @@ namespace LeafClient.Views.Pages
             }
 
             return tcs.Task;
+        }
+
+        private async Task PopulateDropsHistoryAsync()
+        {
+            if (_cosmeticsGrid == null) return;
+            _cosmeticsGrid.Children.Clear();
+
+            var comingSoonPanel = this.FindControl<Border>("EmotesComingSoonPanel");
+            var emptyState      = this.FindControl<Border>("CosmeticsEmptyState");
+            var countText       = this.FindControl<TextBlock>("CosmeticsResultCount");
+
+            if (comingSoonPanel != null) comingSoonPanel.IsVisible = false;
+            if (emptyState != null)      emptyState.IsVisible = false;
+            if (countText != null)       countText.IsVisible = false;
+
+            var jwt = _host?.CurrentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt))
+            {
+                _cosmeticsGrid.Children.Add(BuildDropsPlaceholder("Sign in to see your drop history."));
+                return;
+            }
+
+            var loading = new TextBlock
+            {
+                Text = "Loading drop history…",
+                Foreground = SolidColorBrush.Parse("#9CA3AF"),
+                FontSize = 13,
+                Margin = new Thickness(8, 16, 0, 0),
+            };
+            _cosmeticsGrid.Children.Add(loading);
+
+            List<LeafApiDropClaimResult>? history = null;
+            try { history = await LeafApiService.GetDropHistoryAsync(jwt); }
+            catch (Exception ex) { Console.WriteLine($"[Cosmetics] GetDropHistoryAsync failed: {ex.Message}"); }
+
+            _cosmeticsGrid.Children.Clear();
+
+            if (history == null || history.Count == 0)
+            {
+                _cosmeticsGrid.Children.Add(BuildDropsPlaceholder("No drops claimed yet — your first Leaf+ drop will appear here."));
+                return;
+            }
+
+            foreach (var claim in history.OrderByDescending(c => c.Month ?? ""))
+            {
+                var section = new StackPanel
+                {
+                    Spacing = 6,
+                    Margin = new Thickness(0, 0, 0, 18),
+                    Width = double.NaN,
+                };
+                var headerRow = new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Spacing = 8,
+                };
+                headerRow.Children.Add(new TextBlock
+                {
+                    Text = "🎁",
+                    FontSize = 16,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                });
+                headerRow.Children.Add(new TextBlock
+                {
+                    Text = FormatDropMonth(claim.Month) + (claim.IsFirstClaim ? "  •  Welcome drop" : ""),
+                    Foreground = SolidColorBrush.Parse("#DDD6FE"),
+                    FontSize = 13,
+                    FontWeight = FontWeight.Bold,
+                    LetterSpacing = 0.6,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                });
+                if (claim.LpCompensation > 0)
+                {
+                    headerRow.Children.Add(new Border
+                    {
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(8, 2),
+                        Background = SolidColorBrush.Parse("#3D2080"),
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = $"+{claim.LpCompensation} LP",
+                            Foreground = SolidColorBrush.Parse("#E9D5FF"),
+                            FontSize = 10,
+                            FontWeight = FontWeight.ExtraBold,
+                            LetterSpacing = 0.6,
+                        },
+                    });
+                }
+                section.Children.Add(headerRow);
+
+                var cards = new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
+                if (claim.Granted != null)
+                    foreach (var c in claim.Granted) cards.Children.Add(BuildHistoryDropCard(c, owned: false));
+                if (claim.AlreadyOwned != null)
+                    foreach (var c in claim.AlreadyOwned) cards.Children.Add(BuildHistoryDropCard(c, owned: true));
+                section.Children.Add(cards);
+
+                _cosmeticsGrid.Children.Add(section);
+            }
+        }
+
+        private static string FormatDropMonth(string? month)
+        {
+            if (string.IsNullOrWhiteSpace(month)) return "Drop";
+            if (DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt))
+                return dt.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture).ToUpperInvariant();
+            return month.ToUpperInvariant();
+        }
+
+        private static Border BuildDropsPlaceholder(string text)
+        {
+            return new Border
+            {
+                Padding = new Thickness(20, 28),
+                CornerRadius = new CornerRadius(12),
+                Background = SolidColorBrush.Parse("#0F1722"),
+                BorderBrush = SolidColorBrush.Parse("#1F2937"),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 8, 0, 0),
+                Child = new TextBlock
+                {
+                    Text = text,
+                    Foreground = SolidColorBrush.Parse("#9CA3AF"),
+                    FontSize = 13,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                },
+            };
+        }
+
+        private static string DropRarityHex(string? rarity)
+        {
+            return (rarity ?? "common").ToLowerInvariant() switch
+            {
+                "legendary" => "#F59E0B",
+                "epic"      => "#A855F7",
+                "rare"      => "#3B82F6",
+                _            => "#6B7280",
+            };
+        }
+
+        private static Border BuildHistoryDropCard(LeafApiDropCosmetic cos, bool owned)
+        {
+            var card = new Border
+            {
+                Width = 168, Height = 196,
+                Margin = new Thickness(0, 0, 10, 10),
+                CornerRadius = new CornerRadius(14),
+                Background = SolidColorBrush.Parse(owned ? "#0F1722" : "#1A1042"),
+                BorderBrush = SolidColorBrush.Parse(owned ? "#1F2937" : DropRarityHex(cos.Rarity)),
+                BorderThickness = new Thickness(owned ? 1 : 1.5),
+                ClipToBounds = true,
+                Opacity = owned ? 0.65 : 1.0,
+            };
+            var grid = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+
+            var preview = new Border
+            {
+                Background = SolidColorBrush.Parse(owned ? "#0A0F18" : "#0D0A28"),
+            };
+            var img = new Image
+            {
+                Width = 88, Height = 88,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Stretch = Avalonia.Media.Stretch.Uniform,
+            };
+            try
+            {
+                var bytes = LeafClient.Services.CosmeticHelpers.TryLoadCosmeticAsset(cos.Id);
+                if (bytes != null)
+                {
+                    using var ms = new System.IO.MemoryStream(bytes);
+                    img.Source = new Avalonia.Media.Imaging.Bitmap(ms);
+                }
+            }
+            catch { }
+            preview.Child = img;
+            Grid.SetRow(preview, 0);
+            grid.Children.Add(preview);
+
+            var rarityPill = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2),
+                Margin = new Thickness(8, 8, 0, 0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Background = SolidColorBrush.Parse(DropRarityHex(cos.Rarity)),
+                Child = new TextBlock
+                {
+                    Text = (cos.Rarity ?? "common").ToUpperInvariant(),
+                    Foreground = Brushes.White,
+                    FontSize = 9,
+                    FontWeight = FontWeight.ExtraBold,
+                    LetterSpacing = 0.8,
+                },
+            };
+            Grid.SetRow(rarityPill, 0);
+            grid.Children.Add(rarityPill);
+
+            if (owned)
+            {
+                var ownedPill = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(6, 2),
+                    Margin = new Thickness(0, 8, 8, 0),
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                    Background = SolidColorBrush.Parse("#1F2937"),
+                    Child = new TextBlock
+                    {
+                        Text = "OWNED",
+                        Foreground = SolidColorBrush.Parse("#9CA3AF"),
+                        FontSize = 9,
+                        FontWeight = FontWeight.ExtraBold,
+                        LetterSpacing = 0.8,
+                    },
+                };
+                Grid.SetRow(ownedPill, 0);
+                grid.Children.Add(ownedPill);
+            }
+
+            var footer = new StackPanel
+            {
+                Spacing = 2,
+                Margin = new Thickness(12, 8, 12, 12),
+                Background = SolidColorBrush.Parse(owned ? "#0D1422" : "#160A33"),
+            };
+            footer.Children.Add(new TextBlock
+            {
+                Text = cos.Name ?? cos.Id,
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.Bold,
+                FontSize = 12,
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            });
+            footer.Children.Add(new TextBlock
+            {
+                Text = (cos.Category ?? "").ToUpperInvariant(),
+                Foreground = SolidColorBrush.Parse(owned ? "#4B5563" : "#A78BFA"),
+                FontSize = 9,
+                FontWeight = FontWeight.SemiBold,
+                LetterSpacing = 0.5,
+            });
+            Grid.SetRow(footer, 1);
+            grid.Children.Add(footer);
+
+            card.Child = grid;
+            return card;
         }
     }
 }

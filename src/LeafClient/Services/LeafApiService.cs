@@ -402,6 +402,55 @@ namespace LeafClient.Services
             }
         }
 
+        public enum JwtProbeResult { Valid, Unauthorized, NetworkError }
+
+        public static async Task<JwtProbeResult> ProbeJwtAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/user/me");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                var response = await Http.SendAsync(request);
+                if (response.IsSuccessStatusCode) return JwtProbeResult.Valid;
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    return JwtProbeResult.Unauthorized;
+                return JwtProbeResult.NetworkError;
+            }
+            catch
+            {
+                return JwtProbeResult.NetworkError;
+            }
+        }
+
+        public static async Task<(string? Url, bool Manual)> GetSubscriptionPortalAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/user/subscription/portal");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                var response = await Http.SendAsync(request);
+                if (!response.IsSuccessStatusCode) return (null, false);
+                var body = await response.Content.ReadAsStringAsync();
+                bool manual = body.Contains("\"manual\":true", StringComparison.Ordinal);
+                int idx = body.IndexOf("\"url\"", StringComparison.Ordinal);
+                if (idx < 0) return (null, manual);
+                int colon = body.IndexOf(':', idx + 5);
+                if (colon < 0) return (null, manual);
+                int q1 = body.IndexOf('"', colon + 1);
+                if (q1 < 0) return (null, manual);
+                int q2 = body.IndexOf('"', q1 + 1);
+                if (q2 < 0) return (null, manual);
+                return (body.Substring(q1 + 1, q2 - q1 - 1).Replace("\\/", "/"), manual);
+            }
+            catch
+            {
+                return (null, false);
+            }
+        }
+
         public static async Task<(bool Success, int NewCoins, string? Error)> PurchaseCosmeticWithCoinsAsync(string accessToken, string cosmeticId)
         {
             var t = SanitizeString(accessToken, 2048);
@@ -471,6 +520,99 @@ namespace LeafClient.Services
             catch
             {
                 return new LeafApiLeafPlusSubscribeResult(false, 0, "Unable to connect to LeafClient servers.");
+            }
+        }
+
+        public static async Task<bool> MarkLeafPlusRevokeSeenAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/subscription/revoke-seen");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+                var response = await Http.SendAsync(request);
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static async Task<LeafApiSyncPullResult?> GetCloudSyncAsync(string accessToken, CancellationToken ct = default)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/sync");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                using var response = await Http.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode) return null;
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                return JsonSerializer.Deserialize(raw, LeafClient.JsonContext.Default.LeafApiSyncPullResult);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static async Task<LeafApiSyncPushResult?> PushCloudSyncAsync(string accessToken, LeafApiSyncPushRequest body, CancellationToken ct = default)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Put, $"{BaseUrl}/sync");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                request.Content = JsonContent.Create(body, LeafClient.JsonContext.Default.LeafApiSyncPushRequest);
+                using var response = await Http.SendAsync(request, ct);
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new LeafApiSyncPushResult(false, null, await ParseErrorMessageAsync(response, "Sync push failed"));
+                }
+                return JsonSerializer.Deserialize(raw, LeafClient.JsonContext.Default.LeafApiSyncPushResult);
+            }
+            catch (Exception ex)
+            {
+                return new LeafApiSyncPushResult(false, null, ex.Message);
+            }
+        }
+
+        public static async Task<List<LeafApiFeaturedServer>?> GetFeaturedServersAsync(CancellationToken ct = default)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/featured-servers");
+                using var response = await Http.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode) return null;
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                var parsed = JsonSerializer.Deserialize(raw, LeafClient.JsonContext.Default.LeafApiFeaturedServersResponse);
+                return parsed?.Items ?? new List<LeafApiFeaturedServer>();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static async Task<bool> TrackFeaturedServerClickAsync(string serverId, string? userHash = null, CancellationToken ct = default)
+        {
+            var id = SanitizeString(serverId, 64);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/featured-servers/{Uri.EscapeDataString(id)}/click");
+                var bodyJson = string.IsNullOrWhiteSpace(userHash)
+                    ? "{}"
+                    : "{\"user_hash\":\"" + (userHash!.Length > 64 ? userHash.Substring(0, 64) : userHash) + "\"}";
+                request.Content = new StringContent(bodyJson, System.Text.Encoding.UTF8, "application/json");
+                using var response = await Http.SendAsync(request, ct);
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -667,6 +809,50 @@ namespace LeafClient.Services
         {
             try { if (File.Exists(path)) File.Delete(path); }
             catch (Exception ex) { Console.WriteLine($"[JarVerify] Failed to delete {path}: {ex.Message}"); }
+        }
+
+        public static async Task<LeafApiDropInfo?> GetCurrentDropInfoAsync()
+        {
+            try
+            {
+                var response = await Http.GetAsync($"{BaseUrl}/cosmetics/drops/current");
+                if (!response.IsSuccessStatusCode) return null;
+                return await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.LeafApiDropInfo);
+            }
+            catch { return null; }
+        }
+
+        public static async Task<(LeafApiDropClaimResult? Result, string? Error)> ClaimCurrentDropAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/cosmetics/drops/claim");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                var response = await Http.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.LeafApiDropClaimResult);
+                    return (result, null);
+                }
+                var err = await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.LeafApiErrorResponse);
+                return (null, err?.Error ?? $"HTTP {(int)response.StatusCode}");
+            }
+            catch (Exception ex) { return (null, ex.Message); }
+        }
+
+        public static async Task<List<LeafApiDropClaimResult>?> GetDropHistoryAsync(string accessToken)
+        {
+            var t = SanitizeString(accessToken, 2048);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/cosmetics/drops/history");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", t);
+                var response = await Http.SendAsync(request);
+                if (!response.IsSuccessStatusCode) return null;
+                return await response.Content.ReadFromJsonAsync(LeafClient.JsonContext.Default.ListLeafApiDropClaimResult);
+            }
+            catch { return null; }
         }
 
         public static async Task<bool> EquipCosmeticAsync(string accessToken, string cosmeticId)

@@ -20,10 +20,18 @@ namespace LeafClient.Services
     {
         private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
-        private const string VersionUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestversion.txt";
-        private const string ZipUrl = "https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe/LeafClient.zip";
-        private const string ZipSha256Url = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sha256";
-        private const string ZipSignatureUrl = "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/LeafClient.zip.sig";
+        public enum UpdateChannel { Stable, Early }
+
+        public static UpdateChannel CurrentChannel { get; set; } = UpdateChannel.Stable;
+
+        private static string ChannelSubdir => CurrentChannel == UpdateChannel.Early ? "/early" : "";
+
+        private static string VersionUrl => CurrentChannel == UpdateChannel.Early
+            ? "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe/early/latestversion.txt"
+            : "https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestversion.txt";
+        private static string ZipUrl => $"https://github.com/LeafClientMC/LeafClient/raw/refs/heads/main/latestexe{ChannelSubdir}/LeafClient.zip";
+        private static string ZipSha256Url => $"https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe{ChannelSubdir}/LeafClient.zip.sha256";
+        private static string ZipSignatureUrl => $"https://raw.githubusercontent.com/LeafClientMC/LeafClient/main/latestexe{ChannelSubdir}/LeafClient.zip.sig";
 
         private static readonly string[] TrustedUpdateKeysB64 = new[]
         {

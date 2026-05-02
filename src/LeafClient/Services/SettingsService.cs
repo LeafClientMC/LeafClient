@@ -31,17 +31,13 @@ namespace LeafClient.Services
                 var secrets = ExtractSecrets(settings);
                 WriteSecretsFile(secrets);
 
-                var snapshots = StripSecretsInPlace(settings);
-                try
-                {
-                    var jsonString = JsonSerializer.Serialize(settings, JsonContext.Default.LauncherSettings);
-                    await File.WriteAllTextAsync(_settingsFilePath, jsonString);
-                    Console.WriteLine("Settings saved successfully.");
-                }
-                finally
-                {
-                    RestoreSecretsInPlace(settings, snapshots);
-                }
+                var jsonWithSecrets = JsonSerializer.Serialize(settings, JsonContext.Default.LauncherSettings);
+                var clone = JsonSerializer.Deserialize(jsonWithSecrets, JsonContext.Default.LauncherSettings);
+                if (clone == null) return;
+                StripSecretsInPlace(clone);
+                var jsonString = JsonSerializer.Serialize(clone, JsonContext.Default.LauncherSettings);
+                await File.WriteAllTextAsync(_settingsFilePath, jsonString);
+                Console.WriteLine("Settings saved successfully.");
             }
             catch (Exception ex)
             {

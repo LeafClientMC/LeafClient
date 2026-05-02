@@ -174,7 +174,6 @@ namespace LeafClient.Views
         private ToggleSwitch? _playerRightPantToggle;
         private ComboBox? _playerMainHandComboBox;
         private ComboBox? _themeComboBox;
-        private ToggleSwitch? _animationsEnabledToggle;
         private readonly SkinRenderService? _skinRenderService;
         private GameOptionsService _optionsService = new GameOptionsService();
         private Image? _playingAsImage;
@@ -314,12 +313,7 @@ namespace LeafClient.Views
         private TextBlock? _addServerStatusText;
         private Button? _addServerSaveButton;
 
-        private static readonly List<ServerInfo> _featuredServers = new()
-        {
-            new ServerInfo { Id = "featured_hypixel",   Name = "Hypixel",   Address = "mc.hypixel.net",     Port = 25565 },
-            new ServerInfo { Id = "featured_2b2t",      Name = "2b2t",      Address = "2b2t.org",           Port = 25565 },
-            new ServerInfo { Id = "featured_pvplegacy", Name = "PvPLegacy", Address = "play.pvplegacy.net", Port = 25565 }
-        };
+        private static List<ServerInfo> _featuredServers = new();
 
         // Profiles page
         private StackPanel? _profilesListPanel;
@@ -436,6 +430,11 @@ namespace LeafClient.Views
         private bool _isPurchasePopupAnimating;
         private string? _pendingPurchaseItemId;
         private int _currentCoinBalance;
+        private bool _isLeafPlus;
+        private string? _leafPlusTier;
+        private string? _leafPlusPeriodEnd;
+        private bool _hadLeafPlusRevoked;
+        private string? _leafPlusRevokeSeenAt;
 
         private string _logFolderPath = "";
         private string _logFilePath = "";
@@ -616,7 +615,6 @@ namespace LeafClient.Views
 
         private RadioButton? _updateDeliveryNormalRadio;
         private RadioButton? _updateDeliveryEarlyRadio;
-        private RadioButton? _updateDeliveryLateRadio;
 
         private ToggleSwitch? _showUsernameInDiscordRichPresenceToggle;
 
@@ -772,7 +770,7 @@ namespace LeafClient.Views
         void Services.IMainWindowHost.ShowPurchaseCelebration(string id, string name, string preview, string rarity)
             => ShowPurchaseCelebration(id, name, preview, rarity);
 
-        void Services.IMainWindowHost.ShowMonthlyPassPopup() => ShowMonthlyPassPopup();
+        void Services.IMainWindowHost.ShowMonthlyPassPopup() => ShowLeafPlusBenefitsPopup();
 
         void Services.IMainWindowHost.RefreshLeafPlusPrices() => RefreshLeafPlusPrices();
 
@@ -1217,6 +1215,12 @@ namespace LeafClient.Views
                         try { await UpdateOnlineCountDisplay(); } catch (Exception ex) { Console.WriteLine($"[UpdateOnlineCountDisplay Error] {ex.Message}"); }
                     }
 
+                    try
+                    {
+                        var activeEntry = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == _currentSettings.ActiveAccountId);
+                        if (activeEntry != null) await EnsureFreshJwtForAccountAsync(activeEntry);
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[Startup JWT refresh] {ex.Message}"); }
                     try { await UpdateLeafsBalanceAsync(); } catch (Exception ex) { Console.WriteLine($"[UpdateLeafsBalance Error] {ex.Message}"); }
                     _ = SyncOwnedCosmeticsFromApiAsync();
 
@@ -1553,6 +1557,10 @@ namespace LeafClient.Views
                     try { await Task.Delay(TimeSpan.FromSeconds(30)); Services.UpdateService.MarkBootSuccessful(); }
                     catch { }
                 });
+
+                Services.UpdateService.CurrentChannel = (_currentSettings?.GameUpdateDelivery == UpdateDelivery.EarlyOptIn && _isLeafPlus)
+                    ? Services.UpdateService.UpdateChannel.Early
+                    : Services.UpdateService.UpdateChannel.Stable;
 
                 var delayTask = Task.Delay(1500);
                 var checkTask = Services.UpdateService.CheckForUpdateAsync();
@@ -2288,6 +2296,94 @@ namespace LeafClient.Views
             }
         }
 
+        private async Task<bool> EnsureFreshJwtForAccountAsync(AccountEntry account)
+        {
+            if (_currentSettings == null || account == null) return false;
+
+            if (!string.IsNullOrEmpty(account.LeafApiJwt))
+            {
+                var probe = await LeafApiService.ProbeJwtAsync(account.LeafApiJwt);
+                if (probe == LeafApiService.JwtProbeResult.Valid) return true;
+                if (probe == LeafApiService.JwtProbeResult.NetworkError) return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(account.LeafApiRefreshToken))
+            {
+                try
+                {
+                    var refreshed = await LeafApiService.RefreshAsync(account.LeafApiRefreshToken);
+                    if (refreshed != null)
+                    {
+                        account.LeafApiJwt = refreshed.AccessToken;
+                        account.LeafApiRefreshToken = refreshed.RefreshToken;
+                        _currentSettings.LeafApiJwt = refreshed.AccessToken;
+                        _currentSettings.LeafApiRefreshToken = refreshed.RefreshToken;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        _onlineCountService?.UpdateAccessToken(refreshed.AccessToken);
+                        WriteSessionJson(refreshed.AccessToken);
+                        Console.WriteLine($"[Accounts] Refreshed JWT via refresh-token for {account.Username}");
+                        return true;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"[Accounts] Refresh-token failed for {account.Username}: {ex.Message}"); }
+            }
+
+            if (account.AccountType == "microsoft" &&
+                !string.IsNullOrWhiteSpace(account.Uuid) && !string.IsNullOrWhiteSpace(account.AccessToken))
+            {
+                try
+                {
+                    var apiResult = await LeafApiService.MicrosoftLoginAsync(account.Uuid!, account.AccessToken!);
+                    if (apiResult != null)
+                    {
+                        account.LeafApiJwt = apiResult.AccessToken;
+                        account.LeafApiRefreshToken = apiResult.RefreshToken;
+                        _currentSettings.LeafApiJwt = apiResult.AccessToken;
+                        _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
+                        await _settingsService.SaveSettingsAsync(_currentSettings);
+                        _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
+                        WriteSessionJson(apiResult.AccessToken);
+                        Console.WriteLine($"[Accounts] Silent MS re-link for {account.Username}");
+                        return true;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"[Accounts] MS re-link failed for {account.Username}: {ex.Message}"); }
+
+                if (!string.IsNullOrWhiteSpace(_currentSettings.MicrosoftRefreshToken))
+                {
+                    try
+                    {
+                        var refreshedSession = await TryDirectTokenRefreshAsync(_currentSettings.MicrosoftRefreshToken);
+                        if (refreshedSession != null && !string.IsNullOrWhiteSpace(refreshedSession.UUID) && !string.IsNullOrWhiteSpace(refreshedSession.AccessToken))
+                        {
+                            account.Uuid = refreshedSession.UUID;
+                            account.AccessToken = refreshedSession.AccessToken;
+                            account.Xuid = refreshedSession.Xuid;
+                            _currentSettings.SessionUuid = refreshedSession.UUID;
+                            _currentSettings.SessionAccessToken = refreshedSession.AccessToken;
+                            _currentSettings.SessionXuid = refreshedSession.Xuid;
+                            var apiResult2 = await LeafApiService.MicrosoftLoginAsync(refreshedSession.UUID, refreshedSession.AccessToken);
+                            if (apiResult2 != null)
+                            {
+                                account.LeafApiJwt = apiResult2.AccessToken;
+                                account.LeafApiRefreshToken = apiResult2.RefreshToken;
+                                _currentSettings.LeafApiJwt = apiResult2.AccessToken;
+                                _currentSettings.LeafApiRefreshToken = apiResult2.RefreshToken;
+                                await _settingsService.SaveSettingsAsync(_currentSettings);
+                                _onlineCountService?.UpdateAccessToken(apiResult2.AccessToken);
+                                WriteSessionJson(apiResult2.AccessToken);
+                                Console.WriteLine($"[Accounts] Full MS refresh + re-link for {account.Username}");
+                                return true;
+                            }
+                        }
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[Accounts] Full MS refresh failed for {account.Username}: {ex.Message}"); }
+                }
+            }
+
+            return false;
+        }
+
         private async Task UpdateLeafsBalanceAsync()
         {
             var jwt = _currentSettings?.LeafApiJwt;
@@ -2305,12 +2401,317 @@ namespace LeafClient.Views
             if (balance == null) return;
 
             _currentCoinBalance = balance.Coins;
+            _isLeafPlus = balance.IsLeafPlus;
+            _leafPlusTier = balance.LeafPlusTier;
+            _leafPlusPeriodEnd = balance.LeafPlusPeriodEnd;
+            _hadLeafPlusRevoked = balance.HadLeafPlusRevoked;
+            _leafPlusRevokeSeenAt = balance.LeafPlusRevokeSeenAt;
+
             Dispatcher.UIThread.Post(() =>
             {
                 _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
                 if (_leafsBalanceText != null)
                     _leafsBalanceText.Text = balance.Coins.ToString("N0");
+                ApplyLeafPlusUiState();
             });
+        }
+
+        private void ApplyLeafPlusUiState()
+        {
+            try
+            {
+                var pill = this.FindControl<Border>("LeafPlusActivePill");
+                if (pill != null)
+                    pill.IsVisible = _isLeafPlus;
+
+                var pillText = this.FindControl<TextBlock>("LeafPlusActivePillText");
+                if (pillText != null && _isLeafPlus)
+                {
+                    pillText.Text = "LEAF+";
+                }
+
+                var cardTitle    = this.FindControl<TextBlock>("LeafPlusCardTitle");
+                var cardSubtitle = this.FindControl<TextBlock>("LeafPlusCardSubtitle");
+                var cardActionTx = this.FindControl<TextBlock>("LeafPlusCardActionText");
+
+                if (_isLeafPlus)
+                {
+                    string tier = _leafPlusTier switch
+                    {
+                        "yearly"    => "Yearly",
+                        "quarterly" => "Quarterly",
+                        _           => "Monthly",
+                    };
+                    string expiry = "active";
+                    if (!string.IsNullOrEmpty(_leafPlusPeriodEnd))
+                    {
+                        if (DateTimeOffset.TryParse(_leafPlusPeriodEnd, out var dt))
+                            expiry = $"renews {dt.ToLocalTime():MMM d, yyyy}";
+                    }
+                    if (cardTitle    != null) cardTitle.Text    = $"Leaf+ {tier}";
+                    if (cardSubtitle != null) cardSubtitle.Text = $"Subscription {expiry}";
+                    if (cardActionTx != null) cardActionTx.Text = "MANAGE";
+                }
+                else
+                {
+                    if (cardTitle    != null) cardTitle.Text    = "Leaf+";
+                    if (cardSubtitle != null) cardSubtitle.Text = "Unlock cloud sync, custom name tag, and exclusive perks.";
+                    if (cardActionTx != null) cardActionTx.Text = "GET LEAF+";
+                }
+
+                if (!_isLeafPlus)
+                {
+                    var earlyRadio = this.FindControl<RadioButton>("UpdateDeliveryEarlyRadio");
+                    if (earlyRadio?.IsChecked == true)
+                    {
+                        _suppressEarlyOptInGate = true;
+                        try
+                        {
+                            earlyRadio.IsChecked = false;
+                            var normalRadio = this.FindControl<RadioButton>("UpdateDeliveryNormalRadio");
+                            if (normalRadio != null) normalRadio.IsChecked = true;
+                        }
+                        finally { _suppressEarlyOptInGate = false; }
+                        if (_currentSettings != null)
+                        {
+                            _currentSettings.GameUpdateDelivery = UpdateDelivery.Normal;
+                            MarkSettingsDirty();
+                        }
+                    }
+                }
+
+                MaybeShowRevokedPopup();
+
+                if (_isLeafPlus && !_cloudSyncPullDone)
+                    _ = TryCloudSyncPullAsync();
+
+                if (_isLeafPlus && !_cosmeticDropChecked)
+                    _ = TryCheckAndClaimCosmeticDropAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ApplyLeafPlusUiState] {ex.Message}");
+            }
+        }
+
+        private void OnLeafPlusCardActionClick(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                CloseAccountPanel();
+                if (_isLeafPlus)
+                {
+                    _ = OpenSubscriptionManagementAsync();
+                }
+                else
+                {
+                    ShowLeafPlusBenefitsPopup();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[OnLeafPlusCardActionClick] {ex.Message}");
+            }
+        }
+
+        private async Task OpenSubscriptionManagementAsync()
+        {
+            try
+            {
+                var jwt = _currentSettings?.LeafApiJwt;
+                (string? Url, bool Manual) portal = (null, false);
+                if (!string.IsNullOrEmpty(jwt))
+                {
+                    portal = await LeafClient.Services.LeafApiService.GetSubscriptionPortalAsync(jwt);
+                }
+
+                if (portal.Manual)
+                {
+                    await ShowManualGrantInfoAsync();
+                    return;
+                }
+
+                string url = !string.IsNullOrWhiteSpace(portal.Url)
+                    ? portal.Url!
+                    : "https://leafclient.lemonsqueezy.com/billing";
+
+                Console.WriteLine($"[Leaf+] Opening subscription management: {url}");
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName        = url,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[OpenSubscriptionManagementAsync] {ex.Message}");
+            }
+        }
+
+        private async Task ShowManualGrantInfoAsync()
+        {
+            var overlay = this.FindControl<Grid>("ManualGrantInfoOverlay");
+            var panel   = this.FindControl<Border>("ManualGrantInfoPanel");
+            if (overlay == null || panel == null) return;
+            overlay.Opacity = 0;
+            overlay.IsVisible = true;
+            if (panel.RenderTransform is ScaleTransform st0)
+            {
+                st0.ScaleX = 0.92; st0.ScaleY = 0.92;
+            }
+            int steps = 10;
+            for (int i = 1; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float ease = 1f - (float)Math.Pow(1f - t, 3);
+                overlay.Opacity = ease;
+                if (panel.RenderTransform is ScaleTransform s)
+                {
+                    s.ScaleX = 0.92 + 0.08 * ease;
+                    s.ScaleY = 0.92 + 0.08 * ease;
+                }
+                await Task.Delay(18);
+            }
+            overlay.Opacity = 1;
+            if (panel.RenderTransform is ScaleTransform fs) { fs.ScaleX = 1; fs.ScaleY = 1; }
+        }
+
+        private void OnManualGrantInfoDismiss(object? sender, RoutedEventArgs e)
+        {
+            HideManualGrantInfo();
+        }
+
+        private void OnManualGrantInfoBackdropTapped(object? sender, TappedEventArgs e)
+        {
+            if (e.Source == sender)
+                HideManualGrantInfo();
+        }
+
+        private void HideManualGrantInfo()
+        {
+            var overlay = this.FindControl<Grid>("ManualGrantInfoOverlay");
+            if (overlay != null) overlay.IsVisible = false;
+        }
+
+        private void MaybeShowRevokedPopup()
+        {
+            if (!_hadLeafPlusRevoked) return;
+            if (!string.IsNullOrEmpty(_leafPlusRevokeSeenAt)) return;
+            if (_revokedPopupShownThisSession) return;
+            _revokedPopupShownThisSession = true;
+            ShowLeafPlusRevokedPopup();
+        }
+
+        private bool _revokedPopupShownThisSession;
+
+        private async void ShowLeafPlusRevokedPopup()
+        {
+            try
+            {
+                var overlay = this.FindControl<Grid>("LeafPlusRevokedOverlay");
+                var panel   = this.FindControl<Border>("LeafPlusRevokedPanel");
+                if (overlay == null || panel == null) return;
+                overlay.Opacity = 0;
+                overlay.IsVisible = true;
+                if (panel.RenderTransform is ScaleTransform st)
+                {
+                    st.ScaleX = 0.92; st.ScaleY = 0.92;
+                }
+                int steps = 10;
+                for (int i = 1; i <= steps; i++)
+                {
+                    float t = i / (float)steps;
+                    float ease = 1f - (float)Math.Pow(1f - t, 3);
+                    overlay.Opacity = ease;
+                    if (panel.RenderTransform is ScaleTransform s)
+                    {
+                        s.ScaleX = 0.92 + 0.08 * ease;
+                        s.ScaleY = 0.92 + 0.08 * ease;
+                    }
+                    await Task.Delay(18);
+                }
+                overlay.Opacity = 1;
+                if (panel.RenderTransform is ScaleTransform fs) { fs.ScaleX = 1; fs.ScaleY = 1; }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ShowLeafPlusRevokedPopup] {ex.Message}");
+            }
+        }
+
+        private async Task CloseLeafPlusRevokedPopupAsync()
+        {
+            try
+            {
+                var overlay = this.FindControl<Grid>("LeafPlusRevokedOverlay");
+                var panel   = this.FindControl<Border>("LeafPlusRevokedPanel");
+                if (overlay == null || panel == null) return;
+                int steps = 8;
+                for (int i = steps - 1; i >= 0; i--)
+                {
+                    float t = i / (float)(steps - 1);
+                    overlay.Opacity = t;
+                    if (panel.RenderTransform is ScaleTransform s)
+                    {
+                        s.ScaleX = 0.92 + 0.08 * t;
+                        s.ScaleY = 0.92 + 0.08 * t;
+                    }
+                    await Task.Delay(14);
+                }
+                overlay.IsVisible = false;
+            }
+            catch { }
+        }
+
+        private async void OnLeafPlusRevokedBackdropTapped(object? sender, TappedEventArgs e)
+        {
+            await DismissLeafPlusRevokedAsync();
+        }
+
+        private async void OnLeafPlusRevokedDismiss(object? sender, RoutedEventArgs e)
+        {
+            await DismissLeafPlusRevokedAsync();
+        }
+
+        private async void OnLeafPlusRevokedRenew(object? sender, RoutedEventArgs e)
+        {
+            await DismissLeafPlusRevokedAsync();
+            ShowLeafPlusBenefitsPopup();
+        }
+
+        private bool _suppressEarlyOptInGate;
+
+        private void OnUpdateDeliveryEarlyChecked(object? sender, RoutedEventArgs e)
+        {
+            if (_suppressEarlyOptInGate) return;
+            if (_isLeafPlus) return;
+
+            _suppressEarlyOptInGate = true;
+            try
+            {
+                var earlyRadio  = this.FindControl<RadioButton>("UpdateDeliveryEarlyRadio");
+                var normalRadio = this.FindControl<RadioButton>("UpdateDeliveryNormalRadio");
+                if (earlyRadio  != null) earlyRadio.IsChecked  = false;
+                if (normalRadio != null) normalRadio.IsChecked = true;
+            }
+            finally
+            {
+                _suppressEarlyOptInGate = false;
+            }
+
+            ShowLeafPlusBenefitsPopup();
+        }
+
+        private async Task DismissLeafPlusRevokedAsync()
+        {
+            await CloseLeafPlusRevokedPopupAsync();
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (!string.IsNullOrEmpty(jwt))
+            {
+                _ = LeafApiService.MarkLeafPlusRevokeSeenAsync(jwt);
+            }
+            _leafPlusRevokeSeenAt = DateTimeOffset.UtcNow.ToString("o");
+            _hadLeafPlusRevoked = false;
         }
 
         private async Task<string?> EnsureLeafJwtAsync()
@@ -3316,7 +3717,6 @@ namespace LeafClient.Views
 
             _updateDeliveryNormalRadio = this.FindControl<RadioButton>("UpdateDeliveryNormalRadio");
             _updateDeliveryEarlyRadio = this.FindControl<RadioButton>("UpdateDeliveryEarlyRadio");
-            _updateDeliveryLateRadio = this.FindControl<RadioButton>("UpdateDeliveryLateRadio");
 
             _showUsernameInDiscordRichPresenceToggle = this.FindControl<ToggleSwitch>("ShowUsernameInDiscordRichPresenceToggle");
             if (_showUsernameInDiscordRichPresenceToggle != null)
@@ -7740,6 +8140,552 @@ namespace LeafClient.Views
             Paint(monthly,   tier == "monthly");
             Paint(quarterly, tier == "quarterly");
             Paint(yearly,    tier == "yearly");
+
+            var bMonthly   = this.FindControl<Border>("LeafPlusTierMonthly");
+            var bQuarterly = this.FindControl<Border>("LeafPlusTierQuarterly");
+            var bYearly    = this.FindControl<Border>("LeafPlusTierYearly");
+            void PaintBenefit(Border? b, bool selected, bool isYearly)
+            {
+                if (b == null) return;
+                if (selected)
+                {
+                    b.BorderBrush = SolidColorBrush.Parse("#A855F7");
+                    b.BorderThickness = new Thickness(2);
+                }
+                else if (isYearly)
+                {
+                    var br = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    };
+                    br.GradientStops.Add(new GradientStop(Color.Parse("#9333EA"), 0));
+                    br.GradientStops.Add(new GradientStop(Color.Parse("#6D28D9"), 1));
+                    b.BorderBrush = br;
+                    b.BorderThickness = new Thickness(1.5);
+                }
+                else
+                {
+                    b.BorderBrush = SolidColorBrush.Parse("#2A2055");
+                    b.BorderThickness = new Thickness(1.5);
+                }
+            }
+            PaintBenefit(bMonthly,   tier == "monthly",   isYearly: false);
+            PaintBenefit(bQuarterly, tier == "quarterly", isYearly: false);
+            PaintBenefit(bYearly,    tier == "yearly",    isYearly: true);
+        }
+
+        private bool _isLeafPlusBenefitsAnimating;
+
+        private async void ShowLeafPlusBenefitsPopup()
+        {
+            var overlay  = this.FindControl<Grid>("LeafPlusBenefitsOverlay");
+            var panel    = this.FindControl<Border>("LeafPlusBenefitsPanel");
+            var backdrop = this.FindControl<Border>("LeafPlusBenefitsBackdrop");
+            if (overlay == null || panel == null) return;
+            if (_isLeafPlusBenefitsAnimating || overlay.IsVisible) return;
+
+            _isLeafPlusBenefitsAnimating = true;
+
+            var titleTb        = this.FindControl<TextBlock>("LeafPlusBenefitsTitle");
+            var subtitleTb     = this.FindControl<TextBlock>("LeafPlusBenefitsSubtitle");
+            var choosePlanTb   = this.FindControl<TextBlock>("LeafPlusBenefitsChoosePlanLabel");
+            var tierGrid       = this.FindControl<Grid>("LeafPlusBenefitsTierGrid");
+            var continueText   = this.FindControl<TextBlock>("LeafPlusBenefitsContinueText");
+
+            if (_isLeafPlus)
+            {
+                string tier = _leafPlusTier switch
+                {
+                    "yearly"    => "Yearly",
+                    "quarterly" => "Quarterly",
+                    _           => "Monthly",
+                };
+                string sub = $"{tier} subscription active";
+                if (!string.IsNullOrEmpty(_leafPlusPeriodEnd) &&
+                    DateTimeOffset.TryParse(_leafPlusPeriodEnd, out var dt))
+                {
+                    sub = $"{tier} · renews {dt.ToLocalTime():MMM d, yyyy}";
+                }
+
+                if (titleTb      != null) titleTb.Text      = "You're subscribed to Leaf+";
+                if (subtitleTb   != null) subtitleTb.Text   = sub;
+                if (choosePlanTb != null) choosePlanTb.IsVisible = false;
+                if (tierGrid     != null) tierGrid.IsVisible     = false;
+                if (continueText != null) continueText.Text = "CLOSE";
+            }
+            else
+            {
+                if (titleTb      != null) titleTb.Text      = "Leaf+";
+                if (subtitleTb   != null) subtitleTb.Text   = "Unlock the full Leaf experience";
+                if (choosePlanTb != null) choosePlanTb.IsVisible = true;
+                if (tierGrid     != null) tierGrid.IsVisible     = true;
+                if (continueText != null) continueText.Text = "CONTINUE";
+
+                if (string.IsNullOrEmpty(_selectedLeafPlusTier)) _selectedLeafPlusTier = "yearly";
+                var seedBorder = _selectedLeafPlusTier switch
+                {
+                    "monthly"   => this.FindControl<Border>("LeafPlusTierMonthly"),
+                    "quarterly" => this.FindControl<Border>("LeafPlusTierQuarterly"),
+                    _           => this.FindControl<Border>("LeafPlusTierYearly"),
+                };
+                if (seedBorder != null)
+                    OnLeafPlusTierTapped(seedBorder, new TappedEventArgs(Avalonia.Input.Gestures.TappedEvent, null));
+            }
+
+            overlay.IsVisible = true;
+            if (backdrop != null) backdrop.Opacity = 0;
+            panel.Opacity = 0;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(0.85, 0.85);
+            panel.RenderTransform       = st;
+            panel.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            st.ScaleX = 0.85; st.ScaleY = 0.85;
+
+            if (!AreAnimationsEnabled())
+            {
+                if (backdrop != null) backdrop.Opacity = 1;
+                panel.Opacity = 1;
+                st.ScaleX = 1; st.ScaleY = 1;
+                _isLeafPlusBenefitsAnimating = false;
+                return;
+            }
+
+            const int steps = 18;
+            const int durationMs = 240;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps;
+                double ease = 1 - Math.Pow(1 - t, 3);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = ease;
+                    panel.Opacity = ease;
+                    st.ScaleX = 0.85 + 0.15 * ease;
+                    st.ScaleY = 0.85 + 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+
+            _isLeafPlusBenefitsAnimating = false;
+        }
+
+        private async void CloseLeafPlusBenefitsPopup()
+        {
+            var overlay  = this.FindControl<Grid>("LeafPlusBenefitsOverlay");
+            var panel    = this.FindControl<Border>("LeafPlusBenefitsPanel");
+            var backdrop = this.FindControl<Border>("LeafPlusBenefitsBackdrop");
+            if (overlay == null || panel == null || !overlay.IsVisible) return;
+            if (_isLeafPlusBenefitsAnimating) return;
+
+            _isLeafPlusBenefitsAnimating = true;
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+
+            if (!AreAnimationsEnabled())
+            {
+                overlay.IsVisible = false;
+                _isLeafPlusBenefitsAnimating = false;
+                return;
+            }
+
+            const int steps = 14;
+            const int durationMs = 180;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = 1 - t;
+                    panel.Opacity = 1 - t;
+                    st.ScaleX = 1 - 0.1 * t;
+                    st.ScaleY = 1 - 0.1 * t;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+            overlay.IsVisible = false;
+            _isLeafPlusBenefitsAnimating = false;
+        }
+
+        private void OnLeafPlusBenefitsClose(object? sender, TappedEventArgs e) => CloseLeafPlusBenefitsPopup();
+        private void OnLeafPlusBenefitsBackdropTapped(object? sender, TappedEventArgs e) => CloseLeafPlusBenefitsPopup();
+        private async void OnLeafPlusBenefitsContinue(object? sender, RoutedEventArgs e)
+        {
+            CloseLeafPlusBenefitsPopup();
+            if (_isLeafPlus) return;
+            await Task.Delay(220);
+            ShowLeafPlusPaymentPopup();
+        }
+
+
+        private bool _cosmeticDropChecked;
+        private bool _isCosmeticDropAnimating;
+        private System.Threading.CancellationTokenSource? _confettiCts;
+
+        private static string CurrentDropMonthUtc()
+        {
+            var n = DateTime.UtcNow;
+            return $"{n.Year:0000}-{n.Month:00}";
+        }
+
+        private static string RarityColorHex(string? rarity) => rarity switch
+        {
+            "legendary" => "#F59E0B",
+            "epic"      => "#A855F7",
+            "rare"      => "#3B82F6",
+            _           => "#9CA3AF",
+        };
+
+        private async Task TryCheckAndClaimCosmeticDropAsync()
+        {
+            if (_cosmeticDropChecked) return;
+            _cosmeticDropChecked = true;
+            if (!_isLeafPlus) return;
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt) || _currentSettings == null) return;
+
+            var month = CurrentDropMonthUtc();
+            if (_currentSettings.LastSeenCosmeticDropMonth == month) return;
+
+            try
+            {
+                var info = await Services.LeafApiService.GetCurrentDropInfoAsync();
+                if (info == null || !info.HasActiveDrop) return;
+
+                var (result, error) = await Services.LeafApiService.ClaimCurrentDropAsync(jwt!);
+                if (result == null)
+                {
+                    Console.WriteLine($"[CosmeticDrop] claim failed: {error}");
+                    return;
+                }
+
+                _currentSettings.LastSeenCosmeticDropMonth = month;
+                MarkSettingsDirty();
+                if (result.NewCoinBalance.HasValue)
+                {
+                    ((Services.IMainWindowHost)this).UpdateCoinBalance(result.NewCoinBalance.Value);
+                }
+
+                _ = SyncOwnedCosmeticsFromApiAsync();
+
+                await Dispatcher.UIThread.InvokeAsync(() => ShowCosmeticDropPopup(result));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CosmeticDrop] error: {ex.Message}");
+            }
+        }
+
+        private async void ShowCosmeticDropPopup(LeafApiDropClaimResult result)
+        {
+            var overlay  = this.FindControl<Grid>("CosmeticDropOverlay");
+            var panel    = this.FindControl<Border>("CosmeticDropPanel");
+            var backdrop = this.FindControl<Border>("CosmeticDropBackdrop");
+            var canvas   = this.FindControl<Canvas>("CosmeticDropConfettiCanvas");
+            var titleTb  = this.FindControl<TextBlock>("CosmeticDropTitle");
+            var subTb    = this.FindControl<TextBlock>("CosmeticDropSubtitle");
+            var sectionTb= this.FindControl<TextBlock>("CosmeticDropSectionLabel");
+            var lpPanel  = this.FindControl<Border>("CosmeticDropLpPanel");
+            var lpHead   = this.FindControl<TextBlock>("CosmeticDropLpHeadline");
+            var lpSub    = this.FindControl<TextBlock>("CosmeticDropLpSubline");
+            var cards    = this.FindControl<WrapPanel>("CosmeticDropCardsPanel");
+            if (overlay == null || panel == null || cards == null) return;
+            if (_isCosmeticDropAnimating || overlay.IsVisible) return;
+            _isCosmeticDropAnimating = true;
+
+            string monthDisplay;
+            try
+            {
+                var parts = result.Month.Split('-');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var y) && int.TryParse(parts[1], out var m))
+                    monthDisplay = new DateTime(y, m, 1).ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+                else
+                    monthDisplay = result.Month;
+            }
+            catch { monthDisplay = result.Month; }
+
+            bool grantedAny = result.Granted != null && result.Granted.Count > 0;
+            bool ownedAny = result.AlreadyOwned != null && result.AlreadyOwned.Count > 0;
+
+            if (titleTb != null) titleTb.Text = grantedAny ? "🎉 New cosmetics dropped!" : "Already in your collection";
+            if (subTb   != null) subTb.Text   = $"Leaf+ Monthly Drop · {monthDisplay}";
+
+            if (lpPanel != null && lpHead != null && lpSub != null)
+            {
+                if (!grantedAny && ownedAny && result.LpCompensation > 0)
+                {
+                    lpPanel.IsVisible = true;
+                    lpHead.Text = $"+{result.LpCompensation:N0} 🍃 Leaf Points";
+                    lpSub.Text  = "You already had everything in this month's drop, so here's some Leaf Points as a thank-you for being subscribed.";
+                }
+                else
+                {
+                    lpPanel.IsVisible = false;
+                }
+            }
+
+            if (sectionTb != null)
+            {
+                sectionTb.Text = grantedAny
+                    ? (ownedAny ? "GRANTED · YOU ALREADY HAD" : "GRANTED")
+                    : "THIS MONTH'S DROPS";
+            }
+
+            cards.Children.Clear();
+            if (result.Granted != null) foreach (var c in result.Granted) cards.Children.Add(BuildDropCard(c, owned: false));
+            if (result.AlreadyOwned != null) foreach (var c in result.AlreadyOwned) cards.Children.Add(BuildDropCard(c, owned: true));
+
+            overlay.IsVisible = true;
+            if (backdrop != null) backdrop.Opacity = 0;
+            panel.Opacity = 0;
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(0.85, 0.85);
+            panel.RenderTransform = st;
+            panel.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            st.ScaleX = 0.85; st.ScaleY = 0.85;
+
+            _confettiCts?.Cancel();
+            _confettiCts = new System.Threading.CancellationTokenSource();
+            if (canvas != null) _ = AnimateConfettiAsync(canvas, _confettiCts.Token);
+
+            if (!AreAnimationsEnabled())
+            {
+                if (backdrop != null) backdrop.Opacity = 1;
+                panel.Opacity = 1;
+                st.ScaleX = 1; st.ScaleY = 1;
+                _isCosmeticDropAnimating = false;
+                return;
+            }
+
+            const int steps = 22;
+            const int durationMs = 320;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps;
+                double ease = 1 - Math.Pow(1 - t, 3);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = ease;
+                    panel.Opacity = ease;
+                    st.ScaleX = 0.85 + 0.15 * ease;
+                    st.ScaleY = 0.85 + 0.15 * ease;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+            _isCosmeticDropAnimating = false;
+        }
+
+        private Border BuildDropCard(LeafApiDropCosmetic cos, bool owned)
+        {
+            var card = new Border
+            {
+                Width = 168, Height = 196,
+                Margin = new Thickness(0, 0, 10, 10),
+                CornerRadius = new CornerRadius(14),
+                Background = SolidColorBrush.Parse(owned ? "#0F1722" : "#1A1042"),
+                BorderBrush = SolidColorBrush.Parse(owned ? "#1F2937" : RarityColorHex(cos.Rarity)),
+                BorderThickness = new Thickness(owned ? 1 : 1.5),
+                ClipToBounds = true,
+                Opacity = owned ? 0.65 : 1.0,
+            };
+            var grid = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+
+            var preview = new Border
+            {
+                Background = SolidColorBrush.Parse(owned ? "#0A0F18" : "#0D0A28"),
+            };
+            var img = new Image
+            {
+                Width = 88, Height = 88,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Stretch = Avalonia.Media.Stretch.Uniform,
+            };
+            try
+            {
+                var bytes = LeafClient.Services.CosmeticHelpers.TryLoadCosmeticAsset(cos.Id);
+                if (bytes != null)
+                {
+                    using var ms = new System.IO.MemoryStream(bytes);
+                    img.Source = new Avalonia.Media.Imaging.Bitmap(ms);
+                }
+            }
+            catch { }
+            preview.Child = img;
+            Grid.SetRow(preview, 0);
+            grid.Children.Add(preview);
+
+            var rarityPill = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2),
+                Margin = new Thickness(8, 8, 0, 0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Background = SolidColorBrush.Parse(RarityColorHex(cos.Rarity)),
+                Child = new TextBlock
+                {
+                    Text = (cos.Rarity ?? "common").ToUpperInvariant(),
+                    Foreground = Brushes.White,
+                    FontSize = 9,
+                    FontWeight = FontWeight.ExtraBold,
+                    LetterSpacing = 0.8,
+                },
+            };
+            Grid.SetRow(rarityPill, 0);
+            grid.Children.Add(rarityPill);
+
+            if (owned)
+            {
+                var ownedPill = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(6, 2),
+                    Margin = new Thickness(0, 8, 8, 0),
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                    Background = SolidColorBrush.Parse("#1F2937"),
+                    Child = new TextBlock
+                    {
+                        Text = "OWNED",
+                        Foreground = SolidColorBrush.Parse("#9CA3AF"),
+                        FontSize = 9,
+                        FontWeight = FontWeight.ExtraBold,
+                        LetterSpacing = 0.8,
+                    },
+                };
+                Grid.SetRow(ownedPill, 0);
+                grid.Children.Add(ownedPill);
+            }
+
+            var footer = new StackPanel
+            {
+                Spacing = 2,
+                Margin = new Thickness(12, 8, 12, 12),
+                Background = SolidColorBrush.Parse(owned ? "#0D1422" : "#160A33"),
+            };
+            footer.Children.Add(new TextBlock
+            {
+                Text = cos.Name ?? cos.Id,
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.Bold,
+                FontSize = 12,
+                TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            });
+            footer.Children.Add(new TextBlock
+            {
+                Text = (cos.Category ?? "").ToUpperInvariant(),
+                Foreground = SolidColorBrush.Parse(owned ? "#4B5563" : "#A78BFA"),
+                FontSize = 9,
+                FontWeight = FontWeight.SemiBold,
+                LetterSpacing = 0.5,
+            });
+            Grid.SetRow(footer, 1);
+            grid.Children.Add(footer);
+
+            card.Child = grid;
+            return card;
+        }
+
+        private async Task AnimateConfettiAsync(Canvas canvas, System.Threading.CancellationToken ct)
+        {
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => canvas.Children.Clear());
+                if (!AreAnimationsEnabled()) return;
+
+                var rng = new Random();
+                string[] colors = { "#A855F7", "#F59E0B", "#3B82F6", "#22C55E", "#EF4444", "#FFFFFF" };
+                int total = 36;
+                double width = canvas.Bounds.Width > 0 ? canvas.Bounds.Width : 1280;
+
+                var pieces = new List<(Border b, double vx, double vy, double rotSpeed, double startX, double startY)>();
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    for (int i = 0; i < total; i++)
+                    {
+                        var sz = 6 + rng.NextDouble() * 6;
+                        var b = new Border
+                        {
+                            Width = sz,
+                            Height = sz * 0.45,
+                            CornerRadius = new CornerRadius(1.5),
+                            Background = SolidColorBrush.Parse(colors[rng.Next(colors.Length)]),
+                            RenderTransform = new RotateTransform(rng.NextDouble() * 360),
+                        };
+                        var startX = rng.NextDouble() * width;
+                        var startY = -20 - rng.NextDouble() * 80;
+                        Canvas.SetLeft(b, startX);
+                        Canvas.SetTop(b, startY);
+                        canvas.Children.Add(b);
+                        var vx = (rng.NextDouble() - 0.5) * 60;
+                        var vy = 80 + rng.NextDouble() * 100;
+                        var rotSpeed = (rng.NextDouble() - 0.5) * 360;
+                        pieces.Add((b, vx, vy, rotSpeed, startX, startY));
+                    }
+                });
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                double lifetimeMs = 4500;
+                while (!ct.IsCancellationRequested && sw.ElapsedMilliseconds < lifetimeMs)
+                {
+                    double t = sw.Elapsed.TotalSeconds;
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        foreach (var p in pieces)
+                        {
+                            double x = p.startX + p.vx * t + Math.Sin(t * 2 + p.startX) * 12;
+                            double y = p.startY + p.vy * t + 0.5 * 80 * t * t;
+                            Canvas.SetLeft(p.b, x);
+                            Canvas.SetTop(p.b, y);
+                            if (p.b.RenderTransform is RotateTransform rt)
+                                rt.Angle += p.rotSpeed * 0.016;
+                            double fade = 1 - Math.Min(1, t / (lifetimeMs / 1000));
+                            p.b.Opacity = fade;
+                        }
+                    });
+                    await Task.Delay(16, ct);
+                }
+                await Dispatcher.UIThread.InvokeAsync(() => canvas.Children.Clear());
+            }
+            catch (TaskCanceledException) { }
+            catch (Exception ex) { Console.WriteLine($"[CosmeticDrop] confetti error: {ex.Message}"); }
+        }
+
+        private async void OnCosmeticDropOk(object? sender, RoutedEventArgs e)
+        {
+            var overlay  = this.FindControl<Grid>("CosmeticDropOverlay");
+            var panel    = this.FindControl<Border>("CosmeticDropPanel");
+            var backdrop = this.FindControl<Border>("CosmeticDropBackdrop");
+            if (overlay == null || panel == null) return;
+            if (_isCosmeticDropAnimating) return;
+            _isCosmeticDropAnimating = true;
+
+            _confettiCts?.Cancel();
+
+            var st = panel.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+            if (!AreAnimationsEnabled())
+            {
+                overlay.IsVisible = false;
+                _isCosmeticDropAnimating = false;
+                return;
+            }
+
+            const int steps = 14;
+            const int durationMs = 180;
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (backdrop != null) backdrop.Opacity = 1 - t;
+                    panel.Opacity = 1 - t;
+                    st.ScaleX = 1 - 0.1 * t;
+                    st.ScaleY = 1 - 0.1 * t;
+                });
+                if (i < steps) await Task.Delay(durationMs / steps);
+            }
+            overlay.IsVisible = false;
+            _isCosmeticDropAnimating = false;
         }
 
         // Lemon Squeezy checkout URLs — one per billing tier.
@@ -7747,16 +8693,16 @@ namespace LeafClient.Views
         private const string LeafPlusCheckoutQuarterly = "https://leafclient.lemonsqueezy.com/checkout/buy/305dfdd4-40fd-4e00-946a-e6246b8636ee";
         private const string LeafPlusCheckoutYearly    = "https://leafclient.lemonsqueezy.com/checkout/buy/d3042d32-0b28-49ae-b12f-f897c308b9e0";
 
-        private const int LeafPlusCoinsMonthly   = 500;
-        private const int LeafPlusCoinsQuarterly = 1400;
-        private const int LeafPlusCoinsYearly    = 5000;
+        private const int LeafPlusCoinsMonthly   = 3000;
+        private const int LeafPlusCoinsQuarterly = 8400;
+        private const int LeafPlusCoinsYearly    = 30000;
 
         private bool _isLeafPlusPaymentAnimating;
 
         private void OnMonthlyPassSubscribeTapped(object? sender, TappedEventArgs e)
         {
             CloseMonthlyPassPopup();
-            ShowLeafPlusPaymentPopup();
+            ShowLeafPlusBenefitsPopup();
         }
 
         private async void ShowLeafPlusPaymentPopup()
@@ -8782,6 +9728,72 @@ namespace LeafClient.Views
                 _settingsDirty = true;
                 ShowSettingsSaveBanner();
             }
+            _ = TryCloudSyncPushAsync();
+        }
+
+        private bool _cloudSyncPullDone;
+
+        private async Task TryCloudSyncPullAsync()
+        {
+            if (_cloudSyncPullDone) return;
+            if (!_isLeafPlus) return;
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt) || _currentSettings == null) return;
+            try
+            {
+                var remote = await Services.CloudSyncService.PullAsync(jwt);
+                if (remote == null) return;
+                _cloudSyncPullDone = true;
+                if (!Services.CloudSyncService.ShouldApplyRemote(_currentSettings.LastCloudSyncAt, remote.LastSyncedAt))
+                    return;
+
+                if (remote.LauncherSettings.HasValue && remote.LauncherSettings.Value.ValueKind != JsonValueKind.Null)
+                {
+                    try
+                    {
+                        var json = remote.LauncherSettings.Value.GetRawText();
+                        var incoming = System.Text.Json.JsonSerializer.Deserialize(json, JsonContext.Default.LauncherSettings);
+                        if (incoming != null)
+                        {
+                            incoming.SessionAccessToken = _currentSettings.SessionAccessToken;
+                            incoming.MicrosoftRefreshToken = _currentSettings.MicrosoftRefreshToken;
+                            incoming.LeafApiJwt = _currentSettings.LeafApiJwt;
+                            incoming.LeafApiRefreshToken = _currentSettings.LeafApiRefreshToken;
+                            incoming.SavedAccounts = _currentSettings.SavedAccounts;
+                            incoming.ActiveAccountId = _currentSettings.ActiveAccountId;
+                            incoming.SessionUsername = _currentSettings.SessionUsername;
+                            incoming.SessionUuid = _currentSettings.SessionUuid;
+                            incoming.SessionXuid = _currentSettings.SessionXuid;
+                            incoming.IsLoggedIn = _currentSettings.IsLoggedIn;
+                            incoming.AccountType = _currentSettings.AccountType;
+                            incoming.LastCloudSyncAt = remote.LastSyncedAt;
+                            _currentSettings = incoming;
+                            await _settingsService.SaveSettingsAsync(_currentSettings);
+                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ApplySettingsToUi(_currentSettings));
+                        }
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[CloudSync] Apply launcher_settings failed: {ex.Message}"); }
+                }
+
+                Services.CloudSyncService.ApplyRemoteAuxiliary(remote);
+            }
+            catch (Exception ex) { Console.WriteLine($"[CloudSync] Pull failed: {ex.Message}"); }
+        }
+
+        private async Task TryCloudSyncPushAsync(bool force = false)
+        {
+            if (!_isLeafPlus) return;
+            var jwt = _currentSettings?.LeafApiJwt;
+            if (string.IsNullOrEmpty(jwt) || _currentSettings == null) return;
+            try
+            {
+                var result = await Services.CloudSyncService.PushAsync(jwt, _currentSettings, force);
+                if (result?.Ok == true && _settingsService != null)
+                {
+                    try { await _settingsService.SaveSettingsAsync(_currentSettings); } catch { }
+                }
+            }
+            catch (Exception ex) { Console.WriteLine($"[CloudSync] Push failed: {ex.Message}"); }
         }
 
 
@@ -9688,11 +10700,14 @@ namespace LeafClient.Views
             }
         }
 
+        private static readonly HttpClient _launcherInstallHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+
         private void InitializeLauncher()
         {
             var path = new MinecraftPath(_minecraftFolder);
             System.IO.Directory.CreateDirectory(System.IO.Path.Combine(_minecraftFolder, "versions"));
-            _launcher = new MinecraftLauncher(path);
+            var parameters = CmlLib.Core.MinecraftLauncherParameters.CreateDefault(path, _launcherInstallHttp);
+            _launcher = new MinecraftLauncher(parameters);
         }
 
 
@@ -13171,7 +14186,6 @@ namespace LeafClient.Views
                 var jwtId = GetJwtMinecraftUsername(entry.LeafApiJwt);
                 if (!string.IsNullOrEmpty(jwtId) && !string.Equals(jwtId, expectedId, StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.WriteLine($"[Migrate] Cleared mismatched JWT from AccountEntry (expected={expectedId}, got={jwtId})");
                     entry.LeafApiJwt = null;
                     entry.LeafApiRefreshToken = null;
                     entry.OwnedCosmeticIds = new List<string>();
@@ -13187,7 +14201,6 @@ namespace LeafClient.Views
                     entry.LeafApiJwt = _currentSettings.LeafApiJwt;
                     entry.LeafApiRefreshToken = _currentSettings.LeafApiRefreshToken;
                     _ = _settingsService?.SaveSettingsAsync(_currentSettings);
-                    Console.WriteLine("[Migrate] Copied matching LeafApiJwt into active AccountEntry.");
                 }
             }
 
@@ -13199,13 +14212,6 @@ namespace LeafClient.Views
 
         private static string ExpectedJwtIdentifier(AccountEntry entry)
         {
-            if (entry.AccountType == "microsoft")
-            {
-                var clean = (entry.Uuid ?? "").Replace("-", "").ToLowerInvariant();
-                if (clean.Length == 32)
-                    return $"{clean[..8]}-{clean[8..12]}-{clean[12..16]}-{clean[16..20]}-{clean[20..]}";
-                return entry.Uuid?.ToLowerInvariant() ?? "";
-            }
             return entry.Username?.ToLowerInvariant() ?? "";
         }
 
@@ -16063,28 +17069,190 @@ namespace LeafClient.Views
             _ = UpdateServerButtonStates();
         }
 
+        private static List<LeafApiFeaturedServer>? _cachedFeaturedApi;
+        private static long _cachedFeaturedApiAt;
+        private const int FeaturedCacheMs = 300_000;
+
         private void LoadFeaturedServers()
         {
             if (_featuredServersPanel == null) return;
             _featuredServersPanel.Children.Clear();
+            _ = LoadFeaturedServersFromApiAsync();
+        }
+
+        private async Task LoadFeaturedServersFromApiAsync()
+        {
+            try
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                List<LeafApiFeaturedServer>? items = _cachedFeaturedApi;
+                if (items == null || (now - _cachedFeaturedApiAt) > FeaturedCacheMs)
+                {
+                    items = await LeafApiService.GetFeaturedServersAsync();
+                    if (items != null)
+                    {
+                        _cachedFeaturedApi = items;
+                        _cachedFeaturedApiAt = now;
+                    }
+                }
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _featuredServers.Clear();
+                    if (items != null)
+                    {
+                        foreach (var f in items)
+                        {
+                            string host = f.IpAddress ?? "";
+                            int port = 25565;
+                            int colon = host.LastIndexOf(':');
+                            if (colon > 0 && colon < host.Length - 1 && int.TryParse(host.AsSpan(colon + 1), out var p) && p > 0 && p <= 65535)
+                            {
+                                port = p;
+                                host = host.Substring(0, colon);
+                            }
+                            _featuredServers.Add(new ServerInfo
+                            {
+                                Id = "featured_" + f.Id,
+                                Name = f.Name,
+                                Address = host,
+                                Port = port,
+                            });
+                        }
+                    }
+
+                    if (_featuredServersPanel != null)
+                    {
+                        _featuredServersPanel.Children.Clear();
+                        if (items == null || items.Count == 0)
+                            RenderBeFeaturedPlaceholder();
+                        else
+                            RenderFeaturedFromApi(items);
+                    }
+
+                    RefreshQuickPlayBar();
+                });
+            }
+            catch (Exception ex) { Console.WriteLine($"[FeaturedServers] LoadFromApi: {ex.Message}"); }
+        }
+
+        private void RenderBeFeaturedPlaceholder()
+        {
+            if (_featuredServersPanel == null) return;
+            var card = new Border
+            {
+                Background = new SolidColorBrush(Color.Parse("#CC060C14")),
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(28),
+                BorderBrush = new SolidColorBrush(Color.Parse("#30FFFFFF")),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            };
+            var stack = new StackPanel { Spacing = 10, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
+            stack.Children.Add(new TextBlock
+            {
+                Text = "No featured servers yet",
+                FontSize = 18,
+                FontWeight = FontWeight.Bold,
+                Foreground = new SolidColorBrush(Color.Parse("#E5E7EB")),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Run a server? Get listed here in front of every LeafClient player.",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            });
+            var beFeaturedBtn = new Button
+            {
+                Content = "WANT TO BE FEATURED?",
+                Padding = new Thickness(20, 10, 20, 10),
+                Margin = new Thickness(0, 6, 0, 0),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint   = new RelativePoint(1, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#5CCF6B"), 0), new GradientStop(Color.Parse("#2E8B4A"), 1) },
+                },
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.Bold,
+                FontSize = 13,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            };
+            beFeaturedBtn.Click += (_, _) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://leafclient.com/partnerships.html",
+                        UseShellExecute = true,
+                    });
+                }
+                catch (Exception ex) { Console.WriteLine($"[FeaturedServers] Open partnerships failed: {ex.Message}"); }
+            };
+            stack.Children.Add(beFeaturedBtn);
+            card.Child = stack;
+            _featuredServersPanel.Children.Add(card);
+        }
+
+        private void RenderFeaturedFromApi(List<LeafApiFeaturedServer> items)
+        {
+            if (_featuredServersPanel == null) return;
+            var ordered = items.OrderBy(s => s.Slot).Take(6).ToList();
+            int count = ordered.Count;
 
             var grid = new Grid { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var configs = new[]
+            int columns = Math.Min(count, 3);
+            for (int i = 0; i < columns; i++)
             {
-                (_featuredServers[0], Color.Parse("#2B1A5A"), Color.Parse("#1A1040"), Color.Parse("#7B2CBF"), 1),
-                (_featuredServers[1], Color.Parse("#3A1E00"), Color.Parse("#1A0D00"), Color.Parse("#B87020"), 2),
-                (_featuredServers[2], Color.Parse("#4A0000"), Color.Parse("#1A0000"), Color.Parse("#CC2222"), 3),
+                if (i > 0) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            }
+            if (count > 3)
+            {
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(14, GridUnitType.Pixel) });
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            }
+
+            var palette = new[]
+            {
+                (Color.Parse("#2B1A5A"), Color.Parse("#1A1040"), Color.Parse("#7B2CBF")),
+                (Color.Parse("#3A1E00"), Color.Parse("#1A0D00"), Color.Parse("#B87020")),
+                (Color.Parse("#4A0000"), Color.Parse("#1A0000"), Color.Parse("#CC2222")),
+                (Color.Parse("#0A2B3A"), Color.Parse("#06121A"), Color.Parse("#22A0CC")),
+                (Color.Parse("#1F3A1A"), Color.Parse("#0F1F0D"), Color.Parse("#5CCF6B")),
+                (Color.Parse("#3A1A2B"), Color.Parse("#1A0D17"), Color.Parse("#CC2288")),
             };
 
-            int col = 0;
-            foreach (var (server, startColor, endColor, glowColor, rank) in configs)
+            for (int i = 0; i < count; i++)
             {
+                var item = ordered[i];
+                Color startColor, endColor, glowColor;
+                if (!string.IsNullOrEmpty(item.TagColorStart) && !string.IsNullOrEmpty(item.TagColorEnd))
+                {
+                    try { startColor = Color.Parse(item.TagColorStart!); endColor = Color.Parse(item.TagColorEnd!); }
+                    catch { (startColor, endColor, _) = palette[i % palette.Length]; }
+                    glowColor = palette[i % palette.Length].Item3;
+                }
+                else
+                {
+                    (startColor, endColor, glowColor) = palette[i % palette.Length];
+                }
+
+                var serverInfo = new ServerInfo
+                {
+                    Id = "api_" + item.Id,
+                    Name = item.Name,
+                    Address = item.IpAddress,
+                    Port = 25565,
+                };
+
                 var gradient = new LinearGradientBrush
                 {
                     StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -16093,10 +17261,23 @@ namespace LeafClient.Views
                 gradient.GradientStops.Add(new GradientStop(startColor, 0));
                 gradient.GradientStops.Add(new GradientStop(endColor, 1));
 
-                var card = CreateFeaturedServerCard(server, gradient, glowColor, rank);
-                Grid.SetColumn(card, col);
+                var card = CreateFeaturedServerCard(serverInfo, gradient, glowColor, i + 1);
+                card.Tag = "api_" + item.Id;
+
+                int gridCol, gridRow;
+                if (count <= 3)
+                {
+                    gridCol = i * 2;
+                    gridRow = 0;
+                }
+                else
+                {
+                    gridRow = (i < 3) ? 0 : 2;
+                    gridCol = (i % 3) * 2;
+                }
+                Grid.SetColumn(card, gridCol);
+                if (count > 3) Grid.SetRow(card, gridRow);
                 grid.Children.Add(card);
-                col += 2;
             }
 
             _featuredServersPanel.Children.Add(grid);
@@ -16786,13 +17967,20 @@ namespace LeafClient.Views
             if (_isLaunching || _isInstalling)
             {
                 ShowGameAlreadyLaunchingDialog();
-                return; 
+                return;
             }
 
             if (!server.IsOnline)
             {
                 ShowOfflineDialog(server.Name);
-                return; 
+                return;
+            }
+
+            if (server.Id?.StartsWith("api_") == true)
+            {
+                var realId = server.Id.Substring(4);
+                var hash = !string.IsNullOrEmpty(_currentSettings?.SuggestionUserId) ? _currentSettings!.SuggestionUserId : null;
+                _ = LeafApiService.TrackFeaturedServerClickAsync(realId, hash);
             }
 
             LaunchGameToServer(server);
@@ -16922,7 +18110,32 @@ namespace LeafClient.Views
                 quickPlayContainer.Children.Clear();
 
                 // Show featured servers first, then user's custom servers
-                var allQPServers = _featuredServers.Concat(_currentSettings.CustomServers);
+                var allQPServers = _featuredServers.Concat(_currentSettings.CustomServers).ToList();
+
+                if (allQPServers.Count == 0)
+                {
+                    var placeholder = new Border
+                    {
+                        Height = 40,
+                        CornerRadius = new CornerRadius(8),
+                        Background = SolidColorBrush.Parse("#0D1422"),
+                        BorderBrush = SolidColorBrush.Parse("#1F2937"),
+                        BorderThickness = new Thickness(1),
+                        Padding = new Thickness(12, 0),
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = "No servers in your Quick Play yet",
+                            Foreground = SolidColorBrush.Parse("#6B7280"),
+                            FontSize = 11,
+                            FontWeight = FontWeight.SemiBold,
+                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        },
+                    };
+                    quickPlayContainer.Children.Add(placeholder);
+                    Console.WriteLine("[QuickPlay] No servers — placeholder shown");
+                    return;
+                }
 
                 foreach (var server in allQPServers)
                 {
@@ -17377,7 +18590,7 @@ namespace LeafClient.Views
 
         private bool AreAnimationsEnabled()
         {
-            return _currentSettings.AnimationsEnabled;
+            return true;
         }
 
         private void WireSettingsDirtyHandlers()
@@ -17411,7 +18624,6 @@ namespace LeafClient.Views
 
             if (_updateDeliveryNormalRadio != null) _updateDeliveryNormalRadio.Checked += (_, __) => MarkSettingsDirty();
             if (_updateDeliveryEarlyRadio != null) _updateDeliveryEarlyRadio.Checked += (_, __) => MarkSettingsDirty();
-            if (_updateDeliveryLateRadio != null) _updateDeliveryLateRadio.Checked += (_, __) => MarkSettingsDirty();
 
             if (_showUsernameInDiscordRichPresenceToggle != null) { _showUsernameInDiscordRichPresenceToggle.Checked += (_, __) => MarkSettingsDirty(); _showUsernameInDiscordRichPresenceToggle.Unchecked += (_, __) => MarkSettingsDirty(); }
 
@@ -17506,19 +18718,6 @@ namespace LeafClient.Views
             {
                 _quickLaunchEnabledToggle.Checked += (_, __) => MarkSettingsDirty();
                 _quickLaunchEnabledToggle.Unchecked += (_, __) => MarkSettingsDirty();
-            }
-            if (_animationsEnabledToggle != null)
-            {
-                _animationsEnabledToggle.Checked += (_, __) =>
-                {
-                    MarkSettingsDirty();
-                    OnAnimationsEnabledChanged();
-                };
-                _animationsEnabledToggle.Unchecked += (_, __) =>
-                {
-                    MarkSettingsDirty();
-                    OnAnimationsEnabledChanged();
-                };
             }
             if (_autoJumpToggle != null)
             {
@@ -18137,7 +19336,6 @@ namespace LeafClient.Views
             {
                 _themeComboBox.SelectionChanged += OnThemeChanged;
             }
-            _animationsEnabledToggle = this.FindControl<ToggleSwitch>("AnimationsEnabledToggle");
             if (_discordRichPresenceToggle != null)
             {
                 _discordRichPresenceToggle.Checked += (_, __) =>
@@ -18626,33 +19824,60 @@ namespace LeafClient.Views
 
         private async Task<bool> EnsureMinecraftVersionInstalledAsync(string version)
         {
-            try
+            const int MaxAttempts = 3;
+            Exception? lastError = null;
+            for (int attempt = 1; attempt <= MaxAttempts; attempt++)
             {
-                ShowProgress(true, $"Verifying Minecraft {version}...");
-
-                var files = await _launcher.ExtractFiles(version);
-                bool allFilesPresent = files.All(f => System.IO.File.Exists(f.Path));
-
-                if (allFilesPresent)
+                try
                 {
-                    Console.WriteLine($"[Install] Base Minecraft {version} already present. Skipping install.");
+                    string label = attempt == 1
+                        ? $"Verifying Minecraft {version}..."
+                        : $"Retrying download of Minecraft {version} ({attempt}/{MaxAttempts})...";
+                    ShowProgress(true, label);
+
+                    var files = await _launcher.ExtractFiles(version);
+                    bool allFilesPresent = files.All(f => System.IO.File.Exists(f.Path));
+
+                    if (allFilesPresent)
+                    {
+                        Console.WriteLine($"[Install] Base Minecraft {version} already present. Skipping install.");
+                        ShowProgress(false);
+                        return true;
+                    }
+
+                    await _launcher.InstallAsync(version);
                     ShowProgress(false);
+
+                    Console.WriteLine($"[Install] Base Minecraft {version} is verified/installed.");
                     return true;
                 }
-
-                await _launcher.InstallAsync(version);
-                ShowProgress(false);
-
-                Console.WriteLine($"[Install] Base Minecraft {version} is verified/installed.");
-                return true;
+                catch (Exception ex) when (
+                    ex is TaskCanceledException
+                    || ex is OperationCanceledException
+                    || ex is HttpRequestException
+                    || (ex is IOException && ex.InnerException is SocketException))
+                {
+                    lastError = ex;
+                    Console.WriteLine($"[Install] Attempt {attempt}/{MaxAttempts} failed for {version} (network): {ex.Message}");
+                    if (attempt < MaxAttempts)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShowProgress(false);
+                    Console.WriteLine($"[Install] Failed to ensure base version {version} is installed: {ex.Message}");
+                    ShowLaunchErrorBanner($"Failed to verify/install Minecraft {version}: {ex.Message}");
+                    return false;
+                }
             }
-            catch (Exception ex)
-            {
-                ShowProgress(false);
-                Console.WriteLine($"[Install] Failed to ensure base version {version} is installed: {ex.Message}");
-                ShowLaunchErrorBanner($"Failed to verify/install Minecraft {version}: {ex.Message}");
-                return false;
-            }
+
+            ShowProgress(false);
+            string finalMsg = lastError?.Message ?? "unknown network error";
+            Console.WriteLine($"[Install] All {MaxAttempts} attempts failed for {version}: {finalMsg}");
+            ShowLaunchErrorBanner($"Could not download Minecraft {version} after {MaxAttempts} attempts. Check your internet connection and try again.");
+            return false;
         }
 
 
@@ -19619,7 +20844,9 @@ namespace LeafClient.Views
             {
                 if (titleTb    != null) titleTb.Text    = item.Title    ?? string.Empty;
                 if (subtitleTb != null) subtitleTb.Text = item.Subtitle ?? string.Empty;
-                if (tagTextTb  != null) tagTextTb.Text  = (item.TagText ?? string.Empty).ToUpperInvariant();
+                string tagUpper = (item.TagText ?? string.Empty).Trim().ToUpperInvariant();
+                if (tagTextTb  != null) tagTextTb.Text  = tagUpper;
+                if (badgeBorder != null) badgeBorder.IsVisible = !string.IsNullOrEmpty(tagUpper);
 
                 if (slot == 1)
                 {
@@ -20297,6 +21524,21 @@ namespace LeafClient.Views
             _currentSettings.SessionXuid = account.Xuid;
             _currentSettings.IsLoggedIn = true;
 
+            _isLeafPlus = false;
+            _leafPlusTier = null;
+            _leafPlusPeriodEnd = null;
+            _hadLeafPlusRevoked = false;
+            _leafPlusRevokeSeenAt = null;
+            _currentCoinBalance = 0;
+            _cloudSyncPullDone = false;
+            _cosmeticDropChecked = false;
+            Dispatcher.UIThread.Post(() =>
+            {
+                _leafsBalanceText ??= this.FindControl<TextBlock>("LeafsBalanceText");
+                if (_leafsBalanceText != null) _leafsBalanceText.Text = "0";
+                ApplyLeafPlusUiState();
+            });
+
             LoadAccountState(account);
 
             if (account.AccountType == "offline")
@@ -20320,34 +21562,27 @@ namespace LeafClient.Views
             await LoadUserInfoAsync();
             SwitchToPage(_currentSelectedIndex);
 
-            if (string.IsNullOrEmpty(account.LeafApiJwt) && account.AccountType == "microsoft" &&
-                !string.IsNullOrWhiteSpace(account.Uuid) && !string.IsNullOrWhiteSpace(account.AccessToken))
+            var liveAccount = _currentSettings?.SavedAccounts.FirstOrDefault(a => a.Id == accountId) ?? account;
+            if (_currentSettings != null)
             {
-                _ = System.Threading.Tasks.Task.Run(async () =>
+                _currentSettings.LeafApiJwt = liveAccount.LeafApiJwt;
+                _currentSettings.LeafApiRefreshToken = liveAccount.LeafApiRefreshToken;
+                _currentSettings.ActiveAccountId = liveAccount.Id;
+                WriteSessionJson(liveAccount.LeafApiJwt);
+                _onlineCountService?.UpdateAccessToken(liveAccount.LeafApiJwt);
+            }
+
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
                 {
-                    try
-                    {
-                        var apiResult = await LeafApiService.MicrosoftLoginAsync(account.Uuid!, account.AccessToken!);
-                        if (apiResult != null && _currentSettings != null)
-                        {
-                            _currentSettings.LeafApiJwt = apiResult.AccessToken;
-                            _currentSettings.LeafApiRefreshToken = apiResult.RefreshToken;
-                            account.LeafApiJwt = apiResult.AccessToken;
-                            account.LeafApiRefreshToken = apiResult.RefreshToken;
-                            await _settingsService.SaveSettingsAsync(_currentSettings);
-                            _onlineCountService?.UpdateAccessToken(apiResult.AccessToken);
-                            WriteSessionJson(apiResult.AccessToken);
-                            Console.WriteLine("[Accounts] Silently re-linked Microsoft account JWT on switch.");
-                            await SyncOwnedCosmeticsFromApiAsync();
-                        }
-                    }
-                    catch (Exception ex) { Console.WriteLine($"[Accounts] Silent re-link failed: {ex.Message}"); }
-                });
-            }
-            else
-            {
-                _ = SyncOwnedCosmeticsFromApiAsync();
-            }
+                    await EnsureFreshJwtForAccountAsync(liveAccount);
+                    await SyncOwnedCosmeticsFromApiAsync();
+                    await UpdateLeafsBalanceAsync();
+                    Dispatcher.UIThread.Post(ApplyLeafPlusUiState);
+                }
+                catch (Exception ex) { Console.WriteLine($"[Accounts] Post-switch refresh failed: {ex.Message}"); }
+            });
         }
 
         private async void OnRemoveAccount(object? sender, RoutedEventArgs e)
@@ -20851,9 +22086,11 @@ namespace LeafClient.Views
             if (_launcherVisibilityKeepOpenRadio != null) _launcherVisibilityKeepOpenRadio.IsChecked = (settings.LauncherVisibilityOnGameLaunch == LauncherVisibility.KeepOpen);
             if (_launcherVisibilityHideRadio != null) _launcherVisibilityHideRadio.IsChecked = (settings.LauncherVisibilityOnGameLaunch == LauncherVisibility.Hide);
 
-            if (_updateDeliveryNormalRadio != null) _updateDeliveryNormalRadio.IsChecked = (settings.GameUpdateDelivery == UpdateDelivery.Normal);
-            if (_updateDeliveryEarlyRadio != null) _updateDeliveryEarlyRadio.IsChecked = (settings.GameUpdateDelivery == UpdateDelivery.EarlyOptIn);
-            if (_updateDeliveryLateRadio != null) _updateDeliveryLateRadio.IsChecked = (settings.GameUpdateDelivery == UpdateDelivery.LateOptOut);
+            var effectiveDelivery = settings.GameUpdateDelivery == UpdateDelivery.LateOptOut
+                ? UpdateDelivery.Normal
+                : settings.GameUpdateDelivery;
+            if (_updateDeliveryNormalRadio != null) _updateDeliveryNormalRadio.IsChecked = (effectiveDelivery == UpdateDelivery.Normal);
+            if (_updateDeliveryEarlyRadio != null) _updateDeliveryEarlyRadio.IsChecked = (effectiveDelivery == UpdateDelivery.EarlyOptIn);
 
             if (_showUsernameInDiscordRichPresenceToggle != null) _showUsernameInDiscordRichPresenceToggle.IsChecked = settings.ShowUsernameInDiscordRichPresence;
 
@@ -20998,7 +22235,6 @@ namespace LeafClient.Views
                 }
                 _themeComboBox.SelectionChanged += OnThemeChanged;
             }
-            if (_animationsEnabledToggle != null) _animationsEnabledToggle.IsChecked = settings.AnimationsEnabled;
 
             string validSubVersion = settings.SelectedSubVersion;
             string validMajorVersion = settings.SelectedMajorVersion;
@@ -21115,7 +22351,6 @@ namespace LeafClient.Views
 
             if (_updateDeliveryNormalRadio?.IsChecked == true) _currentSettings.GameUpdateDelivery = UpdateDelivery.Normal;
             else if (_updateDeliveryEarlyRadio?.IsChecked == true) _currentSettings.GameUpdateDelivery = UpdateDelivery.EarlyOptIn;
-            else if (_updateDeliveryLateRadio?.IsChecked == true) _currentSettings.GameUpdateDelivery = UpdateDelivery.LateOptOut;
 
             _currentSettings.ShowUsernameInDiscordRichPresence = _showUsernameInDiscordRichPresenceToggle?.IsChecked ?? true;
 
@@ -21165,7 +22400,6 @@ namespace LeafClient.Views
             _currentSettings.PlayerRightPant = _playerRightPantToggle?.IsChecked ?? false;
             _currentSettings.PlayerMainHand = (_playerMainHandComboBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Right";
             _currentSettings.Theme = (_themeComboBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Dark";
-            _currentSettings.AnimationsEnabled = _animationsEnabledToggle?.IsChecked ?? false;
             if (_versionTitle?.Text != null && _versionTitle.Text.StartsWith("Minecraft "))
             {
                 string versionText = _versionTitle.Text.Replace("Minecraft ", "");

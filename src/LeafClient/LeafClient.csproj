@@ -12,12 +12,12 @@
 		<Authors>voidZiAD</Authors>
 		<Company>voidZiAD</Company>
 		<Product>LeafClient</Product>
-		<Description>LeafClient is a modern and performance-focused Minecraft launcher and in-game client, offering advanced version management, mod support, and exclusive features to enhance your gameplay experience.</Description>
-		<PackageTags>minecraft</PackageTags>
+		<Description>LeafClient is a modern and performance-focused third-party launcher and companion client for Java Edition, offering advanced version management, mod support, and exclusive features to enhance your gameplay experience. Not affiliated with Mojang Studios or Microsoft Corporation.</Description>
+		<PackageTags>java-edition;launcher</PackageTags>
 		<PackageProjectUrl>https://github.com/LeafClientMC/LeafClient</PackageProjectUrl>
 		<PackageIcon>LeafRebrandedTransparent.png</PackageIcon>
 		<RepositoryUrl>https://github.com/LeafClientMC/LeafClient</RepositoryUrl>
-		<Version>1.6.0</Version>
+		<Version>1.6.1</Version>
 		<PublishAot>false</PublishAot>
 		<PublishSingleFile>true</PublishSingleFile>
 		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

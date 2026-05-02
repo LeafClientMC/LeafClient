@@ -164,6 +164,11 @@ namespace LeafClient
     [JsonSerializable(typeof(LeafClient.Services.LeafApiMicrosoftAuthRequest))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiRefreshRequest))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiEquipRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiDropCosmetic))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiDropCosmetic>))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiDropInfo))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiDropClaimResult))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiDropClaimResult>))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiBalance))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiPlaytimeRequest))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiPlaytimeResult))]
@@ -179,6 +184,12 @@ namespace LeafClient
     [JsonSerializable(typeof(LeafClient.Services.LeafApiNewsItem))]
     [JsonSerializable(typeof(List<LeafClient.Services.LeafApiNewsItem>))]
     [JsonSerializable(typeof(LeafClient.Services.LeafApiNewsResponse))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiSyncPullResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiSyncPushRequest))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiSyncPushResult))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiFeaturedServer))]
+    [JsonSerializable(typeof(List<LeafClient.Services.LeafApiFeaturedServer>))]
+    [JsonSerializable(typeof(LeafClient.Services.LeafApiFeaturedServersResponse))]
 
     internal partial class JsonContext : JsonSerializerContext
     {

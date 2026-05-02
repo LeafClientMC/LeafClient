@@ -164,6 +164,10 @@ namespace LeafClient.Models
         public string? LeafApiRefreshToken { get; set; }
         public string? SuggestionUserId { get; set; }
 
+        public string? LastCloudSyncAt { get; set; }
+
+        public string? LastSeenCosmeticDropMonth { get; set; }
+
         // Multi-account support
         public List<AccountEntry> SavedAccounts { get; set; } = new List<AccountEntry>();
         public string? ActiveAccountId { get; set; }
@@ -174,7 +178,6 @@ namespace LeafClient.Models
         public bool LaunchOnStartup { get; set; } = false;
         public bool MinimizeToTray { get; set; } = false;
         public bool DiscordRichPresence { get; set; } = true;
-        public bool AnimationsEnabled { get; set; } = true;
         public string Theme { get; set; } = "Dark"; // "Dark", "Light", "Auto"
         public string SelectedCurrency { get; set; } = "EUR";
 
@@ -251,7 +254,6 @@ namespace LeafClient.Models
         //////////////////////////////////////////////////////////////////////
         // Theme and Animations are already here (moved from General)
         // public string Theme { get; set; } = "Dark";
-        // public bool AnimationsEnabled { get; set; } = true;
 
         // NEW: Update Delivery
         public UpdateDelivery GameUpdateDelivery { get; set; } = UpdateDelivery.Normal;
@@ -444,7 +446,6 @@ namespace LeafClient.Models
                 PlayerRightPant = this.PlayerRightPant,
                 PlayerMainHand = this.PlayerMainHand,
                 Theme = this.Theme,
-                AnimationsEnabled = this.AnimationsEnabled,
                 SelectedCurrency = this.SelectedCurrency,
                 GameUpdateDelivery = this.GameUpdateDelivery,                             // NEW
                 ClosingNotificationsPreference = this.ClosingNotificationsPreference,     // NEW
@@ -592,7 +593,6 @@ namespace LeafClient.Models
             this.PlayerRightPant = defaults.PlayerRightPant;
             this.PlayerMainHand = defaults.PlayerMainHand;
             this.Theme = defaults.Theme;
-            this.AnimationsEnabled = defaults.AnimationsEnabled;
             this.SelectedCurrency = defaults.SelectedCurrency;
             this.GameUpdateDelivery = defaults.GameUpdateDelivery;                             // NEW
             this.ClosingNotificationsPreference = defaults.ClosingNotificationsPreference;     // NEW
