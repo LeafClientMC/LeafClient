@@ -17,7 +17,7 @@
 		<PackageProjectUrl>https://github.com/LeafClientMC/LeafClient</PackageProjectUrl>
 		<PackageIcon>LeafRebrandedTransparent.png</PackageIcon>
 		<RepositoryUrl>https://github.com/LeafClientMC/LeafClient</RepositoryUrl>
-		<Version>1.6.1</Version>
+		<Version>1.6.2</Version>
 		<PublishAot>false</PublishAot>
 		<PublishSingleFile>true</PublishSingleFile>
 		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -68,6 +68,14 @@
 		<PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
 		<PackageReference Include="System.Text.Json" Version="9.0.1" />
 		<PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
+		<PackageReference Include="SkiaSharp" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.116.1" />
+		<PackageReference Include="HarfBuzzSharp" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.macOS" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.Win32" Version="8.3.1.1" />
 	</ItemGroup>
 
 	<ItemGroup>
