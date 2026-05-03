@@ -1,12 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType Condition="$([MSBuild]::IsOSPlatform('Windows'))">WinExe</OutputType>
+    <OutputType Condition="!$([MSBuild]::IsOSPlatform('Windows'))">Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
-    <ApplicationIcon>../LeafClient/Assets/leaf_client_icon.ico</ApplicationIcon>
+    <ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">../LeafClient/Assets/leaf_client_icon.ico</ApplicationIcon>
     <Version>1.0</Version>
     <AssemblyName>LeafClientSetup</AssemblyName>
+    <!-- AOT off so Avalonia native libs (Skia/HarfBuzz) extract correctly cross-platform -->
+    <PublishAot>false</PublishAot>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RuntimeIdentifiers>win-x64;osx-arm64;osx-x64;linux-x64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.8" />
@@ -14,6 +20,16 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
+    <!-- Pin SkiaSharp + all native assets to 3.116.1 to override Avalonia.Skia 11.3.8's transitive
+         SkiaSharp.NativeAssets.Linux 2.88.9 which causes a runtime crash on Linux. -->
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.116.1" />
+    <PackageReference Include="HarfBuzzSharp" Version="8.3.1.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.macOS" Version="8.3.1.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Win32" Version="8.3.1.1" />
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\LeafRebrandedTransparent.png" />

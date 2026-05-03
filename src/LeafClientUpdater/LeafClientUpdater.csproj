@@ -75,6 +75,16 @@
 			<PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
+		<!-- Pin SkiaSharp + native assets to 3.116.1 to override Avalonia.Skia 11.3.8's transitive
+		     SkiaSharp.NativeAssets.Linux 2.88.9 which causes a runtime crash on Linux. -->
+		<PackageReference Include="SkiaSharp" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.116.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.116.1" />
+		<PackageReference Include="HarfBuzzSharp" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.macOS" Version="8.3.1.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.Win32" Version="8.3.1.1" />
 	</ItemGroup>
 
 	<ItemGroup>

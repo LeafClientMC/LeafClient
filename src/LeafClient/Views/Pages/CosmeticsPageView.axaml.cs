@@ -174,6 +174,8 @@ namespace LeafClient.Views.Pages
             }
         }
 
+        public void PopulateCosmeticsGridPublic() => PopulateCosmeticsGrid();
+
         private void PopulateCosmeticsGrid()
         {
             if (_cosmeticsGrid == null) return;

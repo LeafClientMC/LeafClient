@@ -204,21 +204,93 @@ namespace LeafClient.Views
         private string? _lastLaunchVersion = null;
         private readonly string _minecraftFolder = GetMinecraftPath();
 
+        // Per-OS leaf-branded game directory. Migrates from legacy .minecraft on first run if present.
+        // Win:   %APPDATA%\.leafclient
+        // macOS: ~/Library/Application Support/leafclient
+        // Linux: ~/.leafclient
         private static string GetMinecraftPath()
         {
+            string newPath, legacyPath;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                newPath    = System.IO.Path.Combine(appData, ".leafclient");
+                legacyPath = System.IO.Path.Combine(appData, ".minecraft");
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library", "Application Support", "minecraft");
+                var appSupport = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library", "Application Support");
+                newPath    = System.IO.Path.Combine(appSupport, "leafclient");
+                legacyPath = System.IO.Path.Combine(appSupport, "minecraft");
             }
             else
             {
-                return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".minecraft");
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                newPath    = System.IO.Path.Combine(home, ".leafclient");
+                legacyPath = System.IO.Path.Combine(home, ".minecraft");
+            }
+
+            try { MigrateLegacyMinecraftFolderIfNeeded(legacyPath, newPath); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Migration] .minecraft -> .leafclient skipped: {ex.Message}"); }
+
+            try { System.IO.Directory.CreateDirectory(newPath); } catch { }
+            return newPath;
+        }
+
+        private static void MigrateLegacyMinecraftFolderIfNeeded(string legacyPath, string newPath)
+        {
+            if (!System.IO.Directory.Exists(legacyPath)) return;
+            System.IO.Directory.CreateDirectory(newPath);
+
+            var marker = System.IO.Path.Combine(newPath, ".leaf_migration_done");
+            if (System.IO.File.Exists(marker)) return;
+
+            string[] dirsToMerge = { "versions", "mods", "saves", "resourcepacks", "shaderpacks", "screenshots", "logs", "config", "assets", "libraries" };
+            string[] filesToCopy = { "options.txt", "optionsLC.txt", "optionsof.txt", "optionsshaders.txt", "servers.dat", "launcher_profiles.json" };
+
+            foreach (var dirName in dirsToMerge)
+            {
+                var src = System.IO.Path.Combine(legacyPath, dirName);
+                var dst = System.IO.Path.Combine(newPath, dirName);
+                if (System.IO.Directory.Exists(src))
+                {
+                    try { MergeDirectoryRecursive(src, dst); }
+                    catch (Exception ex) { Console.Error.WriteLine($"[Migration] merge {dirName} failed: {ex.Message}"); }
+                }
+            }
+            foreach (var fileName in filesToCopy)
+            {
+                var src = System.IO.Path.Combine(legacyPath, fileName);
+                var dst = System.IO.Path.Combine(newPath, fileName);
+                if (System.IO.File.Exists(src) && !System.IO.File.Exists(dst))
+                {
+                    try { System.IO.File.Copy(src, dst); }
+                    catch (Exception ex) { Console.Error.WriteLine($"[Migration] copy {fileName} failed: {ex.Message}"); }
+                }
+            }
+
+            try { System.IO.File.WriteAllText(marker, DateTimeOffset.UtcNow.ToString("O")); } catch { }
+            Console.WriteLine($"[Migration] Merged data from {legacyPath} -> {newPath}");
+        }
+
+        private static void MergeDirectoryRecursive(string sourceDir, string destDir)
+        {
+            System.IO.Directory.CreateDirectory(destDir);
+            foreach (var file in System.IO.Directory.GetFiles(sourceDir))
+            {
+                var dst = System.IO.Path.Combine(destDir, System.IO.Path.GetFileName(file));
+                if (!System.IO.File.Exists(dst))
+                {
+                    try { System.IO.File.Copy(file, dst); } catch { }
+                }
+            }
+            foreach (var subDir in System.IO.Directory.GetDirectories(sourceDir))
+            {
+                MergeDirectoryRecursive(subDir, System.IO.Path.Combine(destDir, System.IO.Path.GetFileName(subDir)));
             }
         }
+
+        private static void CopyDirectoryRecursive(string sourceDir, string destDir) => MergeDirectoryRecursive(sourceDir, destDir);
 
         private static string GetLeafOfflineJarPath(string mcVersion)
         {
@@ -830,33 +902,31 @@ namespace LeafClient.Views
             }
             items.Add(toast);
 
-            // Fade in
-            var fadeIn = new Avalonia.Animation.Animation
+            toast.Transitions = new Avalonia.Animation.Transitions
             {
-                Duration = TimeSpan.FromMilliseconds(200),
-                Children =
+                new Avalonia.Animation.DoubleTransition
                 {
-                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 0d) } },
-                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 1d) } },
+                    Property = Avalonia.Controls.Control.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(200),
+                    Easing = new Avalonia.Animation.Easings.CubicEaseOut()
                 }
             };
-            await fadeIn.RunAsync(toast);
             toast.Opacity = 1;
+            await Task.Delay(220);
 
-            // Hold
             await Task.Delay(3000);
 
-            // Fade out
-            var fadeOut = new Avalonia.Animation.Animation
+            toast.Transitions = new Avalonia.Animation.Transitions
             {
-                Duration = TimeSpan.FromMilliseconds(300),
-                Children =
+                new Avalonia.Animation.DoubleTransition
                 {
-                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 1d) } },
-                    new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Control.OpacityProperty, 0d) } },
+                    Property = Avalonia.Controls.Control.OpacityProperty,
+                    Duration = TimeSpan.FromMilliseconds(300),
+                    Easing = new Avalonia.Animation.Easings.CubicEaseIn()
                 }
             };
-            await fadeOut.RunAsync(toast);
+            toast.Opacity = 0;
+            await Task.Delay(320);
             items.Remove(toast);
         }
 
@@ -1154,9 +1224,11 @@ namespace LeafClient.Views
             {
                 try
                 {
+                    await PlayCinematicStartupAsync();
                     StartRichPresenceIfEnabled();
                     StartHeartbeatLoop();
                     _ = CheckKillSwitchAsync();
+                    _ = Task.Run(() => RunLauncherStartupHealthChecksAsync());
                     InitializeNatureTheme();
 
                     await InitializeDefaultServersAsync();
@@ -5690,10 +5762,8 @@ namespace LeafClient.Views
 
                 if (files == null || files.Count == 0) return;
 
-                // Determine the mods directory for the active profile
-                string modsDir = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    ".minecraft", "mods");
+                // Determine the mods directory for the active profile (cross-platform via _minecraftFolder)
+                string modsDir = System.IO.Path.Combine(_minecraftFolder, "mods");
                 Directory.CreateDirectory(modsDir);
 
                 int copied = 0;
@@ -8899,10 +8969,115 @@ namespace LeafClient.Views
 
         private void OnCelebClose(object? sender, TappedEventArgs e) => CloseCelebrationOverlay();
 
-        private void OnCelebEquipNow(object? sender, TappedEventArgs e)
+        private async void OnCelebEquipNow(object? sender, TappedEventArgs e)
         {
-            CloseCelebrationOverlay();
-            SwitchToPage(6); // cosmetics page index
+            try
+            {
+                if (!string.IsNullOrEmpty(_celebSlug) && !string.IsNullOrEmpty(_celebCategory))
+                {
+                    await EquipCosmeticFromUnboxingAsync(_celebSlug!, _celebCategory!);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Celebration] Equip failed: {ex.Message}");
+            }
+            finally
+            {
+                CloseCelebrationOverlay();
+                SwitchToPage(6); // cosmetics page index
+            }
+        }
+
+        /// <summary>
+        /// Equips the cosmetic that was just unboxed. Mirrors CosmeticsPageView.EquipCosmetic
+        /// (writes to settings.Equipped, persists, syncs to server) but is callable from the
+        /// celebration overlay handler in MainWindow code-behind.
+        /// </summary>
+        private async Task EquipCosmeticFromUnboxingAsync(string cosId, string category)
+        {
+            if (_currentSettings == null) return;
+            _currentSettings.Equipped ??= new EquippedCosmetics();
+            var eq = _currentSettings.Equipped;
+
+            switch (category)
+            {
+                case "capes":
+                    if (!string.IsNullOrEmpty(eq.WingsId)) eq.WingsId = null;
+                    eq.CapeId = cosId;
+                    break;
+                case "hats":
+                    eq.HatId = cosId;
+                    break;
+                case "wings":
+                    if (!string.IsNullOrEmpty(eq.CapeId)) eq.CapeId = null;
+                    eq.WingsId = cosId;
+                    break;
+                case "auras":
+                    eq.AuraId = cosId;
+                    break;
+                default:
+                    Console.WriteLine($"[Celebration] Unknown category '{category}' for slug '{cosId}', skipping equip.");
+                    return;
+            }
+
+            try { await _settingsService.SaveSettingsAsync(_currentSettings); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Celebration] SaveSettings failed: {ex.Message}"); }
+
+            try { WriteEquippedJsonFromCurrentSettings(); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Celebration] equipped.json write failed: {ex.Message}"); }
+
+            try { _cosmeticsPage?.PopulateCosmeticsGridPublic(); } catch { }
+
+            var jwt = _currentSettings.LeafApiJwt;
+            if (!string.IsNullOrEmpty(jwt))
+            {
+                try { await LeafClient.Services.LeafApiService.EquipCosmeticAsync(jwt!, cosId); }
+                catch (Exception ex) { Console.WriteLine($"[Celebration] Server-side equip error: {ex.Message}"); }
+            }
+
+            Console.WriteLine($"[Celebration] Equipped '{cosId}' (category: {category}) from unboxing");
+        }
+
+        private void WriteEquippedJsonFromCurrentSettings()
+        {
+            if (_currentSettings?.Equipped == null) return;
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient");
+            System.IO.Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, "equipped.json");
+            var src = _currentSettings.Equipped;
+            string? sub = src.Sub;
+            var jwt = _currentSettings.LeafApiJwt;
+            if (!string.IsNullOrWhiteSpace(jwt))
+            {
+                try
+                {
+                    var parts = jwt!.Split('.');
+                    if (parts.Length >= 2)
+                    {
+                        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+                        switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+                        var bytes = Convert.FromBase64String(payload);
+                        using var doc = System.Text.Json.JsonDocument.Parse(bytes);
+                        if (doc.RootElement.TryGetProperty("sub", out var subEl) && subEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                            sub = subEl.GetString() ?? sub;
+                    }
+                }
+                catch { }
+            }
+            var snapshot = new EquippedCosmetics
+            {
+                Sub = sub,
+                CapeId = src.CapeId,
+                HatId = src.HatId,
+                WingsId = src.WingsId,
+                BackItemId = src.BackItemId,
+                AuraId = src.AuraId
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(snapshot, JsonContext.Default.EquippedCosmetics);
+            System.IO.File.WriteAllText(path, json);
+            Console.WriteLine($"[Celebration] equipped.json written for sub='{sub}'");
         }
 
 
@@ -11390,28 +11565,164 @@ namespace LeafClient.Views
 
                 ShowProgress(true, $"Fetching Fabric API for {mcVersion}...");
 
-                using var client = new HttpClient();
-                var apiUrl = $"https://api.modrinth.com/v2/project/P7dR8mSH/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
-                var response = await client.GetStringAsync(apiUrl);
-                var versions = JsonSerializer.Deserialize(response, JsonContext.Default.ListModrinthVersion);
-                var latest = versions?.FirstOrDefault();
+                Exception? modrinthErr = null;
+                try
+                {
+                    var (downloadUrl, versionNumber) = await ResolveFabricApiViaModrinthAsync(mcVersion);
+                    if (!string.IsNullOrEmpty(downloadUrl))
+                    {
+                        await DownloadJarWithRetryAsync(downloadUrl!, fabricApiPath, "Fabric API");
+                        if (VerifyJarFileValid(fabricApiPath))
+                        {
+                            await RegisterAutoInstalledMod("fabric-api", "Fabric API", versionNumber ?? "modrinth", mcVersion, $"fabric-api-{mcVersion}.jar", downloadUrl!);
+                            return true;
+                        }
+                        Console.Error.WriteLine("[Fabric API] Downloaded jar failed validity check, deleting and trying fallback.");
+                        try { System.IO.File.Delete(fabricApiPath); } catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    modrinthErr = ex;
+                    Console.Error.WriteLine($"[Fabric API] Modrinth path failed: {ex.Message}");
+                }
 
-                if (latest?.files == null || latest.files.Count == 0) throw new Exception("No Fabric API file found on Modrinth");
-
-                var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
-
-                await DownloadFileWithProgressAsync(file.url, fabricApiPath, "Fabric API");
-
-                await RegisterAutoInstalledMod("fabric-api", "Fabric API", latest.versionNumber, mcVersion, $"fabric-api-{mcVersion}.jar", file.url);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Fabric API] Install failed: {ex.Message}");
-                throw new InvalidOperationException(
-                    $"Fabric API for {mcVersion} could not be installed: {ex.Message}", ex);
+                ShowProgress(true, $"Modrinth unavailable. Trying Fabric Maven for {mcVersion}...");
+                try
+                {
+                    var (mavenUrl, mavenVer) = await ResolveFabricApiViaMavenAsync(mcVersion);
+                    if (!string.IsNullOrEmpty(mavenUrl))
+                    {
+                        await DownloadJarWithRetryAsync(mavenUrl!, fabricApiPath, "Fabric API (Maven)");
+                        if (VerifyJarFileValid(fabricApiPath))
+                        {
+                            await RegisterAutoInstalledMod("fabric-api", "Fabric API", mavenVer ?? "maven", mcVersion, $"fabric-api-{mcVersion}.jar", mavenUrl!);
+                            return true;
+                        }
+                        try { System.IO.File.Delete(fabricApiPath); } catch { }
+                        throw new Exception("Fabric Maven jar failed validity check");
+                    }
+                    throw new Exception("Fabric Maven returned no matching version");
+                }
+                catch (Exception mavenEx)
+                {
+                    var combined = modrinthErr != null
+                        ? $"Modrinth: {modrinthErr.Message}; Maven: {mavenEx.Message}"
+                        : mavenEx.Message;
+                    Console.Error.WriteLine($"[Fabric API] All sources failed: {combined}");
+                    throw new InvalidOperationException(
+                        $"Fabric API for {mcVersion} could not be installed.\n\n" +
+                        $"Tried Modrinth and Fabric Maven; both failed.\n\n" +
+                        $"Manual fix: download fabric-api for {mcVersion} from https://modrinth.com/mod/fabric-api/versions, " +
+                        $"rename to 'fabric-api-{mcVersion}.jar', and place it in:\n  {modsFolder}\n\n" +
+                        $"Details: {combined}", mavenEx);
+                }
             }
             finally { ShowProgress(false); }
+        }
+
+        /// <summary>Resolves Fabric API download via Modrinth API with retries.</summary>
+        private async Task<(string? url, string? versionNumber)> ResolveFabricApiViaModrinthAsync(string mcVersion)
+        {
+            var apiUrl = $"https://api.modrinth.com/v2/project/P7dR8mSH/version?game_versions=[\"{mcVersion}\"]&loaders=[\"fabric\"]";
+            var json = await GetStringWithRetryAsync(apiUrl, "Modrinth API");
+            var versions = JsonSerializer.Deserialize(json, JsonContext.Default.ListModrinthVersion);
+            var latest = versions?.FirstOrDefault();
+            if (latest?.files == null || latest.files.Count == 0) return (null, null);
+            var file = latest.files.FirstOrDefault(f => f.filename?.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) == true) ?? latest.files.First();
+            return (file.url, latest.versionNumber);
+        }
+
+        /// <summary>Fallback: resolve Fabric API jar via Fabric Maven metadata. Filters versions by MC version suffix.</summary>
+        private async Task<(string? url, string? version)> ResolveFabricApiViaMavenAsync(string mcVersion)
+        {
+            const string metadataUrl = "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml";
+            var xml = await GetStringWithRetryAsync(metadataUrl, "Fabric Maven metadata");
+
+            string? best = null;
+            int idx = 0;
+            string suffix = "+" + mcVersion;
+            while (true)
+            {
+                int open = xml.IndexOf("<version>", idx, StringComparison.Ordinal);
+                if (open < 0) break;
+                int close = xml.IndexOf("</version>", open, StringComparison.Ordinal);
+                if (close < 0) break;
+                var v = xml.Substring(open + "<version>".Length, close - (open + "<version>".Length)).Trim();
+                if (v.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    best = v; // last match in chronological metadata = newest
+                }
+                idx = close + "</version>".Length;
+            }
+            if (string.IsNullOrEmpty(best)) return (null, null);
+            var url = $"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{best}/fabric-api-{best}.jar";
+            return (url, best);
+        }
+
+        /// <summary>HTTP GET with retry: 3 retries (4 total attempts), exponential backoff.</summary>
+        private async Task<string> GetStringWithRetryAsync(string url, string label)
+        {
+            int[] backoffMs = { 2000, 5000, 10000 };
+            Exception? last = null;
+            for (int attempt = 0; attempt <= backoffMs.Length; attempt++)
+            {
+                try
+                {
+                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+                    client.DefaultRequestHeaders.Add("User-Agent", "LeafClient-Launcher");
+                    return await client.GetStringAsync(url);
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    if (attempt >= backoffMs.Length) break;
+                    Console.Error.WriteLine($"[Retry] {label} attempt {attempt + 1} failed: {ex.Message}. Retrying in {backoffMs[attempt]}ms.");
+                    try { await Dispatcher.UIThread.InvokeAsync(() => { if (_launchProgressText != null) _launchProgressText.Text = $"{label}: retry {attempt + 1}/3..."; }); } catch { }
+                    await Task.Delay(backoffMs[attempt]);
+                }
+            }
+            throw last ?? new Exception($"{label}: unknown failure after retries");
+        }
+
+        /// <summary>File download with retry: 3 retries of whole download, exponential backoff.</summary>
+        private async Task DownloadJarWithRetryAsync(string url, string destinationPath, string label)
+        {
+            int[] backoffMs = { 2000, 5000, 10000 };
+            Exception? last = null;
+            for (int attempt = 0; attempt <= backoffMs.Length; attempt++)
+            {
+                try
+                {
+                    await DownloadFileWithProgressAsync(url, destinationPath, label);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    try { System.IO.File.Delete(destinationPath); } catch { }
+                    if (attempt >= backoffMs.Length) break;
+                    Console.Error.WriteLine($"[Retry] {label} download attempt {attempt + 1} failed: {ex.Message}. Retrying in {backoffMs[attempt]}ms.");
+                    try { await Dispatcher.UIThread.InvokeAsync(() => { if (_launchProgressText != null) _launchProgressText.Text = $"{label}: retry {attempt + 1}/3..."; }); } catch { }
+                    await Task.Delay(backoffMs[attempt]);
+                }
+            }
+            throw last ?? new Exception($"{label}: unknown download failure after retries");
+        }
+
+        /// <summary>Validates downloaded jar is a real ZIP/jar (PK header) and at least 5 KB.</summary>
+        private static bool VerifyJarFileValid(string path)
+        {
+            try
+            {
+                var info = new System.IO.FileInfo(path);
+                if (!info.Exists || info.Length < 5 * 1024) return false;
+                using var fs = System.IO.File.OpenRead(path);
+                int b1 = fs.ReadByte();
+                int b2 = fs.ReadByte();
+                return b1 == 0x50 && b2 == 0x4B; // 'P' 'K' = ZIP/JAR magic
+            }
+            catch { return false; }
         }
 
         private bool VerifyFabricApiPresent(string mcVersion)
@@ -12121,6 +12432,383 @@ namespace LeafClient.Views
             }
         }
 
+        private static long _lastWmiProbeMs;
+        private static bool _lastWmiProbeOk = true;
+        private static bool _wmiPromptShownThisSession;
+
+        private static string HealthTelemetryPath => System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeafClient", "health_telemetry.json");
+
+        private async Task RunLauncherStartupHealthChecksAsync()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+            await Task.Delay(2500);
+            try
+            {
+                LogHealthEvent("startup_probe_begin");
+                bool wmiOk = await ProbeWmiHealthAsync();
+                LogHealthEvent(wmiOk ? "startup_probe_ok" : "startup_probe_failed");
+
+                if (!wmiOk)
+                {
+                    await Task.Delay(2000);
+                    bool repaired = await TryRepairPerfCountersWithUserConsentAsync();
+                    if (repaired)
+                    {
+                        await Task.Delay(2000);
+                        System.Threading.Interlocked.Exchange(ref _lastWmiProbeMs, 0);
+                        bool nowOk = await ProbeWmiHealthAsync();
+                        LogHealthEvent(nowOk ? "startup_repair_success" : "startup_repair_still_failing");
+                    }
+                    else
+                    {
+                        LogHealthEvent("startup_repair_skipped_or_denied");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHealthEvent($"startup_probe_exception: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void LogHealthEvent(string eventName)
+        {
+            try
+            {
+                int counter = IncrementHealthCounter(eventName);
+                Console.WriteLine($"[HealthTelemetry] {eventName} (count={counter})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[HealthTelemetry] log failed for '{eventName}': {ex.Message}");
+            }
+        }
+
+        private static int IncrementHealthCounter(string eventName)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(HealthTelemetryPath)!);
+                var counters = new Dictionary<string, int>(StringComparer.Ordinal);
+                if (System.IO.File.Exists(HealthTelemetryPath))
+                {
+                    try
+                    {
+                        var json = System.IO.File.ReadAllText(HealthTelemetryPath);
+                        if (!string.IsNullOrWhiteSpace(json))
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(json);
+                            foreach (var prop in doc.RootElement.EnumerateObject())
+                            {
+                                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number && prop.Value.TryGetInt32(out var n))
+                                    counters[prop.Name] = n;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                counters.TryGetValue(eventName, out var cur);
+                counters[eventName] = cur + 1;
+                counters["last_event_unix"] = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append('{');
+                bool first = true;
+                foreach (var kv in counters)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append('"').Append(kv.Key.Replace("\"", "\\\"")).Append("\":").Append(kv.Value);
+                    first = false;
+                }
+                sb.Append('}');
+                System.IO.File.WriteAllText(HealthTelemetryPath, sb.ToString());
+                return counters[eventName];
+            }
+            catch { return -1; }
+        }
+
+        private async Task<bool> ProbeWmiHealthAsync()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return true;
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (nowMs - System.Threading.Interlocked.Read(ref _lastWmiProbeMs) < 60_000) return _lastWmiProbeOk;
+
+            bool ok = await Task.Run(() =>
+            {
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
+                        "-NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference='Stop'; [void](Get-CimInstance -Query 'SELECT Name FROM Win32_PerfRawData_PerfOS_PagingFile' -OperationTimeoutSec 4); 'OK'\"")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    };
+                    using var p = System.Diagnostics.Process.Start(psi);
+                    if (p == null) return false;
+                    if (!p.WaitForExit(7000))
+                    {
+                        try { p.Kill(true); } catch { }
+                        return false;
+                    }
+                    return p.ExitCode == 0;
+                }
+                catch { return false; }
+            });
+
+            System.Threading.Interlocked.Exchange(ref _lastWmiProbeMs, nowMs);
+            _lastWmiProbeOk = ok;
+            return ok;
+        }
+
+        private async Task<bool> TryRepairPerfCountersWithUserConsentAsync()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return false;
+            if (_wmiPromptShownThisSession)
+            {
+                LogHealthEvent("repair_prompt_suppressed_dup");
+                return false;
+            }
+            _wmiPromptShownThisSession = true;
+            LogHealthEvent("repair_prompt_shown");
+            bool consent = await ShowPerfCounterRepairPromptAsync();
+            LogHealthEvent(consent ? "repair_prompt_consent_yes" : "repair_prompt_consent_no");
+            if (!consent) return false;
+
+            await Dispatcher.UIThread.InvokeAsync(() => ShowProgress(true, "Repairing Windows performance counters (admin required)..."));
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    try
+                    {
+                        var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                            "/c lodctr /R && winmgmt /resyncperf && net stop Winmgmt /y && net start Winmgmt")
+                        {
+                            UseShellExecute = true,
+                            Verb = "runas",
+                            CreateNoWindow = true,
+                            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                        };
+                        using var p = System.Diagnostics.Process.Start(psi);
+                        if (p == null) return false;
+                        return p.WaitForExit(60_000);
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[PerfCounterRepair] Unexpected error: {ex.Message}");
+                        return false;
+                    }
+                });
+            }
+            finally
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => ShowProgress(false));
+            }
+        }
+
+        private Task<bool> ShowPerfCounterRepairPromptAsync()
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    if (this.Content is not Avalonia.Controls.Grid rootGrid)
+                    {
+                        Console.Error.WriteLine("[PerfCounterRepair] root is not Grid; falling back to no-op.");
+                        tcs.TrySetResult(false);
+                        return;
+                    }
+
+                    var backdrop = new Avalonia.Controls.Border
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)),
+                        IsHitTestVisible = true,
+                        Opacity = 0,
+                        Transitions = new Avalonia.Animation.Transitions
+                        {
+                            new Avalonia.Animation.DoubleTransition
+                            {
+                                Property = Avalonia.Controls.Border.OpacityProperty,
+                                Duration = TimeSpan.FromMilliseconds(180),
+                                Easing = new Avalonia.Animation.Easings.CubicEaseOut(),
+                            }
+                        }
+                    };
+
+                    var card = new Avalonia.Controls.Border
+                    {
+                        Background = new SolidColorBrush(Color.Parse("#0F1318")),
+                        BorderBrush = new SolidColorBrush(Color.Parse("#1F2937")),
+                        BorderThickness = new Avalonia.Thickness(1),
+                        CornerRadius = new Avalonia.CornerRadius(16),
+                        BoxShadow = new Avalonia.Media.BoxShadows(new Avalonia.Media.BoxShadow
+                        {
+                            Color = Color.FromArgb(180, 0, 0, 0),
+                            Blur = 32,
+                            OffsetY = 8,
+                        }),
+                        Width = 540,
+                        MaxWidth = 540,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        Padding = new Avalonia.Thickness(24, 22, 24, 20),
+                        Opacity = 0,
+                        RenderTransform = new Avalonia.Media.ScaleTransform(0.96, 0.96),
+                        RenderTransformOrigin = new Avalonia.RelativePoint(0.5, 0.5, Avalonia.RelativeUnit.Relative),
+                        Transitions = new Avalonia.Animation.Transitions
+                        {
+                            new Avalonia.Animation.DoubleTransition
+                            {
+                                Property = Avalonia.Controls.Border.OpacityProperty,
+                                Duration = TimeSpan.FromMilliseconds(220),
+                                Easing = new Avalonia.Animation.Easings.CubicEaseOut(),
+                            },
+                            new Avalonia.Animation.TransformOperationsTransition
+                            {
+                                Property = Avalonia.Controls.Border.RenderTransformProperty,
+                                Duration = TimeSpan.FromMilliseconds(260),
+                                Easing = new Avalonia.Animation.Easings.CubicEaseOut(),
+                            }
+                        }
+                    };
+
+                    var icon = new TextBlock
+                    {
+                        Text = "\u26A0",
+                        FontSize = 28,
+                        Foreground = new SolidColorBrush(Color.Parse("#F59E0B")),
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                    };
+                    var title = new TextBlock
+                    {
+                        Text = "Windows performance counters need repair",
+                        Foreground = Brushes.White,
+                        FontSize = 17,
+                        FontWeight = FontWeight.Bold,
+                        Margin = new Avalonia.Thickness(0, 8, 0, 8),
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                    };
+                    var msg = new TextBlock
+                    {
+                        Text = "Minecraft can't launch with mods because Windows performance counters " +
+                               "(WMI / PDH) are corrupted on your PC. This is a known Windows issue, " +
+                               "usually caused by a Windows Update or antivirus tool.\n\n" +
+                               "Click REPAIR to fix it automatically. You'll see a UAC prompt for admin " +
+                               "permission. Takes about 10 seconds and only needs to be done once.",
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Foreground = new SolidColorBrush(Color.Parse("#D1D5DB")),
+                        FontSize = 13,
+                        LineHeight = 19,
+                    };
+
+                    var repairBtn = new Avalonia.Controls.Border
+                    {
+                        Background = new SolidColorBrush(Color.Parse("#22C55E")),
+                        CornerRadius = new Avalonia.CornerRadius(10),
+                        Height = 40,
+                        Padding = new Avalonia.Thickness(22, 0),
+                        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                        Child = new TextBlock
+                        {
+                            Text = "REPAIR",
+                            Foreground = Brushes.White,
+                            FontWeight = FontWeight.ExtraBold,
+                            FontSize = 13,
+                            LetterSpacing = 1,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        }
+                    };
+                    var skipBtn = new Avalonia.Controls.Border
+                    {
+                        Background = new SolidColorBrush(Color.Parse("#1F2937")),
+                        CornerRadius = new Avalonia.CornerRadius(10),
+                        Height = 40,
+                        Padding = new Avalonia.Thickness(22, 0),
+                        Margin = new Avalonia.Thickness(0, 0, 10, 0),
+                        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                        Child = new TextBlock
+                        {
+                            Text = "Skip (game may hang)",
+                            Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")),
+                            FontSize = 12,
+                            FontWeight = FontWeight.Medium,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        }
+                    };
+
+                    void Cleanup(bool consent)
+                    {
+                        try
+                        {
+                            backdrop.Opacity = 0;
+                            card.Opacity = 0;
+                            card.RenderTransform = new Avalonia.Media.ScaleTransform(0.96, 0.96);
+                        }
+                        catch { }
+                        _ = Task.Delay(220).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
+                        {
+                            try { rootGrid.Children.Remove(backdrop); } catch { }
+                            try { rootGrid.Children.Remove(card); } catch { }
+                        }));
+                        tcs.TrySetResult(consent);
+                    }
+
+                    repairBtn.PointerPressed += (_, __) => Cleanup(true);
+                    skipBtn.PointerPressed += (_, __) => Cleanup(false);
+
+                    var btnRow = new Avalonia.Controls.StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Margin = new Avalonia.Thickness(0, 18, 0, 0),
+                    };
+                    btnRow.Children.Add(skipBtn);
+                    btnRow.Children.Add(repairBtn);
+
+                    var stack = new Avalonia.Controls.StackPanel { Spacing = 0 };
+                    stack.Children.Add(icon);
+                    stack.Children.Add(title);
+                    stack.Children.Add(msg);
+                    stack.Children.Add(btnRow);
+                    card.Child = stack;
+
+                    int rowSpan = Math.Max(rootGrid.RowDefinitions.Count, 1);
+                    int colSpan = Math.Max(rootGrid.ColumnDefinitions.Count, 1);
+                    Avalonia.Controls.Grid.SetRowSpan(backdrop, rowSpan);
+                    Avalonia.Controls.Grid.SetColumnSpan(backdrop, colSpan);
+                    Avalonia.Controls.Grid.SetRowSpan(card, rowSpan);
+                    Avalonia.Controls.Grid.SetColumnSpan(card, colSpan);
+                    backdrop.ZIndex = 9000;
+                    card.ZIndex = 9001;
+                    rootGrid.Children.Add(backdrop);
+                    rootGrid.Children.Add(card);
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        backdrop.Opacity = 1;
+                        card.Opacity = 1;
+                        card.RenderTransform = new Avalonia.Media.ScaleTransform(1.0, 1.0);
+                    }, Avalonia.Threading.DispatcherPriority.Background);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[PerfCounterRepair] Prompt failed: {ex.Message}");
+                    tcs.TrySetResult(false);
+                }
+            });
+            return tcs.Task;
+        }
+
         // 5. REPLACES InstallOptiFineForFabricIfNeededAsync
         private async Task<bool> InstallOptiFineForFabricIfNeededAsync(string mcVersion, string profileName, bool isFabric)
         {
@@ -12757,8 +13445,6 @@ namespace LeafClient.Views
             _gameStartingBannerShownForCurrentLaunch = false;
             _launchFailureBannerShownForCurrentLaunch = false;
 
-            ShowLaunchAnimation();
-
             await UpdateServerButtonStates();
 
             ShowProgress(false);
@@ -13070,8 +13756,36 @@ namespace LeafClient.Views
                     _gameOutputWindow?.AppendLog($"[LaunchDiag] Failed to dump JVM args: {ex.GetType().Name}: {ex.Message}", "ERROR");
                 }
 
-                // Resolve profile-aware launch values. An active profile can override
-                // RAM allocation, screen resolution, and quick-join server.
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    jvmArguments.Add(new MArgument("-Doshi.util.wmi.timeout=3000"));
+                    jvmArguments.Add(new MArgument("-Doshi.os.windows.loadaverage=false"));
+                }
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    LogHealthEvent("prelaunch_probe_begin");
+                    bool wmiOk = await ProbeWmiHealthAsync();
+                    LogHealthEvent(wmiOk ? "prelaunch_probe_ok" : "prelaunch_probe_failed");
+                    if (!wmiOk)
+                    {
+                        _gameOutputWindow?.AppendLog("[LaunchDiag] WMI health probe FAILED — Windows perf counters appear corrupted.", "WARN");
+                        bool repairAttempted = await TryRepairPerfCountersWithUserConsentAsync();
+                        if (repairAttempted)
+                        {
+                            await Task.Delay(2000);
+                            System.Threading.Interlocked.Exchange(ref _lastWmiProbeMs, 0);
+                            wmiOk = await ProbeWmiHealthAsync();
+                            LogHealthEvent(wmiOk ? "prelaunch_repair_success" : "prelaunch_repair_still_failing");
+                            _gameOutputWindow?.AppendLog($"[LaunchDiag] Post-repair WMI probe: {(wmiOk ? "OK" : "STILL BROKEN")}", wmiOk ? "INFO" : "WARN");
+                        }
+                        else
+                        {
+                            LogHealthEvent("prelaunch_repair_skipped_or_denied");
+                        }
+                    }
+                }
+
                 var (resUseCustom, resWidth, resHeight) = GetEffectiveResolution();
                 var (qjAddress, qjPort) = GetEffectiveQuickJoin();
 
@@ -13634,9 +14348,89 @@ namespace LeafClient.Views
 
         private static long GetTotalPhysicalMemoryMb()
         {
-            var mem = new MEMORYSTATUSEX { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>() };
-            if (!GlobalMemoryStatusEx(ref mem)) return 0;
-            return (long)(mem.ullTotalPhys / (1024UL * 1024UL));
+            try
+            {
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    var mem = new MEMORYSTATUSEX { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>() };
+                    if (GlobalMemoryStatusEx(ref mem)) return (long)(mem.ullTotalPhys / (1024UL * 1024UL));
+                    return 0;
+                }
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                {
+                    foreach (var line in System.IO.File.ReadAllLines("/proc/meminfo"))
+                    {
+                        if (line.StartsWith("MemTotal:", StringComparison.Ordinal))
+                        {
+                            var parts = line.Split(new[] { ' ', '	' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length >= 2 && long.TryParse(parts[1], out var kb)) return kb / 1024L;
+                            break;
+                        }
+                    }
+                    return 0;
+                }
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("sysctl", "-n hw.memsize")
+                    {
+                        RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true
+                    };
+                    using var proc = System.Diagnostics.Process.Start(psi);
+                    if (proc != null)
+                    {
+                        var output = proc.StandardOutput.ReadToEnd().Trim();
+                        proc.WaitForExit(2000);
+                        if (long.TryParse(output, out var bytes)) return bytes / (1024L * 1024L);
+                    }
+                    return 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Launcher] Could not query system RAM: {ex.Message}");
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Caps RAM slider Maximums based on detected system RAM, leaving 2 GB reserve for the OS.
+        /// Falls back to hardcoded ceilings if detection fails.
+        /// </summary>
+        private void ApplyRamSliderCaps()
+        {
+            try
+            {
+                long totalMb = GetTotalPhysicalMemoryMb();
+                if (totalMb <= 0) return;
+
+                long reserveMb = 2048;
+                long capMb = Math.Max(1024, totalMb - reserveMb);
+                double capGb = capMb / 1024.0;
+
+                if (_minRamSlider != null)
+                {
+                    double newMax = Math.Min(_minRamSlider.Maximum, Math.Max(_minRamSlider.Minimum, capMb));
+                    _minRamSlider.Maximum = newMax;
+                    if (_minRamSlider.Value > newMax) _minRamSlider.Value = newMax;
+                }
+                if (_maxRamSlider != null)
+                {
+                    double newMax = Math.Min(_maxRamSlider.Maximum, Math.Max(_maxRamSlider.Minimum, capMb));
+                    _maxRamSlider.Maximum = newMax;
+                    if (_maxRamSlider.Value > newMax) _maxRamSlider.Value = newMax;
+                }
+                if (_po_MemSlider != null)
+                {
+                    double newMax = Math.Min(_po_MemSlider.Maximum, Math.Max(_po_MemSlider.Minimum, capGb));
+                    _po_MemSlider.Maximum = newMax;
+                    if (_po_MemSlider.Value > newMax) _po_MemSlider.Value = newMax;
+                }
+                Console.WriteLine($"[Launcher] RAM sliders capped: system={totalMb}MB, reserve={reserveMb}MB, cap={capMb}MB ({capGb:0.##}GB).");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Launcher] ApplyRamSliderCaps failed: {ex.Message}");
+            }
         }
 
         private int GetEffectiveMinRamMb()
@@ -14477,8 +15271,24 @@ namespace LeafClient.Views
             });
         }
 
+        private string? _celebSlug;
+        private string? _celebCategory;
+
+        private static string ResolveCosmeticCategory(string slug)
+        {
+            if (string.IsNullOrEmpty(slug)) return "";
+            if (slug.StartsWith("wings-", StringComparison.Ordinal)) return "wings";
+            if (slug.StartsWith("hat-", StringComparison.Ordinal))   return "hats";
+            if (slug.StartsWith("cape-", StringComparison.Ordinal))  return "capes";
+            if (slug.StartsWith("aura-", StringComparison.Ordinal))  return "auras";
+            return "";
+        }
+
         private void ShowCelebrationPanel(string id, string name, string preview, string rarity)
         {
+            _celebSlug = id;
+            _celebCategory = ResolveCosmeticCategory(id);
+
             var overlay = this.FindControl<Grid>("CelebrationOverlay");
             if (overlay == null) return;
 
@@ -16986,9 +17796,7 @@ namespace LeafClient.Views
             {
                 try
                 {
-                    string folderPath = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                        ".minecraft", "profiles", profile.Id);
+                    string folderPath = System.IO.Path.Combine(_minecraftFolder, "profiles", profile.Id);
                     System.IO.Directory.CreateDirectory(folderPath);
                     LeafClient.Utils.SystemUtil.OpenFolder(folderPath);
                 }
@@ -19271,6 +20079,7 @@ namespace LeafClient.Views
                     MarkSettingsDirty();
                 };
             }
+            ApplyRamSliderCaps();
             _quickJoinServerAddressTextBox = this.FindControl<TextBox>("QuickJoinServerAddressTextBox");
             _quickJoinServerPortTextBox = this.FindControl<TextBox>("QuickJoinServerPortTextBox");
             _quickLaunchEnabledToggle = this.FindControl<ToggleSwitch>("QuickLaunchEnabledToggle");
@@ -20412,7 +21221,59 @@ namespace LeafClient.Views
             WindowState = WindowState.Minimized;
         }
 
-        private void MaximizeWindow(object? s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        // Manual restore-bounds tracking. Avalonia's native WindowState=Maximized is unreliable on
+        // borderless windows (SystemDecorations=None + ExtendClientArea), especially on multi-monitor
+        // setups, HiDPI scaled displays, and Wayland. We instead snap the window to the current
+        // screen's WorkingArea and remember the previous geometry to restore.
+        private PixelPoint? _restorePosition;
+        private double _restoreWidth, _restoreHeight;
+        private bool _isManualMaximized;
+
+        private void MaximizeWindow(object? s, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_isManualMaximized)
+                {
+                    // Restore
+                    if (_restorePosition.HasValue) Position = _restorePosition.Value;
+                    if (_restoreWidth > 0) Width = _restoreWidth;
+                    if (_restoreHeight > 0) Height = _restoreHeight;
+                    WindowState = WindowState.Normal;
+                    _isManualMaximized = false;
+                    return;
+                }
+
+                // Save current geometry for restore
+                _restorePosition = Position;
+                _restoreWidth = Width;
+                _restoreHeight = Height;
+
+                // Find the screen the window is currently on
+                var screens = Screens;
+                var screen = screens?.ScreenFromWindow(this) ?? screens?.Primary;
+                if (screen == null)
+                {
+                    // Fallback to native maximize if screens API unavailable
+                    WindowState = WindowState.Maximized;
+                    _isManualMaximized = true;
+                    return;
+                }
+
+                // Use WorkingArea so the taskbar/dock stays visible
+                var area = screen.WorkingArea;
+                WindowState = WindowState.Normal; // ensure we are not stuck in some prior state
+                Position = area.Position;
+                Width = area.Width / screen.Scaling;
+                Height = area.Height / screen.Scaling;
+                _isManualMaximized = true;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Window] MaximizeWindow failed: {ex.Message}, falling back to native toggle.");
+                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            }
+        }
         private void CloseWindow(object? s, RoutedEventArgs e)
         {
             if (_currentSettings.MinimizeToTray)

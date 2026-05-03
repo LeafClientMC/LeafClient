@@ -13,8 +13,18 @@ namespace LeafClient.Services
         private static long _lastPushUnixMs;
         private const int PushThrottleMs = 30_000;
 
-        private static string McRoot => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
+        // Per-OS leaf game directory; mirrors GetMinecraftPath() in MainWindow.
+        private static string McRoot
+        {
+            get
+            {
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                    return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".leafclient");
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
+                    return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library", "Application Support", "leafclient");
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".leafclient");
+            }
+        }
 
         private static string ModConfigPath => Path.Combine(McRoot, "config", "leafclient", "settings.json");
         private static string ServersDatPath => Path.Combine(McRoot, "servers.dat");
