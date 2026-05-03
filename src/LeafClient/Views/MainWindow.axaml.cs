@@ -12485,6 +12485,80 @@ namespace LeafClient.Views
             }
         }
 
+        private static bool IsRepairPromptSuppressed()
+        {
+            try
+            {
+                if (!System.IO.File.Exists(HealthTelemetryPath)) return false;
+                var json = System.IO.File.ReadAllText(HealthTelemetryPath);
+                if (string.IsNullOrWhiteSpace(json)) return false;
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("repair_prompt_suppress_until_unix", out var sEl) && sEl.TryGetInt64(out var sUnix))
+                {
+                    if (sUnix == long.MaxValue) return true;
+                    if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() < sUnix) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static void RecordSkipAndMaybeSuppress()
+        {
+            try
+            {
+                int skipCount = IncrementHealthCounter("repair_prompt_skip_total");
+                long suppressUntil = skipCount >= 2
+                    ? long.MaxValue
+                    : DateTimeOffset.UtcNow.AddDays(14).ToUnixTimeSeconds();
+                SetHealthLong("repair_prompt_suppress_until_unix", suppressUntil);
+                Console.WriteLine($"[HealthTelemetry] suppress_until set (skipCount={skipCount}, until={(suppressUntil == long.MaxValue ? "permanent" : suppressUntil.ToString())})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[HealthTelemetry] RecordSkipAndMaybeSuppress failed: {ex.Message}");
+            }
+        }
+
+        private static void SetHealthLong(string key, long value)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(HealthTelemetryPath)!);
+                var data = new Dictionary<string, long>(StringComparer.Ordinal);
+                if (System.IO.File.Exists(HealthTelemetryPath))
+                {
+                    try
+                    {
+                        var json = System.IO.File.ReadAllText(HealthTelemetryPath);
+                        if (!string.IsNullOrWhiteSpace(json))
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(json);
+                            foreach (var prop in doc.RootElement.EnumerateObject())
+                            {
+                                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number && prop.Value.TryGetInt64(out var n))
+                                    data[prop.Name] = n;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                data[key] = value;
+                var sb = new System.Text.StringBuilder();
+                sb.Append('{');
+                bool first = true;
+                foreach (var kv in data)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append('"').Append(kv.Key.Replace("\"", "\\\"")).Append("\":").Append(kv.Value);
+                    first = false;
+                }
+                sb.Append('}');
+                System.IO.File.WriteAllText(HealthTelemetryPath, sb.ToString());
+            }
+            catch { }
+        }
+
         private static int IncrementHealthCounter(string eventName)
         {
             try
@@ -12571,11 +12645,20 @@ namespace LeafClient.Views
                 LogHealthEvent("repair_prompt_suppressed_dup");
                 return false;
             }
+            if (IsRepairPromptSuppressed())
+            {
+                LogHealthEvent("repair_prompt_suppressed_userpref");
+                return false;
+            }
             _wmiPromptShownThisSession = true;
             LogHealthEvent("repair_prompt_shown");
             bool consent = await ShowPerfCounterRepairPromptAsync();
             LogHealthEvent(consent ? "repair_prompt_consent_yes" : "repair_prompt_consent_no");
-            if (!consent) return false;
+            if (!consent)
+            {
+                RecordSkipAndMaybeSuppress();
+                return false;
+            }
 
             await Dispatcher.UIThread.InvokeAsync(() => ShowProgress(true, "Repairing Windows performance counters (admin required)..."));
             try
@@ -12682,14 +12765,14 @@ namespace LeafClient.Views
 
                     var icon = new TextBlock
                     {
-                        Text = "\u26A0",
-                        FontSize = 28,
-                        Foreground = new SolidColorBrush(Color.Parse("#F59E0B")),
+                        Text = "\u2728",
+                        FontSize = 26,
+                        Foreground = new SolidColorBrush(Color.Parse("#4ADE80")),
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
                     };
                     var title = new TextBlock
                     {
-                        Text = "Windows performance counters need repair",
+                        Text = "Speed up your launches",
                         Foreground = Brushes.White,
                         FontSize = 17,
                         FontWeight = FontWeight.Bold,
@@ -12698,11 +12781,11 @@ namespace LeafClient.Views
                     };
                     var msg = new TextBlock
                     {
-                        Text = "Minecraft can't launch with mods because Windows performance counters " +
-                               "(WMI / PDH) are corrupted on your PC. This is a known Windows issue, " +
-                               "usually caused by a Windows Update or antivirus tool.\n\n" +
-                               "Click REPAIR to fix it automatically. You'll see a UAC prompt for admin " +
-                               "permission. Takes about 10 seconds and only needs to be done once.",
+                        Text = "We can shave about 10 seconds off your Minecraft launch time with a tiny " +
+                               "one-time Windows tune-up. It's optional and totally safe \u2014 the game " +
+                               "already runs fine without it.\n\n" +
+                               "If you'd like to do it now, click Optimize and accept the admin prompt. " +
+                               "Otherwise, no worries \u2014 we won't bug you about this again.",
                         TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                         Foreground = new SolidColorBrush(Color.Parse("#D1D5DB")),
                         FontSize = 13,
@@ -12718,7 +12801,7 @@ namespace LeafClient.Views
                         Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
                         Child = new TextBlock
                         {
-                            Text = "REPAIR",
+                            Text = "OPTIMIZE",
                             Foreground = Brushes.White,
                             FontWeight = FontWeight.ExtraBold,
                             FontSize = 13,
@@ -12737,7 +12820,7 @@ namespace LeafClient.Views
                         Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
                         Child = new TextBlock
                         {
-                            Text = "Skip (game may hang)",
+                            Text = "No thanks",
                             Foreground = new SolidColorBrush(Color.Parse("#9CA3AF")),
                             FontSize = 12,
                             FontWeight = FontWeight.Medium,
