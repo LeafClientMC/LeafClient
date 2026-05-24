@@ -1,0 +1,121 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.5)"
+        required: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish win-x64
+        working-directory: src/LeafClient
+        run: >
+          dotnet publish LeafClient.csproj
+          -r win-x64 -c Release
+          -p:PublishAot=false
+          -p:PublishSingleFile=true
+          --self-contained
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          $pub = "src/LeafClient/bin/Release/net8.0/win-x64/publish/LeafClient.exe"
+          Compress-Archive -Path $pub -DestinationPath "LeafClient-${{ github.event.inputs.version }}-win-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: LeafClient-${{ github.event.inputs.version }}-win-x64.zip
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-14
+          - rid: osx-x64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish ${{ matrix.rid }}
+        working-directory: src/LeafClient
+        run: >
+          dotnet publish LeafClient.csproj
+          -r ${{ matrix.rid }} -c Release
+          -p:PublishAot=false
+          -p:PublishSingleFile=true
+          --self-contained
+
+      - name: Build .app bundle
+        run: |
+          PUB="src/LeafClient/bin/Release/net8.0/${{ matrix.rid }}/publish/LeafClient"
+          APP="LeafClient.app/Contents"
+          mkdir -p "$APP/MacOS" "$APP/Resources"
+
+          cat > "$APP/Info.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key>
+              <string>LeafClient</string>
+              <key>CFBundleDisplayName</key>
+              <string>LeafClient</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.leafclient.launcher</string>
+              <key>CFBundleVersion</key>
+              <string>${{ github.event.inputs.version }}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ github.event.inputs.version }}</string>
+              <key>CFBundleExecutable</key>
+              <string>LeafClient</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+              <key>NSPrincipalClass</key>
+              <string>NSApplication</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>12.0</string>
+              <key>NSAppTransportSecurity</key>
+              <dict>
+                  <key>NSAllowsArbitraryLoads</key>
+                  <true/>
+              </dict>
+              <key>NSHumanReadableCopyright</key>
+              <string>Copyright © 2026 voidZiAD. All rights reserved.</string>
+          </dict>
+          </plist>
+          EOF
+
+          cp "$PUB" "$APP/MacOS/LeafClient"
+          chmod +x "$APP/MacOS/LeafClient"
+
+      - name: Zip .app
+        run: |
+          zip -r "LeafClient-${{ github.event.inputs.version }}-${{ matrix.rid }}.zip" "LeafClient.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: LeafClient-${{ github.event.inputs.version }}-${{ matrix.rid }}.zip

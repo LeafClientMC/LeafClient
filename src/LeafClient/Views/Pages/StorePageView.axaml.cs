@@ -1,0 +1,1224 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using LeafClient.Models;
+using LeafClient.Services;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace LeafClient.Views.Pages
+{
+    public sealed class CurrencyListItem : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public CurrencyInfo Info { get; }
+
+        private Bitmap? _flagBitmap;
+        public Bitmap? FlagBitmap
+        {
+            get => _flagBitmap;
+            set { _flagBitmap = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FlagBitmap))); }
+        }
+
+        public CurrencyListItem(CurrencyInfo info) { Info = info; }
+    }
+
+    public partial class StorePageView : UserControl
+    {
+        private IMainWindowHost? _host;
+
+        private WrapPanel? _storeGrid;
+        private LeafClient.Controls.SkinRendererControl? _storeRenderer;
+        private string _storeActiveTab = "all";
+        private string _storeActiveRarity = "all";
+        private string _storeSearchQuery  = "";
+        private bool _storeInitialized = false;
+        private bool _storeInitializedSentinel = false;
+        private Border? _storePreviewCard;
+        private TextBlock? _storePreviewName;
+        private TextBlock? _storePreviewDesc;
+        private Border? _storePreviewRarityBadge;
+        private TextBlock? _storePreviewRarityText;
+        private TextBlock? _storePreviewPrice;
+        private Border? _storePreviewActionBtn;
+        private TextBlock? _storePreviewActionText;
+        private Border? _storePreviewCoinBtn;
+        private TextBlock? _storePreviewCoinText;
+        private byte[]? _storeSkinCache;
+        private string? _previewedItemId;
+        private static readonly Bitmap _storeNightBg = LoadStoreBgAsset("avares://LeafClient/Assets/bg.jpg");
+        private static readonly Bitmap _storeDayBg = LoadStoreBgAsset("avares://LeafClient/Assets/skin-preview-day.jpg");
+
+        private static Bitmap LoadStoreBgAsset(string uri)
+        {
+            try { return new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri(uri))); }
+            catch { return null!; }
+        }
+
+        private ComboBox? _currencySelector;
+        private TextBlock? _storePillPriceText;
+        private TextBlock? _storeSubPriceText;
+        private TextBlock? _ascendantBundleNowPrice;
+        private TextBlock? _ascendantBundleOriginalPrice;
+        private TextBlock? _ascendantBundleOwnedText;
+        private Button? _ascendantBundleBuyBtn;
+        private Border? _ascendantBundleBanner;
+
+        private static readonly Dictionary<string, string[]> BundleContents = new()
+        {
+            ["ascendant-bundle"] = new[] { "golden-wings", "golden-halo" },
+        };
+        private readonly List<CurrencyListItem> _currencyItems =
+            CurrencyService.SupportedCurrencies.Select(c => new CurrencyListItem(c)).ToList();
+
+        private Border? _subscriptionBannerClip;
+        private Border? _subscriptionBanner;
+        private double _bannerFullHeight = double.NaN;
+        private bool _bannerVisible = true;
+        private CancellationTokenSource? _bannerAnimCts;
+
+        private static readonly TimeSpan BannerAnimDuration = TimeSpan.FromMilliseconds(250);
+        private static readonly TimeSpan BannerFrameTime    = TimeSpan.FromMilliseconds(16);
+
+        private static readonly Dictionary<string, string> CheckoutUrls = new()
+        {
+            ["aura-broken-hearts"]= "https://leafclient.lemonsqueezy.com/checkout/buy/c9133e4f-dc8d-454a-9910-e230c84a625f",
+            ["wings-dragon"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/d84cbd23-0a2a-4432-972c-04459d8c2673",
+            ["hat-crown"]         = "https://leafclient.lemonsqueezy.com/checkout/buy/266cc978-3928-466f-a43a-cdd93f359535",
+            ["aura-inferno"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/31fa1081-8161-4f5f-8143-a0119a27b39f",
+            ["wings-black"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/baea8513-ec8d-46cc-b32f-acb92be81d50",
+            ["hat-shadow-horns"]  = "https://leafclient.lemonsqueezy.com/checkout/buy/b733e170-c038-4bec-ab23-bf54630278f2",
+            ["wings-purple"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/969cd6d0-48de-410e-86ee-a8c95b6a8188",
+            ["golden-halo"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/b306d728-3409-4ac4-8468-47d8c3c1b648",
+            ["golden-wings"]      = "https://leafclient.lemonsqueezy.com/checkout/buy/f0b317c6-544d-4fa9-a5f0-e41583553fdb",
+            ["ascendant-bundle"]  = "https://leafclient.lemonsqueezy.com/checkout/buy/80b2ad0a-70a8-4a19-91f1-401641102c0d",
+            ["hat-goat-horns"]    = "https://leafclient.lemonsqueezy.com/checkout/buy/faf7656b-96b8-4061-8bf5-1a17c1b946fe",
+            ["hat-monocle"]       = "https://leafclient.lemonsqueezy.com/checkout/buy/01c63d96-c0b4-4a28-b1aa-d5643722444e",
+            ["hat-victorian-crown"] = "https://leafclient.lemonsqueezy.com/checkout/buy/7bd428f2-730a-4556-bb59-a2524cc280c1",
+        };
+
+        private static readonly Dictionary<string, int> CoinPrices = new()
+        {
+            ["wings-dragon"]       = 800,
+            ["wings-purple"]       = 900,
+            ["wings-black"]        = 500,
+            ["hat-crown"]          = 600,
+            ["hat-shadow-horns"]   = 400,
+            ["aura-inferno"]       = 200,
+            ["aura-broken-hearts"] = 200,
+            ["golden-halo"]        = 700,
+            ["golden-wings"]       = 899,
+            ["ascendant-bundle"]   = 1278,
+            ["hat-goat-horns"]     = 1200,
+            ["hat-monocle"]        = 1800,
+            ["hat-victorian-crown"] = 3000,
+        };
+
+        private static readonly Dictionary<string, decimal> BasePricesEur = new()
+        {
+            ["wings-dragon"]       = 7.99m,
+            ["wings-purple"]       = 8.99m,
+            ["wings-black"]        = 4.99m,
+            ["hat-crown"]          = 5.99m,
+            ["hat-shadow-horns"]   = 3.99m,
+            ["aura-inferno"]       = 1.99m,
+            ["aura-broken-hearts"] = 1.99m,
+            ["golden-halo"]        = 6.99m,
+            ["golden-wings"]       = 8.99m,
+            ["ascendant-bundle"]   = 12.78m,
+            ["hat-goat-horns"]     = 1.99m,
+            ["hat-monocle"]        = 2.99m,
+            ["hat-victorian-crown"] = 4.99m,
+        };
+
+        public StorePageView()
+        {
+            InitializeComponent();
+        }
+
+        public void SetHost(IMainWindowHost host)
+        {
+            _host = host;
+        }
+
+        public void RefreshOwnedList(System.Collections.Generic.HashSet<string> ownedIds)
+        {
+            if (!_storeInitialized) return;
+            PopulateStoreGrid();
+            UpdateBundleStates();
+            if (!string.IsNullOrEmpty(_previewedItemId))
+            {
+                var current = StoreCatalog.FirstOrDefault(c => c.Id == _previewedItemId);
+                if (!string.IsNullOrEmpty(current.Id))
+                    UpdateStorePreviewPanel(current);
+            }
+        }
+
+        private (bool fullyOwned, int ownedCount, int total) GetBundleOwnership(string bundleId)
+        {
+            if (_host == null || !BundleContents.TryGetValue(bundleId, out var slugs) || slugs.Length == 0)
+                return (false, 0, 0);
+            int owned = 0;
+            foreach (var s in slugs) if (_host.IsOwned(s)) owned++;
+            return (owned == slugs.Length, owned, slugs.Length);
+        }
+
+        private void UpdateBundleStates()
+        {
+            var (fullyOwned, ownedCount, total) = GetBundleOwnership("ascendant-bundle");
+            if (total == 0) return;
+
+            if (_ascendantBundleBuyBtn != null)
+            {
+                if (fullyOwned)
+                {
+                    _ascendantBundleBuyBtn.IsEnabled = false;
+                    _ascendantBundleBuyBtn.Content = "OWNED \u2713";
+                    _ascendantBundleBuyBtn.Background = SolidColorBrush.Parse("#3F4753");
+                    _ascendantBundleBuyBtn.Foreground = SolidColorBrush.Parse("#D5DBE4");
+                    _ascendantBundleBuyBtn.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+                }
+                else
+                {
+                    _ascendantBundleBuyBtn.IsEnabled = true;
+                    _ascendantBundleBuyBtn.Content = LeafClient.Services.LocalizationService.Instance["ui.buy_bundle.17802f"];
+                    _ascendantBundleBuyBtn.Background = SolidColorBrush.Parse("#FFE0B400");
+                    _ascendantBundleBuyBtn.Foreground = SolidColorBrush.Parse("#241300");
+                    _ascendantBundleBuyBtn.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+                }
+            }
+
+            if (_ascendantBundleOwnedText != null)
+            {
+                if (fullyOwned)
+                {
+                    _ascendantBundleOwnedText.Text = "You already own everything in this bundle";
+                    _ascendantBundleOwnedText.IsVisible = true;
+                }
+                else if (ownedCount > 0)
+                {
+                    _ascendantBundleOwnedText.Text = $"You own {ownedCount} of {total} items in this bundle";
+                    _ascendantBundleOwnedText.IsVisible = true;
+                }
+                else
+                {
+                    _ascendantBundleOwnedText.Text = "";
+                    _ascendantBundleOwnedText.IsVisible = false;
+                }
+            }
+        }
+
+        private async Task QueueStorePreviewRenderAsync(string cosmeticId, string category, Avalonia.Controls.Image targetImage)
+        {
+            try
+            {
+                byte[]? skin = _storeSkinCache;
+                if (skin == null && _host != null)
+                {
+                    try { skin = await _host.FetchSkinBytesAsync(); } catch { }
+                }
+                var bytes = await LeafClient.Services.CosmeticHelpers.RenderCardPreviewAsync(cosmeticId, category, skin);
+                if (bytes == null) return;
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        using var ms = new System.IO.MemoryStream(bytes);
+                        targetImage.Source = new Avalonia.Media.Imaging.Bitmap(ms);
+                    }
+                    catch { }
+                });
+            }
+            catch (Exception ex) { LeafLog.Info("StoreCardPreview", $"{cosmeticId}: {ex.Message}"); }
+        }
+
+        public async void OnAccountChanged()
+        {
+            LeafClient.Services.CosmeticHelpers.InvalidateCardPreviewCache();
+            _storeSkinCache = null;
+            if (_storeRenderer != null && _host != null)
+            {
+                try
+                {
+                    var skin = await _host.FetchSkinBytesAsync();
+                    if (skin != null)
+                    {
+                        _storeSkinCache = skin;
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            _storeRenderer.UpdateSkinTexture(skin);
+                            if (_host.CurrentSettings?.Equipped != null)
+                                CosmeticHelpers.ApplyEquippedToRenderer(_storeRenderer, _host.CurrentSettings.Equipped);
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LeafLog.Info("Store", $"OnAccountChanged skin refresh failed: {ex.Message}");
+                }
+            }
+            if (_storeInitialized) { PopulateStoreGrid(); UpdateBundleStates(); }
+        }
+
+        internal static readonly (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available)[] StoreCatalog =
+        {
+            ("wings-dragon",       "Crimson Dragon Wings", "wings", "Epic",      "Demonic bat wings with deep crimson membrane and glowing vein lines.",        "\U0001f987",       "\u20ac7.99", true),
+            ("wings-purple",       "Void Demon Wings",     "wings", "Epic",      "Otherworldly purple demon wings pulsing with arcane energy.",                 "\U0001f49c",       "\u20ac8.99", true),
+            ("wings-black",        "Shadow Demon Wings",   "wings", "Epic",      "Pitch-black demon wings that melt into the darkness.",                        "\U0001f5a4",       "\u20ac4.99", true),
+            ("hat-crown",          "Golden Crown",         "hats",  "Rare",      "A hand-crafted crown of solid gold \u2014 dripping in royalty.",              "\U0001f451",       "\u20ac5.99", true),
+            ("hat-shadow-horns",   "Shadow Horns",         "hats",  "Rare",      "Dark curved horns that emerge from the shadows.",                             "\U0001f608",       "\u20ac3.99", true),
+            ("aura-inferno",       "Inferno Aura",         "auras", "Common",    "Scorching flames that dance around you with every step.",                     "\U0001f525",       "\u20ac1.99", true),
+            ("aura-broken-hearts", "Broken Hearts Aura",   "auras", "Common",    "Shattered heart particles that swirl around you endlessly.",                  "\U0001f494",       "\u20ac1.99", true),
+            ("aura-darkness",      "Darkness Aura",        "auras", "Rare",      "A shadowy aura of pure darkness that follows your every move.",               "\U0001f311",       "FREE",       true),
+            ("cape-leaf",          "Leaf Cape",            "capes", "Common",    "The signature Leaf Client cape \u2014 free for all players.",                 "\U0001f343",       "FREE",       true),
+            ("golden-halo",        "Golden Halo",          "hats",  "Legendary", "A divine golden halo that hovers above your head with celestial radiance.",   "\U0001f607",       "\u20ac6.99", true),
+            ("golden-wings",       "Golden Wings",         "wings", "Legendary", "Radiant golden wings that catch the light with every step.",                  "\U0001fab6",       "\u20ac8.99", true),
+            ("hat-goat-horns",     "Goat Horns",           "hats",  "Rare",      "A pair of curved horns that sit on the sides of your head.",                  "\U0001f410",       "\u20ac1.99", true),
+            ("hat-monocle",        "Monocle",              "face",  "Legendary", "An animated single eyepiece. Resize and reposition to fit your skin.",        "\U0001f9d0",       "\u20ac2.99", true),
+            ("hat-victorian-crown","Victorian Crown",      "hats",  "Epic",      "An ornate crown that unlocks 36 color variants in one purchase.",             "\U0001f451",       "\u20ac4.99", true),
+        };
+
+        private static string GetDisplayPrice(string itemId, string rawPrice)
+        {
+            if (rawPrice == "FREE") return "FREE";
+            if (BasePricesEur.TryGetValue(itemId, out var eurBase))
+                return CurrencyService.FormatPrice(eurBase);
+            return rawPrice;
+        }
+
+        private void InitializeStoreControls()
+        {
+            _subscriptionBannerClip = this.FindControl<Border>("SubscriptionBannerClip");
+            _subscriptionBanner     = this.FindControl<Border>("SubscriptionBanner");
+            _storeGrid              = this.FindControl<WrapPanel>("StoreGrid");
+            _storePreviewCard       = this.FindControl<Border>("StorePreviewCard");
+            _storePreviewName       = this.FindControl<TextBlock>("StorePreviewName");
+            _storePreviewDesc       = this.FindControl<TextBlock>("StorePreviewDesc");
+            _storePreviewRarityBadge = this.FindControl<Border>("StorePreviewRarityBadge");
+            _storePreviewRarityText  = this.FindControl<TextBlock>("StorePreviewRarityText");
+            _storePreviewPrice      = this.FindControl<TextBlock>("StorePreviewPrice");
+            _storePreviewActionBtn  = this.FindControl<Border>("StorePreviewActionBtn");
+            _storePreviewActionText = this.FindControl<TextBlock>("StorePreviewActionText");
+            _storePreviewCoinBtn    = this.FindControl<Border>("StorePreviewCoinBtn");
+            _storePreviewCoinText   = this.FindControl<TextBlock>("StorePreviewCoinText");
+            _storePillPriceText     = this.FindControl<TextBlock>("StorePillPriceText");
+            _storeSubPriceText      = this.FindControl<TextBlock>("StoreSubPriceText");
+            _ascendantBundleNowPrice      = this.FindControl<TextBlock>("AscendantBundleNowPrice");
+            _ascendantBundleOriginalPrice = this.FindControl<TextBlock>("AscendantBundleOriginalPrice");
+            _ascendantBundleOwnedText     = this.FindControl<TextBlock>("AscendantBundleOwnedText");
+            _ascendantBundleBuyBtn        = this.FindControl<Button>("AscendantBundleBuyBtn");
+            _ascendantBundleBanner        = this.FindControl<Border>("AscendantBundleBanner");
+
+            if (_storePreviewActionBtn != null)
+                _storePreviewActionBtn.Tapped += OnStorePreviewActionTapped;
+
+            _currencySelector = this.FindControl<ComboBox>("CurrencySelector");
+            if (_currencySelector != null)
+            {
+                _currencySelector.ItemsSource = _currencyItems;
+
+                var savedCode = _host?.CurrentSettings?.SelectedCurrency ?? "EUR";
+                CurrencyService.SelectedCode = savedCode;
+
+                var selected = _currencyItems.FirstOrDefault(c => c.Info.Code == savedCode)
+                    ?? _currencyItems[0];
+                _currencySelector.SelectedItem = selected;
+
+            }
+
+            var host = this.FindControl<Border>("StoreRendererHost");
+            if (host != null)
+            {
+                try
+                {
+                    _storeRenderer = new LeafClient.Controls.SkinRendererControl
+                    {
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                        VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Stretch
+                    };
+                    host.Child = _storeRenderer;
+                    LeafLog.Info("Store", "3D store preview renderer initialized.");
+                }
+                catch (Exception ex)
+                {
+                    LeafLog.Info("Store", $"Renderer init failed: {ex.Message}");
+                    _storeRenderer = null;
+                }
+            }
+        }
+
+        public async void LoadStorePage()
+        {
+            LeafLog.Info("Store", "LoadStorePage called");
+            if (!_storeInitialized)
+            {
+                InitializeStoreControls();
+                _storeInitialized = true;
+            }
+            _ = LeafClient.Services.BBModel.BBModelCatalog.RefreshAsync();
+            ApplyStorePreviewBackgroundFromSettings();
+            if (!_storeInitializedSentinel)
+            {
+                _storeInitializedSentinel = true;
+
+                _ = Task.Run(async () =>
+                {
+                    await CurrencyService.TryFetchLiveRatesAsync();
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(RefreshCurrencyDisplay);
+                });
+
+                _ = LoadFlagsAsync();
+            }
+
+            if (_storeRenderer != null && _storeSkinCache == null && _host != null)
+            {
+                _storeSkinCache = await _host.FetchSkinBytesAsync();
+                if (_storeSkinCache != null)
+                    _storeRenderer.UpdateSkinTexture(_storeSkinCache);
+            }
+            else if (_storeRenderer != null && _storeSkinCache != null)
+            {
+                _storeRenderer.UpdateSkinTexture(_storeSkinCache);
+            }
+
+            if (_storeRenderer != null && _host?.CurrentSettings?.Equipped != null)
+            {
+                CosmeticHelpers.ApplyEquippedToRenderer(_storeRenderer, _host.CurrentSettings.Equipped);
+            }
+
+            UpdateStorePreviewPanel(StoreCatalog[0]);
+            HighlightStoreTab(_storeActiveTab);
+            PopulateStoreGrid();
+            RefreshSubscriptionPrices();
+            UpdateBundleStates();
+        }
+
+        private const int MaxFlagBytes = 64 * 1024;
+        private const string FlagCdnHost = "flagcdn.com";
+        private static bool IsValidFlagCode(string? code)
+        {
+            if (string.IsNullOrEmpty(code) || code.Length is < 2 or > 4) return false;
+            for (int i = 0; i < code.Length; i++)
+            {
+                char c = code[i];
+                if (!(char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')) return false;
+            }
+            return true;
+        }
+        private async Task LoadFlagsAsync()
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            foreach (var item in _currencyItems)
+            {
+                try
+                {
+                    if (!IsValidFlagCode(item.Info.FlagCode)) continue;
+                    var uri = new Uri($"https://{FlagCdnHost}/w40/{item.Info.FlagCode}.png", UriKind.Absolute);
+                    if (uri.Scheme != Uri.UriSchemeHttps || !string.Equals(uri.Host, FlagCdnHost, StringComparison.OrdinalIgnoreCase)) continue;
+                    using var resp = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+                    if (!resp.IsSuccessStatusCode) continue;
+                    if (resp.Content.Headers.ContentLength.HasValue && resp.Content.Headers.ContentLength.Value > MaxFlagBytes) continue;
+                    var bytes = await resp.Content.ReadAsByteArrayAsync();
+                    if (bytes.Length > MaxFlagBytes) continue;
+                    using var ms = new MemoryStream(bytes);
+                    var bmp = new Bitmap(ms);
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.FlagBitmap = bmp);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private void OnCurrencyChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_currencySelector?.SelectedItem is not CurrencyListItem listItem) return;
+            var info = listItem.Info;
+
+            CurrencyService.SelectedCode = info.Code;
+
+            if (_host?.CurrentSettings != null)
+            {
+                _host.CurrentSettings.SelectedCurrency = info.Code;
+                _ = _host.SettingsService.SaveSettingsAsync(_host.CurrentSettings);
+            }
+
+            RefreshCurrencyDisplay();
+            _host?.RefreshLeafPlusPrices();
+        }
+
+        private void RefreshCurrencyDisplay()
+        {
+            PopulateStoreGrid();
+            RefreshSubscriptionPrices();
+
+            if (_previewedItemId != null)
+            {
+                var item = Array.Find(StoreCatalog, c => c.Id == _previewedItemId);
+                if (item.Id != null)
+                    UpdateStorePreviewPanel(item);
+            }
+        }
+
+        private void RefreshSubscriptionPrices()
+        {
+            var subMonthly = CurrencyService.FormatPrice(4.99m);
+            if (_storePillPriceText != null)
+                _storePillPriceText.Text = $"from {subMonthly}/mo";
+            if (_storeSubPriceText != null)
+                _storeSubPriceText.Text = subMonthly;
+
+            if (_ascendantBundleNowPrice != null)
+                _ascendantBundleNowPrice.Text = CurrencyService.FormatPrice(12.78m);
+            if (_ascendantBundleOriginalPrice != null)
+                _ascendantBundleOriginalPrice.Text = CurrencyService.FormatPrice(15.98m);
+        }
+
+        private void PopulateStoreGrid()
+        {
+            if (_storeGrid == null) return;
+            _storeGrid.Children.Clear();
+
+            string q = (_storeSearchQuery ?? "").Trim();
+            var filtered = StoreCatalog
+                .Where(c => _storeActiveTab == "all" || c.Category == _storeActiveTab)
+                .Where(c => _storeActiveRarity == "all" || c.Rarity == _storeActiveRarity)
+                .Where(c => q.Length == 0
+                            || c.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                            || c.Description.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            foreach (var item in filtered)
+            {
+                var card = CreateStoreCard(item);
+                _storeGrid.Children.Add(card);
+            }
+        }
+
+        private void OnStoreSearchChanged(object? sender, TextChangedEventArgs e)
+        {
+            if (sender is TextBox tb)
+            {
+                _storeSearchQuery = tb.Text ?? "";
+                PopulateStoreGrid();
+            }
+        }
+
+        private void OnMonthlyPassTapped(object? sender, TappedEventArgs e)
+        {
+            _host?.ShowMonthlyPassPopup();
+        }
+
+        private void OnStoreRarityTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is Border b && b.Tag is string tag)
+            {
+                _storeActiveRarity = tag;
+                HighlightStoreRarity(tag);
+                PopulateStoreGrid();
+            }
+        }
+
+        private void HighlightStoreRarity(string activeRarity)
+        {
+            foreach (var (name, tag) in new[]
+            {
+                ("StoreRarity_All",       "all"),
+                ("StoreRarity_Legendary", "Legendary"),
+                ("StoreRarity_Epic",      "Epic"),
+                ("StoreRarity_Rare",      "Rare"),
+                ("StoreRarity_Common",    "Common"),
+            })
+            {
+                var chip = this.FindControl<Border>(name);
+                if (chip == null) continue;
+
+                bool isActive = tag == activeRarity;
+                chip.Background  = isActive
+                    ? SolidColorBrush.Parse("#22C55E")
+                    : SolidColorBrush.Parse("#0F1A24");
+                chip.BorderBrush = isActive
+                    ? SolidColorBrush.Parse("#22C55E")
+                    : SolidColorBrush.Parse("#1C2A38");
+                chip.BorderThickness = new Thickness(1);
+
+                if (chip.Child is TextBlock tb)
+                {
+                    if (isActive)
+                        tb.Foreground = Brushes.White;
+                    else
+                    {
+                        tb.Foreground = tag switch
+                        {
+                            "Legendary" => SolidColorBrush.Parse("#F59E0B"),
+                            "Epic"      => SolidColorBrush.Parse("#34D399"),
+                            "Rare"      => SolidColorBrush.Parse("#3B82F6"),
+                            "Common"    => SolidColorBrush.Parse("#6B7280"),
+                            _           => SolidColorBrush.Parse("#9CA3AF"),
+                        };
+                    }
+                }
+            }
+        }
+
+        private Border CreateStoreCard(
+            (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
+        {
+            var (rarityMain, rarityGlow, rarityBg) = item.Rarity switch
+            {
+                "Legendary" => ("#F59E0B", "#92400E", "#1A1408"),
+                "Epic"      => ("#34D399", "#16A34A", "#110C1A"),
+                "Rare"      => ("#3B82F6", "#1E3A8A", "#0C1320"),
+                _           => ("#6B7280", "#374151", "#0F1318")
+            };
+
+            var mainColor = Color.Parse(rarityMain);
+            var glowColor = Color.Parse(rarityGlow);
+            bool owned    = _host?.IsOwned(item.Id) ?? false;
+            bool isFree   = item.Price == "FREE";
+            bool hasUrl   = CheckoutUrls.TryGetValue(item.Id, out var itemCheckoutUrl)
+                            && !string.IsNullOrWhiteSpace(itemCheckoutUrl);
+            bool isComingSoon = !item.Available || (!hasUrl && !isFree);
+
+            var card = new Border
+            {
+                Name            = item.Id == "cape-leaf" ? "LeafCapeStoreCard" : null,
+                Width           = 178,
+                Height          = 310,
+                CornerRadius    = new CornerRadius(18),
+                BorderBrush     = item.Available
+                    ? new SolidColorBrush(new Color(0x55, glowColor.R, glowColor.G, glowColor.B))
+                    : SolidColorBrush.Parse("#25FFFFFF"),
+                BorderThickness = new Thickness(1),
+                Margin          = new Thickness(6, 6, 14, 14),
+                Cursor          = item.Available
+                    ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+                    : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow),
+                Tag             = item.Id,
+                ClipToBounds    = false,
+                Background      = SolidColorBrush.Parse(rarityBg),
+                Opacity         = item.Available ? 1.0 : 0.6
+            };
+
+            var scaleTransform = new ScaleTransform(1.0, 1.0);
+            card.RenderTransform = scaleTransform;
+            card.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+
+            var outerStack = new StackPanel();
+
+            var previewBorder = new Border
+            {
+                Height       = 130,
+                Margin       = new Thickness(7, 7, 7, 0),
+                CornerRadius = new CornerRadius(13),
+                ClipToBounds = true
+            };
+
+            var previewGrad = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(0.5, 1, RelativeUnit.Relative)
+            };
+            previewGrad.GradientStops.Add(new GradientStop(new Color(0x40, glowColor.R, glowColor.G, glowColor.B), 0));
+            previewGrad.GradientStops.Add(new GradientStop(Color.Parse("#060A10"), 1));
+            previewBorder.Background = previewGrad;
+
+            var effectGrid = new Grid();
+
+            var glowCircle = new Ellipse
+            {
+                Width   = 52,
+                Height  = 52,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                Opacity = 0.18
+            };
+            glowCircle.Fill = new SolidColorBrush(mainColor);
+            effectGrid.Children.Add(glowCircle);
+
+            var previewImg = new Avalonia.Controls.Image
+            {
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
+                Margin = new Thickness(6),
+                Opacity = item.Available ? 1.0 : 0.45,
+            };
+            var emojiFallback = new Viewbox
+            {
+                Width               = 36,
+                Height              = 36,
+                Stretch             = Stretch.Uniform,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text                = item.Available ? item.Preview : "\U0001f512",
+                    FontSize            = 44,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center,
+                    Opacity             = item.Available ? 1.0 : 0.45,
+                }
+            };
+            try
+            {
+                var cached = LeafClient.Services.CosmeticHelpers.GetCachedCardPreview(item.Id);
+                if (cached != null)
+                {
+                    using var msC = new System.IO.MemoryStream(cached);
+                    previewImg.Source = new Avalonia.Media.Imaging.Bitmap(msC);
+                    effectGrid.Children.Add(previewImg);
+                }
+                else
+                {
+                    effectGrid.Children.Add(emojiFallback);
+                    _ = QueueStorePreviewRenderAsync(item.Id, item.Category, previewImg).ContinueWith(_ =>
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            if (previewImg.Source != null)
+                            {
+                                effectGrid.Children.Remove(emojiFallback);
+                                if (!effectGrid.Children.Contains(previewImg)) effectGrid.Children.Add(previewImg);
+                            }
+                        });
+                    });
+                }
+            }
+            catch { effectGrid.Children.Add(emojiFallback); }
+
+            if (!item.Available)
+            {
+                effectGrid.Children.Add(new Border
+                {
+                    Background          = SolidColorBrush.Parse("#CC0D1117"),
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                    VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Bottom,
+                    Height              = 22,
+                    Child = new TextBlock
+                    {
+                        Text                = "COMING SOON",
+                        Foreground          = SolidColorBrush.Parse("#90FFFFFF"),
+                        FontSize            = 8.5,
+                        FontWeight          = FontWeight.ExtraBold,
+                        LetterSpacing       = 1.0,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center
+                    }
+                });
+            }
+
+            previewBorder.Child = effectGrid;
+            outerStack.Children.Add(previewBorder);
+
+            var infoPanel = new StackPanel { Spacing = 4, Margin = new Thickness(11, 8, 11, 4) };
+
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text         = item.Name,
+                Foreground   = Brushes.White,
+                FontWeight   = FontWeight.Bold,
+                FontSize     = 14,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            var badge = new Border
+            {
+                Background      = new SolidColorBrush(new Color(0x28, mainColor.R, mainColor.G, mainColor.B)),
+                BorderBrush     = new SolidColorBrush(new Color(0x55, mainColor.R, mainColor.G, mainColor.B)),
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(20),
+                Padding         = new Thickness(8, 2.5),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+            };
+            badge.Child = new TextBlock
+            {
+                Text          = item.Rarity.ToUpper(),
+                Foreground    = new SolidColorBrush(mainColor),
+                FontSize      = 8.5,
+                FontWeight    = FontWeight.ExtraBold,
+                LetterSpacing = 0.8
+            };
+            infoPanel.Children.Add(badge);
+
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text         = item.Description,
+                Foreground   = SolidColorBrush.Parse("#80FFFFFF"),
+                FontSize     = 10.5,
+                TextWrapping = TextWrapping.Wrap,
+                MaxLines     = 2
+            });
+
+            outerStack.Children.Add(infoPanel);
+
+            var bottomStack = new StackPanel { Margin = new Thickness(10, 4, 10, 9), Spacing = 5 };
+
+            string displayPrice = item.Available ? GetDisplayPrice(item.Id, item.Price) : "\u2014";
+
+            var priceText = new TextBlock
+            {
+                Text                = displayPrice,
+                Foreground          = !item.Available
+                    ? SolidColorBrush.Parse("#55FFFFFF")
+                    : isFree
+                        ? SolidColorBrush.Parse("#4ADE80")
+                        : new SolidColorBrush(mainColor),
+                FontWeight          = FontWeight.Bold,
+                FontSize            = 14.5,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+            };
+            bottomStack.Children.Add(priceText);
+
+            if (!isFree && item.Available && CoinPrices.TryGetValue(item.Id, out var coinAmt))
+            {
+                bottomStack.Children.Add(new TextBlock
+                {
+                    Text                = $"\U0001f343 {coinAmt:N0}",
+                    Foreground          = SolidColorBrush.Parse("#4ADE80"),
+                    FontSize            = 11,
+                    FontWeight          = FontWeight.SemiBold,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                });
+            }
+
+            IBrush buyBg;
+            IBrush buyBorder;
+            IBrush buyFg;
+            string buyText;
+            bool buyClickable;
+
+            if (owned)
+            {
+                buyBg      = SolidColorBrush.Parse("#2022C55E");
+                buyBorder  = SolidColorBrush.Parse("#22C55E");
+                buyFg      = SolidColorBrush.Parse("#4ADE80");
+                buyText    = "OWNED \u2713";
+                buyClickable = false;
+            }
+            else if (isComingSoon)
+            {
+                buyBg      = SolidColorBrush.Parse("#15FFFFFF");
+                buyBorder  = SolidColorBrush.Parse("#22FFFFFF");
+                buyFg      = SolidColorBrush.Parse("#44FFFFFF");
+                buyText    = "COMING SOON";
+                buyClickable = false;
+            }
+            else if (isFree)
+            {
+                buyBg      = SolidColorBrush.Parse("#20228B45");
+                buyBorder  = SolidColorBrush.Parse("#4ADE80");
+                buyFg      = SolidColorBrush.Parse("#4ADE80");
+                buyText    = "GET FREE";
+                buyClickable = true;
+            }
+            else
+            {
+                buyBg      = new SolidColorBrush(new Color(0x30, mainColor.R, mainColor.G, mainColor.B));
+                buyBorder  = new SolidColorBrush(new Color(0x65, mainColor.R, mainColor.G, mainColor.B));
+                buyFg      = Brushes.White;
+                buyText    = "BUY NOW";
+                buyClickable = true;
+            }
+
+            var buyBtn = new Border
+            {
+                Background      = buyBg,
+                BorderBrush     = buyBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(10),
+                Height          = 36,
+                Cursor          = buyClickable
+                    ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+                    : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow),
+            };
+            buyBtn.Child = new TextBlock
+            {
+                Text                = buyText,
+                Foreground          = buyFg,
+                FontSize            = 10,
+                FontWeight          = FontWeight.ExtraBold,
+                LetterSpacing       = 0.5,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment   = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            if (buyClickable && isFree && !owned)
+            {
+                var itemCaptureFree = item;
+                buyBtn.Tapped += (_, _) => OnCardFreeClaimTapped(itemCaptureFree);
+            }
+            else if (buyClickable && !isFree)
+            {
+                var itemCapturePaid = item;
+                buyBtn.Tapped += (_, _) => OpenPurchasePopupForItem(itemCapturePaid);
+            }
+
+            bottomStack.Children.Add(buyBtn);
+            outerStack.Children.Add(bottomStack);
+            card.Child = outerStack;
+
+            if (item.Available)
+            {
+                var itemCapture = item;
+                card.PointerEntered += async (_, _) =>
+                {
+                    scaleTransform.ScaleX = 1.03;
+                    scaleTransform.ScaleY = 1.03;
+
+                    card.BorderBrush = new SolidColorBrush(new Color(0xCC, glowColor.R, glowColor.G, glowColor.B));
+                    card.BorderThickness = new Thickness(1.5);
+
+                    UpdateStorePreviewPanel(itemCapture);
+
+                    if (_storeRenderer != null)
+                        await CosmeticHelpers.ApplyCosmeticPreviewToRendererAsync(
+                            _storeRenderer, itemCapture.Id, itemCapture.Category,
+                            _host?.CurrentSettings);
+                };
+
+                card.PointerExited += async (_, _) =>
+                {
+                    scaleTransform.ScaleX = 1.0;
+                    scaleTransform.ScaleY = 1.0;
+
+                    card.BorderBrush     = new SolidColorBrush(new Color(0x55, glowColor.R, glowColor.G, glowColor.B));
+                    card.BorderThickness = new Thickness(1);
+
+                    if (_storeRenderer != null && _host?.CurrentSettings?.Equipped != null)
+                        await CosmeticHelpers.ApplyEquippedToRendererAsync(_storeRenderer, _host.CurrentSettings.Equipped, _host.CurrentSettings.SessionAccessToken);
+                };
+            }
+
+            return card;
+        }
+
+        private void UpdateStorePreviewPanel(
+            (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
+        {
+            _previewedItemId = item.Id;
+
+            var (rarityMain, _, _) = item.Rarity switch
+            {
+                "Legendary" => ("#F59E0B", "#92400E", "#1A1408"),
+                "Epic"      => ("#34D399", "#16A34A", "#110C1A"),
+                "Rare"      => ("#3B82F6", "#1E3A8A", "#0C1320"),
+                _           => ("#6B7280", "#374151", "#0F1318")
+            };
+            var mainColor = Color.Parse(rarityMain);
+
+            if (_storePreviewName  != null) _storePreviewName.Text  = item.Name;
+            if (_storePreviewDesc  != null) _storePreviewDesc.Text  = item.Description;
+            if (_storePreviewPrice != null)
+            {
+                _storePreviewPrice.Text = !item.Available
+                    ? "Coming Soon"
+                    : GetDisplayPrice(item.Id, item.Price);
+            }
+
+            if (_storePreviewRarityText != null)
+                _storePreviewRarityText.Text = item.Rarity.ToUpper();
+
+            if (_storePreviewRarityBadge != null)
+            {
+                _storePreviewRarityBadge.Background = new SolidColorBrush(
+                    new Color(0x28, mainColor.R, mainColor.G, mainColor.B));
+                _storePreviewRarityBadge.BorderBrush = new SolidColorBrush(
+                    new Color(0x55, mainColor.R, mainColor.G, mainColor.B));
+            }
+            if (_storePreviewRarityText != null)
+                _storePreviewRarityText.Foreground = new SolidColorBrush(mainColor);
+
+            if (_storePreviewActionBtn != null && _storePreviewActionText != null)
+            {
+                bool isFreeItem = item.Price == "FREE";
+                bool isOwned    = _host?.IsOwned(item.Id) ?? false;
+                bool hasCheckout = item.Available
+                    && CheckoutUrls.TryGetValue(item.Id, out var checkoutUrl)
+                    && !string.IsNullOrWhiteSpace(checkoutUrl);
+                bool isComingSoon = !item.Available || (!hasCheckout && !isFreeItem);
+
+                _storePreviewActionBtn.IsVisible = true;
+
+                if (isOwned)
+                {
+                    _storePreviewActionBtn.Background  = SolidColorBrush.Parse("#2022C55E");
+                    _storePreviewActionBtn.BorderBrush = SolidColorBrush.Parse("#22C55E");
+                    _storePreviewActionBtn.Cursor      = new Cursor(StandardCursorType.Arrow);
+                    _storePreviewActionText.Text       = "OWNED \u2713";
+                    _storePreviewActionText.Foreground = SolidColorBrush.Parse("#4ADE80");
+                }
+                else if (isComingSoon)
+                {
+                    _storePreviewActionBtn.Background  = SolidColorBrush.Parse("#15FFFFFF");
+                    _storePreviewActionBtn.BorderBrush = SolidColorBrush.Parse("#22FFFFFF");
+                    _storePreviewActionBtn.Cursor      = new Cursor(StandardCursorType.Arrow);
+                    _storePreviewActionText.Text       = "COMING SOON";
+                    _storePreviewActionText.Foreground = SolidColorBrush.Parse("#44FFFFFF");
+                }
+                else if (isFreeItem)
+                {
+                    _storePreviewActionBtn.Background  = SolidColorBrush.Parse("#20228B45");
+                    _storePreviewActionBtn.BorderBrush = SolidColorBrush.Parse("#4ADE80");
+                    _storePreviewActionBtn.Cursor      = new Cursor(StandardCursorType.Hand);
+                    _storePreviewActionText.Text       = "GET FREE";
+                    _storePreviewActionText.Foreground = SolidColorBrush.Parse("#4ADE80");
+                }
+                else
+                {
+                    _storePreviewActionBtn.Background  = new SolidColorBrush(new Color(0x30, mainColor.R, mainColor.G, mainColor.B));
+                    _storePreviewActionBtn.BorderBrush = new SolidColorBrush(new Color(0x65, mainColor.R, mainColor.G, mainColor.B));
+                    _storePreviewActionBtn.Cursor      = new Cursor(StandardCursorType.Hand);
+                    _storePreviewActionText.Text       = "BUY NOW";
+                    _storePreviewActionText.Foreground = Brushes.White;
+                }
+
+                if (_storePreviewCoinBtn != null)
+                    _storePreviewCoinBtn.IsVisible = false;
+            }
+        }
+
+        private void HighlightStoreTab(string activeTab)
+        {
+            var mainGreen = Color.Parse("#4CAF50");
+
+            foreach (var (name, tag) in new[]
+            {
+                ("StoreTab_All",   "all"),
+                ("StoreTab_Capes", "capes"),
+                ("StoreTab_Hats",  "hats"),
+                ("StoreTab_Wings", "wings"),
+                ("StoreTab_Auras", "auras"),
+            })
+            {
+                var tab = this.FindControl<Border>(name);
+                if (tab == null) continue;
+
+                bool isActive = tag == activeTab;
+                tab.Background = isActive
+                    ? new SolidColorBrush(new Color(0x30, mainGreen.R, mainGreen.G, mainGreen.B))
+                    : SolidColorBrush.Parse("Transparent");
+                tab.BorderBrush = isActive
+                    ? new SolidColorBrush(new Color(0x60, mainGreen.R, mainGreen.G, mainGreen.B))
+                    : SolidColorBrush.Parse("#20FFFFFF");
+
+                var tb = tab.Child as TextBlock
+                      ?? (tab.Child as Border)?.Child as TextBlock;
+                if (tb != null)
+                    tb.Foreground = isActive
+                        ? new SolidColorBrush(mainGreen)
+                        : SolidColorBrush.Parse("#80FFFFFF");
+            }
+        }
+
+        private void OnStoreTabTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is Border b && b.Tag is string tag)
+            {
+                _storeActiveTab = tag;
+                HighlightStoreTab(tag);
+                PopulateStoreGrid();
+            }
+        }
+
+        private async void OnStorePreviewLightToggle(object? sender, TappedEventArgs e)
+        {
+            if (_host?.CurrentSettings == null) return;
+            _host.CurrentSettings.PreviewDayBackground = !_host.CurrentSettings.PreviewDayBackground;
+            ApplyStorePreviewBackgroundFromSettings();
+            try { await _host.SettingsService.SaveSettingsAsync(_host.CurrentSettings); }
+            catch (Exception ex) { LeafLog.Info("Store", $"PreviewDayBackground save failed: {ex.Message}"); }
+        }
+
+        private void ApplyStorePreviewBackgroundFromSettings()
+        {
+            bool day = _host?.CurrentSettings?.PreviewDayBackground == true;
+            var img = this.FindControl<Image>("StorePreviewBackgroundImage");
+            if (img != null)
+            {
+                img.Source = day ? _storeDayBg : _storeNightBg;
+                img.Opacity = day ? 0.85 : 0.35;
+            }
+            var dim = this.FindControl<Border>("StorePreviewDimOverlay");
+            if (dim != null) dim.Opacity = day ? 0.35 : 1.0;
+
+            var icon = this.FindControl<TextBlock>("StorePreviewLightIcon");
+            var label = this.FindControl<TextBlock>("StorePreviewLightLabel");
+            if (icon != null)
+            {
+                icon.Text = day ? "\u263D" : "\u2600";
+                icon.Foreground = day ? SolidColorBrush.Parse("#86EFAC") : SolidColorBrush.Parse("#FBBF24");
+            }
+            if (label != null)
+            {
+                label.Text = day ? "Night" : "Day";
+                label.Foreground = day ? SolidColorBrush.Parse("#86EFAC") : SolidColorBrush.Parse("#FBBF24");
+            }
+        }
+
+        private void OnStorePreviewActionTapped(object? sender, TappedEventArgs e)
+        {
+            if (_previewedItemId == null || _host == null) return;
+            if (_host.IsOwned(_previewedItemId)) return;
+
+            var catalogItem = System.Array.Find(StoreCatalog, c => c.Id == _previewedItemId);
+            if (catalogItem.Id == null) return;
+
+            if (catalogItem.Price == "FREE")
+            {
+                OnCardFreeClaimTapped(catalogItem);
+                return;
+            }
+
+            OpenPurchasePopupForItem(catalogItem);
+        }
+
+        private void OnCardFreeClaimTapped(
+            (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
+        {
+            if (_host == null) return;
+            if (TutorialService.Instance.IsRunning)
+                TutorialService.Instance.HideForAction();
+            _host.AddOwnedCosmetic(item.Id);
+            _host.ShowPurchaseCelebration(item.Id, item.Name, item.Preview, item.Rarity);
+            PopulateStoreGrid();
+            UpdateStorePreviewPanel(item);
+        }
+
+        private void OpenPurchasePopupForItem(
+            (string Id, string Name, string Category, string Rarity, string Description, string Preview, string Price, bool Available) item)
+        {
+            if (_host == null) return;
+            if (!CheckoutUrls.TryGetValue(item.Id, out var checkoutUrl) || string.IsNullOrWhiteSpace(checkoutUrl)) return;
+
+            LeafLog.Info("Store", $"Opening purchase popup for '{item.Name}' (id: {item.Id}, price: {item.Price})");
+            CoinPrices.TryGetValue(item.Id, out var coinPrice);
+            var displayPrice = GetDisplayPrice(item.Id, item.Price);
+
+            _host.ShowPurchaseChoice(item.Id, item.Name, item.Preview, item.Rarity, displayPrice, coinPrice, checkoutUrl);
+        }
+
+        public void SelectLeafCapeForTutorial()
+        {
+            var item = System.Array.Find(StoreCatalog, c => c.Id == "cape-leaf");
+            if (item.Id == null) return;
+            UpdateStorePreviewPanel(item);
+            if (_storeGrid == null) return;
+            foreach (var child in _storeGrid.Children)
+            {
+                if (child is Control c && c.Tag?.ToString() == "cape-leaf")
+                {
+                    c.BringIntoView();
+                    break;
+                }
+            }
+        }
+
+        public void RefreshAfterPurchase(string itemId)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                PopulateStoreGrid();
+                var catalogItem = System.Array.Find(StoreCatalog, c => c.Id == itemId);
+                if (catalogItem.Id != null)
+                    UpdateStorePreviewPanel(catalogItem);
+            });
+        }
+
+        private void OnAscendantBundleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (_host == null) return;
+            var (fullyOwned, _, _) = GetBundleOwnership("ascendant-bundle");
+            if (fullyOwned) return;
+            if (!CheckoutUrls.TryGetValue("ascendant-bundle", out var checkoutUrl) || string.IsNullOrWhiteSpace(checkoutUrl)) return;
+            CoinPrices.TryGetValue("ascendant-bundle", out var coinPrice);
+            var displayPrice = GetDisplayPrice("ascendant-bundle", "\u20ac12.78");
+            _host.ShowPurchaseChoice("ascendant-bundle", "Ascendant Bundle", "\U0001f31f", "Legendary", displayPrice, coinPrice, checkoutUrl);
+        }
+
+        private void OnStoreCatalogScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            if (_subscriptionBannerClip == null || _subscriptionBanner == null) return;
+
+            double current = e.OffsetDelta.Y;
+            if (current == 0) return;
+
+            bool shouldShow = current < 0;
+            if (shouldShow == _bannerVisible) return;
+
+            _bannerVisible = shouldShow;
+            AnimateBanner(shouldShow);
+        }
+
+        private async void AnimateBanner(bool show)
+        {
+            if (_subscriptionBannerClip == null || _subscriptionBanner == null) return;
+
+            if (double.IsNaN(_bannerFullHeight) || _bannerFullHeight <= 0)
+            {
+                _bannerFullHeight = _subscriptionBannerClip.Bounds.Height;
+                if (_bannerFullHeight <= 0)
+                    _bannerFullHeight = _subscriptionBanner.Bounds.Height + 16;
+            }
+
+            _bannerAnimCts?.Cancel();
+            _bannerAnimCts = new CancellationTokenSource();
+            var token = _bannerAnimCts.Token;
+
+            double currentClipHeight = _subscriptionBannerClip.Height;
+            double startHeight  = !double.IsNaN(currentClipHeight) ? currentClipHeight : (show ? 0 : _bannerFullHeight);
+            double targetHeight = show ? _bannerFullHeight : 0;
+            double startOpacity = _subscriptionBanner.Opacity;
+            double targetOpacity = show ? 1.0 : 0.0;
+
+            var start = DateTime.UtcNow;
+            try
+            {
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    var elapsed = DateTime.UtcNow - start;
+                    double t = Math.Clamp(elapsed.TotalMilliseconds / BannerAnimDuration.TotalMilliseconds, 0, 1);
+                    double eased = show
+                        ? 1 - Math.Pow(1 - t, 3)
+                        : Math.Pow(t, 2);
+
+                    double h2 = startHeight + (targetHeight - startHeight) * eased;
+                    double op = startOpacity + (targetOpacity - startOpacity) * eased;
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        _subscriptionBannerClip!.Height  = h2;
+                        _subscriptionBanner!.Opacity = op;
+                    });
+
+                    if (t >= 1) break;
+                    await Task.Delay(BannerFrameTime, token);
+                }
+
+                if (!token.IsCancellationRequested)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        _subscriptionBannerClip!.Height  = targetHeight;
+                        _subscriptionBanner!.Opacity = targetOpacity;
+                    });
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+    }
+}
