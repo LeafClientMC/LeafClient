@@ -29,7 +29,7 @@ replay_pid*
 **/fabric-loom-cache/
 **/remappedSrc/
 
-# .NET project plumbing (keep .csproj visible, hide everything else)
+# .NET project
 *.sln
 *.suo
 **/Properties/
@@ -73,7 +73,7 @@ StyleCop.Cache
 *.VC.db
 *.VC.VC.opendb
 
-# Per-project gradle/manifest files in our LeafClient root
+# Per-project gradle/manifest files
 src/LeafClient/app.manifest
 src/LeafClient/rd.xml
 src/LeafClient/build.gradle
@@ -198,7 +198,7 @@ _ReSharper*/
 **/CrashpadMetrics*
 **/*.WebView2/
 
-# Ops / deploy scripts (private)
+# Private Ops / deploy scripts
 **/*.ps1
 **/*.psm1
 **/*.psd1
@@ -264,7 +264,7 @@ aws-credentials
 pb_data/
 pb_migrations/
 
-# Design layer — XAML, themes, fonts, assets (kept private)
+# Design layer XAML, themes, fonts, assets. We keep this private in order to avoid people stealing the entire source code to rebrand it and steal our code.
 **/*.axaml
 **/Themes/
 **/DarkTheme.axaml
@@ -323,7 +323,7 @@ scratch/
 playground/
 sandbox/
 
-# Vendored library noise (CmlLib / XboxAuthNet — keep .cs, drop docs/CI)
+# Vendored library noise
 src/CmlLib.Core-master/**/.gitpod.yml
 src/CmlLib.Core-master/**/.github/
 src/CmlLib.Core-master/**/docs/
@@ -339,11 +339,11 @@ src/XboxAuthNet-main/**/.gitpod.yml
 src/XboxAuthNet-main/**/.github/
 src/XboxAuthNet-main/**/docs/
 
-# JARs we DO want tracked (bootstrap/runtime)
+# JARs
 !src/LeafClient/LeafRuntime/**/*.jar
 !src/LeafClient/LeafBootstrap/**/*.jar
 
-# Re-allow source folders that broad rules above would catch
+# Source folders
 !src/LeafClient/Models/
 !src/LeafClient/Services/
 !src/LeafClient/ViewModels/
@@ -364,7 +364,7 @@ src/XboxAuthNet-main/**/docs/
 !src/LeafClientUpdater/**/*.cs
 !src/LeafClientUpdater/*.csproj
 
-# Release staging (only sign-and-publish.ps1 should -f these)
+# Release staging
 /latestexe/
 *.sha256
 *.sig
@@ -381,7 +381,7 @@ AUDIT-*.md
 **/security-reviews/
 **/audits/
 
-# Top-level helper scripts (private)
+# Private top-level helper scripts
 /untrack-private.ps1
 /deploy-ssh-key.ps1
 test-mod-filter/
