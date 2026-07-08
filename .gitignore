@@ -1,0 +1,12 @@
+*
+!*/
+
+!/.gitignore
+!/README.md
+!/LICENSE.md
+
+!/src/LeafClient/Views/LoginWindow.axaml.cs
+!/src/LeafClient/Models/LauncherSettings.cs
+!/src/LeafClient/Services/SettingsService.cs
+!/src/LeafClient/Services/CredentialProtection.cs
+!/src/LeafClient/Services/MachineSecret.cs
